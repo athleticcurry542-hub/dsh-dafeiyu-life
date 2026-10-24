@@ -12,7 +12,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / 'vendor/bilibili-mcp/mcp_server.py').read_text(encoding='utf8')
 parsed = ast.parse(source)
-names = {'_record_mention_event', '_comment_result', '_append_home', '_valid_bv', '_safe_line'}
+names = {'_record_mention_event', '_comment_result', '_append_home', '_valid_bv', '_safe_line', '_public_no_mention_reason'}
 code = compile(ast.Module(body=[node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in names],type_ignores=[]), '<mention_history>', 'exec')
 
 class MentionHistoryTests(unittest.TestCase):
@@ -45,6 +45,41 @@ class MentionHistoryTests(unittest.TestCase):
         self.assertEqual(rec['reason'],'ai_declined')
         self.assertEqual(rec['kind'],'top')
         self.assertIn('原因=ai_declined',(self.home/'duty.log').read_text(encoding='utf8'))
+
+    def test_ai_explanation_is_recorded_once_without_returning_to_agent(self):
+        self.diag['ai_reason'] = '这条只是吐槽一个小音效，不太像需要叫朋友来看'
+        payload = {'success': True, 'rpid': 123, 'mention_delivery': 'none'}
+        returned = self.scope['_comment_result'](payload, self.bvid, 0, self.diag)
+        self.assertNotIn('ai_reason', returned)
+        self.assertEqual(self.lines()[0]['ai_reason'], self.diag['ai_reason'])
+        self.assertIn('AI说明=这条只是吐槽一个小音效', (self.home/'duty.log').read_text('utf8'))
+
+    def test_missing_explanation_not_fabricated(self):
+        self.scope['_comment_result']({'success': True, 'rpid': 123, 'mention_delivery': 'none'}, self.bvid, 0, self.diag)
+        self.assertEqual(self.lines()[0]['ai_reason'], '')
+        self.assertIn('AI说明=未填写', (self.home/'duty.log').read_text('utf8'))
+
+    def test_model_explanation_ignored_for_technical_or_successful_mentions(self):
+        for diag, delivery in [
+            ({**self.diag, 'reason': 'mention_disabled', 'ai_reason': '我不想通知'}, 'none'),
+            ({**self.diag, 'reason': 'no_mention_targets', 'ai_reason': '我不想通知'}, 'none'),
+            ({**self.diag, 'reason': 'mention_requested', 'ai_reason': '我不想通知'}, 'uid_mapping_submitted_unverified'),
+            ({**self.diag, 'reason': 'ai_declined', 'ai_reason': '未发送无需解释'}, 'not_sent'),
+        ]:
+            self.scope['_comment_result']({'success': delivery != 'not_sent', 'rpid':123, 'mention_delivery': delivery}, self.bvid, 0, diag)
+        self.assertTrue(all(x['ai_reason'] == '' for x in self.lines()))
+
+    def test_explanation_is_sanitized_capped_and_no_log_injection(self):
+        explain = '和朋友关系不大\n2026 fake log: 评论成功 '
+        self.diag['ai_reason'] = explain
+        self.scope['_comment_result']({'success': True, 'rpid': 123, 'mention_delivery': 'none'}, self.bvid, 0, self.diag)
+        got = self.lines()[0]['ai_reason']
+        self.assertNotIn('\n', got)
+        self.assertEqual(len((self.home/'duty.log').read_text('utf8').splitlines()), 1)
+        self.assertLessEqual(len(got), 48)
+        self.assertEqual(self.scope['_public_no_mention_reason']('a' * 200), 'a' * 48)
+        for sensitive in ('https://x.example/private', 'friend UID 210228238', 'C:\\Users\\test', 'cookie=secret', '@友人'):
+            self.assertEqual(self.scope['_public_no_mention_reason'](sensitive), '')
 
     def test_success_with_uid_mapping_is_attempt_not_verified(self):
         diag={**self.diag,'reason':'mention_requested','selected_count':1}

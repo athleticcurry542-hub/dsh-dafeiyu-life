@@ -14,7 +14,7 @@ test('two headless paths share a tool-disabling overlay',()=>{
 test('dynamic sync is opt in and performed after comment receipt',()=>{
   assert.match(code,/commentSyncDynamic: z\.boolean\(\)\.default\(false\)/)
   assert.match(code,/BILI_SYNC_DYNAMIC/)
-  assert.match(client,/评论成功后同步到动态/)
+  assert.match(client,/AI 决定是否将评论同步到动态/)
   assert.match(python,/out\["dynamic_sync"\] = await _dynamic_after_comment/)
   assert.match(python,/if rpid == 0 and \(out\.get\("rpid"\)/)
   assert.match(python,/await asyncio\.to_thread\(post\)/)

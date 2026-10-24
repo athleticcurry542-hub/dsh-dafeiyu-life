@@ -740,7 +740,7 @@ function WatchTab() {
           h('div', { 'data-bd-note': '' }, 'AI 按视频与情境决定，不使用固定概率。ai_select 可 @ 0、1、2 或多个名单内好友；ai 模式仍一次 @ 所有人。位置可在句首、句中或句尾。'),
           h('div', { 'data-bd-sep': '' }),
           h('div', { 'data-bd-h': '' }, '今日 @ 诊断'),
-          h('div', { 'data-bd-note': '' }, '由评论发送接口记录，含后台回复。只统计升级后接口返回成功的评论，不等于公开可见；尝试 @ 不保证通知送达。'),
+          h('div', { 'data-bd-note': '' }, 'AI 在生成顶层评论时可顺带填写「不 @ 的原因」，直接保存在本地；后台回复仍按程序规则记录。尝试 @ 不保证通知送达。'),
           h('div', { 'data-bd-row': '' },
             h('div', { 'data-bd-grow': '' },
               h('div', { 'data-bd-label': '' }, mentionDiagnostics?.ok
@@ -757,8 +757,10 @@ function WatchTab() {
                     mention_requested:'已按设置尝试 @，不保证通知送达',
                     reply_no_group_mentions:'后台楼中楼回复不群发 @'
                   })[x.reason] || '未识别的 @ 决策'
+                  const aiExplanation = x.success && x.reason === 'ai_declined'
+                    ? ` · AI说明：${x.ai_reason || '未填写具体原因'}` : ''
                   return h('div', { key: (x.time || '') + ':' + i, 'data-bd-note': '' },
-                    `${x.bvid} · ${x.kind === 'reply' ? '楼中楼' : '顶层'} · ${x.success ? (x.mention_attempted ? '尝试 @' : '未 @') : '发送未成功'} · ${reasonText}`)
+                    `${x.bvid} · ${x.kind === 'reply' ? '楼中楼' : '顶层'} · ${x.success ? (x.mention_attempted ? '尝试 @' : '未 @') : '发送未成功'} · ${reasonText}${aiExplanation}`)
                 }))
             : h('div', { 'data-bd-note': '' }, mentionDiagnostics?.ok ? '今天还没有新版诊断记录。' : ''),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信内容 = 本轮每条的「标题 + 链接 + 一句话」，一轮合并成一条发。⚠️ 建议先让这个号和收件人互关：B站 对「陌生人私信」会限流，还可能不弹提醒。') : null,

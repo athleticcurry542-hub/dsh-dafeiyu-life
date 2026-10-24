@@ -675,6 +675,19 @@ def _reserve_comment_quota() -> tuple[bool, str]:
         return False, "评论配额记录不可用，安全起见拒绝发送：" + str(error)[:150]
 
 
+def _public_no_mention_reason(value):
+    """AI 给用户看的简短自述；不落私密文本、URL、UID、控制字符或日志换行。"""
+    if not isinstance(value, str):
+        return ""
+    # 不保存换行和不可见控制字符；截断后不保留可能的敏感结构。
+    result = re.sub(r"[\x00-\x1f\x7f-\x9f]+", " ", value).strip()[:48]
+    if not result:
+        return ""
+    if re.search(r"https?://|www\.|@|[A-Za-z]:[\\/]|[/\\](?:Users|home)[/\\]|\b\d{6,}\b|(?:cookie|token|secret|sessdata|bili_jct|password|密钥|密码|凭证)", result, re.I):
+        return ""
+    return result
+
+
 def _record_mention_event(payload, bvid, target_rpid, diagnostic):
     """由发送工具本地记录 @ 结果，不依赖 Agent 在日报里复述；不保存评论正文或好友 UID。"""
     if diagnostic is None:
@@ -700,6 +713,10 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic):
             "selected_count": max(0, min(8, int(diagnostic.get("selected_count") or 0))),
             "configured_count": max(0, min(8, int(diagnostic.get("configured_count") or 0))),
             "mention_delivery": delivery[:60],
+            # 只有 AI 主动拒绝 @ 且评论发成功时保存自述；配置关闭或 UID 故障
+            # 属于程序判定，不把 AI 自述错误地归因给它们。
+            "ai_reason": _public_no_mention_reason(diagnostic.get("ai_reason"))
+                if success and not attempted and diagnostic.get("reason") == "ai_declined" else "",
         }
         if not success:
             # 不写原始异常：网络错误有时夹带 URL/query，可能泄露凭证。
@@ -716,7 +733,8 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic):
         _append_home("mention-diagnostics/" + day + ".jsonl", json.dumps(event, ensure_ascii=False) + "\n")
         label = "已发送" if success else "发送未成功"
         notice = "已尝试@（未验证通知）" if attempted else "未@"
-        _append_home("duty.log", f"{now.isoformat(timespec='milliseconds')}  @诊断：{event['bvid']} {label} {notice} 原因={event['reason']} 方式={delivery}\n")
+        explanation = (" AI说明=" + (event["ai_reason"] or "未填写")) if success and event["reason"] == "ai_declined" else ""
+        _append_home("duty.log", f"{now.isoformat(timespec='milliseconds')}  @诊断：{event['bvid']} {label} {notice} 原因={event['reason']} 方式={delivery}{explanation}\n")
     except Exception as exc:
         # 诊断写盘失败不能让已经发出的公开评论在 Agent 眼里变成失败，造成重复发布。
         print("@诊断写入失败：" + str(exc)[:160], file=sys.stderr)
@@ -882,7 +900,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
                      should_mention: bool = False, mention_position: str = "end",
                      mention_mode: str = "ai", mention_targets: list[dict] | None = None,
                      mention_names: list[str] | None = None, sync_to_dynamic: bool = False,
-                     dynamic_daily_limit: int = 3) -> str:
+                     dynamic_daily_limit: int = 3, no_mention_reason: str = "") -> str:
     """
     在B站视频下发表评论或回复某条评论
 
@@ -896,6 +914,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         mention_mode: 宿主调用时的策略；headless 通过 BILI_MENTION_MODE 环境变量限制
         mention_targets: 宿主调用传配置名单；headless 从环境变量读取可信名单
         mention_names: ai_select 模式下 AI 选择的名单内昵称；空列表表示不 @
+        no_mention_reason: AI 同时生成评论时，主动选择不 @ 的一句简短解释；只保存本地给用户看
         sync_to_dynamic: AI 生成评论时同步判断，是否值得额外公开一条动态（默认 false）
         dynamic_daily_limit: 宿主设置的每日最多尝试次数；headless 会被环境变量中的用户设置覆盖
     
@@ -943,7 +962,8 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         mention_diagnostic = {"reason": mention_reason, "mode": mode,
                               "should_mention": should_mention is True,
                               "configured_count": len(targets),
-                              "selected_count": len(selected) if use_mentions else 0}
+                              "selected_count": len(selected) if use_mentions else 0,
+                              "ai_reason": no_mention_reason if mention_reason == "ai_declined" else ""}
         # 即使不@也必须移除模型偷加的名单昵称。
         clean_text, _ = _decorate_comment(text, targets, False, mention_position)
         text, mentioned = _decorate_comment(clean_text, selected, use_mentions, mention_position)
