@@ -40,6 +40,7 @@ import { picksThisRound } from './lib/pick-quota.mjs'
 import { createCommentInteract } from './lib/comment-interact.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
+import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
 
 export const name = 'bili-scroll'
 export const inject = ['webServer', 'tools', 'settings']
@@ -76,8 +77,12 @@ export const Config = !z ? undefined : z.object({
    *  ⚠️ 这里故意**不加 `.max(20)`**：schema 校验不过 ⇒ cordis 拒收这条 entry ⇒ **整条插件不激活** ✗
    *     （跟 schemastery 拿不到时的降级同一个道理）—— 范围一律由 clampPatch 在**写**和**读**两头钳。 */
   commentPerRound: z.natural().default(5).extra('volatile', true),
-  /** ⭐ 要 @ 谁（B站 昵称）；**留空 = 不发评论** —— 评论存在的意义就是 @ 那一下 */
+  /** 旧版 @ 昵称；新名单为空时继承，私信旧版按昵称找 UID 也继续兼容 */
   mentionName: z.string().default('').extra('volatile', true),
+  /** 评论 @ 名单，昵称|UID 每行一个；不影响私信收件人 UID */
+  mentionTargets: z.string().default('').extra('volatile', true),
+  /** 评论 @ 策略：ai=大肥鱼视情况决定，off=从不@，always=每条@ */
+  mentionMode: z.string().default('ai').extra('volatile', true),
   /** 关注关键词（空了用章程里默认那几组） */
   keywords: z.array(z.string()).default([]).extra('volatile', true),
   /** Python：指向 venv 里的那个最好 */
@@ -264,7 +269,7 @@ function reportMeta() {
     personaPrompt: '',
     perDay: 50, pickPerRound: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0,
-    keywords: [], commentPerRound: 5, mentionName: '', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
+    keywords: [], commentPerRound: 5, mentionName: '', mentionTargets: '', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
   }
   const normalize = (src, base) => {
     const out = { ...base }
@@ -293,6 +298,8 @@ function reportMeta() {
    *      loadCfg 读回来也过一遍，写进去和读出来一个口径） */
   const clampPatch = (patch) => {
     const p = { ...patch }
+    if ('mentionTargets' in p) p.mentionTargets = String(p.mentionTargets || '').slice(0, 1200)
+    if ('mentionMode' in p) p.mentionMode = ['off', 'ai', 'always'].includes(String(p.mentionMode)) ? String(p.mentionMode) : 'ai'
     if ('perDay' in p) p.perDay = Math.max(0, Math.floor(Number(p.perDay) || 0))
     if ('pickPerRound' in p) p.pickPerRound = Math.max(1, Math.min(50, Math.floor(Number(p.pickPerRound) || 5)))
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
@@ -611,31 +618,41 @@ function reportMeta() {
 
   tool({
     name: 'bili_reply',
-    description: '在视频下发评论（或回复某条评论）。这就是"@ 本人"那一下：短、干净、纯文本 @ 写在正文里。\n'
-      + '🔴 安全闸：设置页的「自动评论并 @ 你」**默认是关的**；关着的时候这个工具会拒绝 —— '
+    description: '发一条自然的视频评论，或回复一条评论。由 AI 判断这句话是否有必要 @ 配置中的好友，不能为了完成任务而强行 @。\n'
+      + '🔴 安全闸：「自动发表评论」默认是关的；关闭时会拒绝 —— '
       + '除非本人当场让你发（那时传 force: true）。',
     parameters: {
       bvid: { type: 'string', description: 'BV号' },
-      text: { type: 'string', description: '评论正文（短、干净、纯文本 @；别写敏感词）' },
+      text: { type: 'string', description: '自然评论正文（通常一两句话）。不要自己添加配置名单里的 @，由工具负责。' },
+      should_mention: { type: 'boolean', description: 'AI情境决定：这条评论是否真的值得邀请名单中的朋友一起看；通常为 false，不要随机决定' },
+      mention_position: { type: 'string', description: 'AI判断要@时，选择自然的插入位置 start/middle/end；默认 end' },
       rpid: { type: 'number', description: '要回复的评论 id（0/不填 = 发新评论）' },
       force: { type: 'boolean', description: '本人当场让你发的，传 true 越过"自动评论关着"的闸' },
     },
     async execute(args) {
+      refreshCfg()
       // dmMode==='only' 时本轮根本不该发公开评论 —— 在工具层也一并挡掉（除非当场 force）
-      const commentOn = Boolean(cfg.autoComment && cfg.mentionName && cfg.dmMode !== 'only')
+      const commentOn = Boolean(cfg.autoComment && cfg.dmMode !== 'only')
       if (!commentOn && !args.force) {
         return {
           ok: false,
           blocked: true,
           hint: cfg.dmMode === 'only'
             ? '现在是「只私信」模式（dmMode=only）—— 规定不发公开评论，改成用 bili_send_message 私信。确实要发时传 force: true。'
-            : '要发评论得同时满足两条：设置里开着「自动评论并 @ 你」、并且填了「要 @ 谁」。或者本人当场让你发时传 force: true。',
+            : '要发评论需要开启「自动发表评论」，或者本人明确要求时传 force: true；不要求必须 @ 任何人。',
         }
       }
+      const targets = parseMentionTargets(cfg.mentionTargets, cfg.mentionName)
+      const choice = decideMentions({mode:cfg.mentionMode, isReply:Number(args.rpid)>0,
+        shouldMention:args.should_mention, targets, position:args.mention_position})
       return call('bili_reply', {
         bvid: String(args.bvid ?? ''),
         text: String(args.text ?? ''),
         rpid: Number(args.rpid) || 0,
+        mention_mode: cfg.mentionMode,
+        mention_targets: targets,
+        should_mention: choice.shouldMention,
+        mention_position: choice.position,
       })
     },
   })
@@ -1055,7 +1072,7 @@ function reportMeta() {
     const dmDegraded = cfg.dmMode === 'only' && !(dmUidEff > 0)
     const dmModeEff = dmDegraded ? 'off' : cfg.dmMode
     if (dmDegraded) log('⚠️ 选的是「只私信」，但不知道发给谁（没填 UID、也没填「@ 谁」，或查不到）⇒ 这一轮降级成只发评论')
-    const commentOn = Boolean(cfg.autoComment && cfg.mentionName && dmModeEff !== 'only')
+    const commentOn = Boolean(cfg.autoComment && dmModeEff !== 'only')
     const dmOn = Boolean(dmModeEff !== "off" && dmUidEff > 0)
     return `你是这个账号的 B站 助手。`
       + `下面是使用者的设定（如果有）—— **按它来**，别用你默认那套人格。`
@@ -1090,11 +1107,16 @@ function reportMeta() {
       + `⭐ 另外把这一轮**看过的每一条视频（挑中的和跳过的都算）**追加进归档：${join(digestDir, `${dayKey().slice(0, 7)}.md`)}`
       + ` —— 一行一条：日期 · BV 号 · 标题 · UP · 一句话结论 · 链接（跳过的那条在后面注明理由）；`
       + `这是**给以后检索用**的（报告是给人看的，归档是给"回头翻"用的），别省略、也别只写挑中的。`
-      + `自动评论并 @ ${cfg.mentionName || '（还没填要 @ 谁）'} 是${commentOn
-        ? `开着的（每轮最多 ${cfg.commentPerRound} 条评论，每条在正文里纯文本 @ ${cfg.mentionName}，150 字内）`
+      + `公开评论是${commentOn
+        ? `开启的（每轮最多 ${cfg.commentPerRound} 条，150 字内）。评论像普通 B站用户自然吐槽，绝不能做摘要或推广。`
+          + `@ 策略为 ${cfg.mentionMode || 'ai'}（off=不@；ai=你根据视频和评论情境自主判断；always=每条@全部好友）。`
+          + `名单：${parseMentionTargets(cfg.mentionTargets,cfg.mentionName).map(t=>t.name).join('、') || '空'}。`
+          + `在 ai 模式，每次调用 bili_reply 时显式填写 should_mention: true/false，只有真的想邀请好友来看才选 true；`
+          + `大部分普通吐槽选 false。触发时自动 @ 名单中的全部人，并可用 mention_position 选择 start/middle/end（别永远放开头）。`
+          + `text 只写自然评论，不要手工附加 @ 昵称；发送工具负责插入。`
         : (dmModeEff === 'only'
-          ? '关着的 —— 当前是「**只私信**」模式：**这一轮一条公开评论都不许发**，改走私信'
-          : '关着的（只写报告，别发评论）')}。`
+          ? '关闭 —— 当前只私信，禁止公开评论'
+          : '关闭（只写报告，不发公开评论）')}。`
       + (dmOn
         ? `⭐⭐ **私信投递**：用 bili_send_message 把这一轮的结果发到 UID **${dmUidEff}**。`
           + `内容**别照抄评论那套**：把本轮每条值得的写成 **标题 + 链接 + 一句话理由**`
@@ -1203,6 +1225,8 @@ function reportMeta() {
         '          - ' + yq(posix(script)),
         '        env:',
         '          BILI_MCP_TOOLS: ' + yq(mcpWhitelist().join(',')),
+        '          BILI_MENTION_MODE: ' + yq(cfg.mentionMode || 'ai'),
+        '          BILI_MENTION_TARGETS: ' + yq(JSON.stringify(parseMentionTargets(cfg.mentionTargets, cfg.mentionName))),
         '',
       )
     }
@@ -2208,7 +2232,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const body = await readBody(req)
       const patch = {}
       for (const k of ['perDay', 'pickPerRound', 'peakValley', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
-        'commentPerRound', 'mentionName', 'dmMode', 'dmUid',
+        'commentPerRound', 'mentionName', 'mentionTargets', 'mentionMode', 'dmMode', 'dmUid',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'replyToComments', 'replyPerRound', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed',
         'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay']) {
         if (k in body) patch[k] = body[k]
@@ -2420,7 +2444,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       // ⭐⭐ 2.0.4（第三方体检第 5 条）：脱敏改成**按字段白名单遮** ——
       //    以前只遮 dmUid，人设全文 / 昵称 / 工作区路径全在，而"复制诊断"是会被贴到群里的 ✗
       const masked = (() => {
-        const SENSITIVE = ['personaPrompt', 'mentionName', 'workspace', 'dshBin', 'dmUid', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerText', 'keywords']
+        const SENSITIVE = ['personaPrompt', 'mentionName', 'mentionTargets', 'workspace', 'dshBin', 'dmUid', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerText', 'keywords']
         const c = { ...cfg }
         for (const k of SENSITIVE) {
           const v = c[k]

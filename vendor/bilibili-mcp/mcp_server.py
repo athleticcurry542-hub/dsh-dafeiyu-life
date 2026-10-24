@@ -20,6 +20,8 @@ import base64
 import os
 import sys
 import tempfile
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
@@ -519,10 +521,81 @@ async def bili_video_info(bvid: str) -> str:
     }, ensure_ascii=False)
 
 
+# ========== 评论 @：由 AI 显式做情境决定，发送层维护最终策略 ==========
+
+def _mention_settings(request_mode=None, request_targets=None):
+    """overlay 的环境变量优先，防止模型自行指定通知其他人；宿主工具使用请求参数。"""
+    mode = os.environ.get("BILI_MENTION_MODE", request_mode or "ai")
+    if mode not in ("off", "ai", "always"):
+        mode = "ai"
+    if "BILI_MENTION_TARGETS" in os.environ:
+        try: targets = json.loads(os.environ["BILI_MENTION_TARGETS"])
+        except (ValueError, TypeError): targets = []
+    else:
+        targets = request_targets if isinstance(request_targets, list) else []
+    safe = []
+    names = set()
+    for item in targets[:20] if isinstance(targets, list) else []:
+        if not isinstance(item, dict): continue
+        name = str(item.get("name", "")).lstrip("@").strip()
+        uid = str(item.get("uid") or "").strip()
+        if not name or len(name) > 40 or any(x in name for x in "<>\r\n") or name in names:
+            continue
+        safe.append({"name": name, "uid": uid if uid.isascii() and uid.isdecimal() and int(uid) > 0 else ""})
+        names.add(name)
+        if len(safe) >= 8: break
+    return mode, safe
+
+
+def _decorate_comment(text, targets, should_mention, position="end"):
+    content = str(text or "").strip()
+    # 先删掉模型自己插入的名单内 @，从而保证 off 和 should_mention=false 真正生效。
+    for item in targets:
+        content = content.replace("@" + item["name"], "").replace("  ", " ").strip()
+    if not should_mention or not targets:
+        return content, []
+    tags = " ".join("@" + item["name"] for item in targets)
+    if position == "start":
+        return (tags + " " + content).strip(), targets
+    if position == "middle":
+        for index, char in enumerate(content):
+            if char in "，。！？!?；;" and index >= 2 and index < len(content) - 3:
+                return (content[:index+1] + " " + tags + " " + content[index+1:].lstrip()).strip(), targets
+    return (content + " " + tags).strip(), targets
+
+
+async def _send_video_comment_with_mentions(bvid, aid, text, credential, mentioned):
+    """尽力提交 UID 映射，但平台是否实际发出 @ 通知无法通过评论回执证明。
+
+    at_name_to_mid 属于非正式兼容字段；接口可能忽略或拒绝，不会静默改成已通知。
+    超时后不重试，避免重复公开评论。
+    """
+    def post():
+        form = {
+            "type": "1", "oid": str(aid), "message": text, "plat": "1",
+            "csrf": str(credential.bili_jct),
+            "at_name_to_mid": json.dumps({x["name"]: int(x["uid"]) for x in mentioned}, ensure_ascii=False),
+        }
+        cookie = "SESSDATA=" + str(credential.sessdata) + "; bili_jct=" + str(credential.bili_jct)
+        req = urllib.request.Request(
+            "https://api.bilibili.com/x/v2/reply/add",
+            data=urllib.parse.urlencode(form).encode("utf-8"),
+            headers={"Cookie": cookie, "User-Agent": "Mozilla/5.0",
+                     "Referer": "https://www.bilibili.com/video/" + bvid,
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8"))
+    return await asyncio.to_thread(post)
+
+
 # ========== Tool 6: 回复评论 ==========
 
 @tool()
-async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: int = 0) -> str:
+async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: int = 0,
+                     should_mention: bool = False, mention_position: str = "end",
+                     mention_mode: str = "ai", mention_targets: list[dict] | None = None) -> str:
     """
     在B站视频下发表评论或回复某条评论
 
@@ -531,6 +604,10 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         text: 评论/回复的文本内容
         rpid: 要回复的目标评论ID（0表示发表新评论）
         root: 楼层根评论ID（回复一级评论时不用填，回复楼中楼时填根评论ID）
+        should_mention: AI 是否真的想邀请好友一起看（默认不 @）
+        mention_position: 自然的 @ 位置，可选 start/middle/end
+        mention_mode: 宿主调用时的策略；headless 通过 BILI_MENTION_MODE 环境变量限制
+        mention_targets: 宿主调用传配置名单；headless 从环境变量读取可信名单
     
     Returns:
         发表结果
@@ -544,6 +621,30 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         aid = info["aid"]
 
     try:
+        mode, targets = _mention_settings(mention_mode, mention_targets)
+        # 只有一级评论可对配置中好友群发 @，回复具体评论不会把整个好友名单拖进来。
+        use_mentions = (rpid == 0 and targets and
+                        (mode == "always" or (mode == "ai" and should_mention is True)))
+        text, mentioned = _decorate_comment(text, targets, use_mentions, mention_position)
+        if not text:
+            return json.dumps({"success": False, "error": "评论内容不能为空"}, ensure_ascii=False)
+        # 全部 UID 都由用户显式提供时，才尝试带映射的评论接口。
+        # 没有 UID 时会正常发送文字 @，但不会将它称为“真实通知成功”。
+        if rpid == 0 and mentioned and all(item["uid"] for item in mentioned):
+            raw = await _send_video_comment_with_mentions(bvid, aid, text, cred, mentioned)
+            if raw.get("code") != 0:
+                return json.dumps({"success": False, "error": str(raw.get("message") or raw.get("code")),
+                                   "mention_delivery": "not_sent"}, ensure_ascii=False)
+            data = raw.get("data") or {}
+            if not isinstance(data, dict) or data.get("need_captcha") or not (data.get("rpid") or data.get("rpid_str")):
+                return json.dumps({"success": False, "error": "评论回执未包含评论ID，可能需要验证码/审核；请先人工核实，不自动重试",
+                                   "mention_delivery": "unverified"}, ensure_ascii=False)
+            out = {"success": True, "message": "评论接口已接受（@提醒是否送达未确认）",
+                   "mention_delivery": "uid_mapping_submitted_unverified"}
+            if isinstance(data, dict):
+                for key in ("rpid", "rpid_str", "root", "parent"):
+                    if data.get(key): out[key] = data[key]
+            return json.dumps(out, ensure_ascii=False)
         if rpid == 0:
             # 发表新评论
             result = await comment.send_comment(
@@ -569,7 +670,8 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         # ⭐ 把回执里的 rpid 带回去：判重表要靠它记「我们发过哪条」，宿主的评论复核
         #    （lib/verify.mjs）也要拿它去 B站 查公开可见性。只回 success 的话那条链是断的。
         #（2026-10-16 审查修：原实现把上面的 result 丢掉了）
-        out = {"success": True, "message": "评论发送成功"}
+        out = {"success": True, "message": "评论发送成功",
+               "mention_delivery": "text_only_unverified" if mentioned else "none"}
         if isinstance(result, dict):
             for key in ("rpid", "rpid_str", "root", "parent"):
                 val = result.get(key)

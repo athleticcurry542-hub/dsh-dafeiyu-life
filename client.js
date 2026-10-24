@@ -259,6 +259,8 @@ function WatchTab() {
       const [commentReplyPerDay, setCommentReplyPerDay] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
+      const [mentionTargets, setMentionTargets] = React.useState(null)
+      const [mentionMode, setMentionMode] = React.useState(null)
       const [login, setLogin] = React.useState(null)
       const [runNote, setRunNote] = React.useState(null)
       const [report, setReport] = React.useState(null)        // 非 null = 报告已展开   // 顶部那行状态（跑一轮/装依赖的反馈原来在最底下，看不见）
@@ -292,6 +294,8 @@ function WatchTab() {
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && replyPer === null) setReplyPer(String(cfg.replyPerRound ?? 1))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
+        if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
+        if (cfg && mentionMode === null) setMentionMode(cfg.mentionMode || 'ai')
         if (cfg && dmUid === null) setDmUid(cfg.dmUid ? String(cfg.dmUid) : '')
         if (cfg && dmMode === null) setDmMode(cfg.dmMode || 'only')
         if (cfg && dmWatch === null) setDmWatch(cfg.dmWatch !== false)
@@ -622,22 +626,44 @@ function WatchTab() {
             onChange: (e) => { setDmMode(e.target.value); patch({ dmMode: e.target.value }, '投递方式') },
           },
             h('option', { value: 'only' }, '只发私信 —— 一条公开评论都不发（默认，最不打扰别人）'),
-            h('option', { value: 'off' }, '只发评论 —— 在视频下面 @ 你（公开，别人也看得见）'),
+            h('option', { value: 'off' }, '只发评论 —— @ 可选（公开，别人能看见）'),
             h('option', { value: 'both' }, '私信 + 评论 —— 两边都发')),
-          h('div', { 'data-bd-label': '' }, '发给谁 / @ 谁（B站 昵称）'),
+          h('div', { 'data-bd-label': '' }, '旧版昵称（保留兼容，可不改）'),
           h('input', {
             'data-bd-input': '', value: mention ?? '',
-            placeholder: '填你自己的 B站 昵称；私信按它查 UID，评论也 @ 它',
+            placeholder: '老用户原有的 mentionName；新@名单为空时继承',
             onChange: (e) => setMention(e.target.value),
-            onBlur: () => { const v = String(mention || '').trim(); setMention(v); patch({ mentionName: v }, '发给谁') },
+            onBlur: () => { const v = String(mention || '').trim(); setMention(v); patch(v ? {mentionName:v} : {mentionName:'',clear:['mentionName']}, '旧版昵称') },
           }),
-          (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信会发给他（用昵称自动查一次 UID）；查不到就改回只发评论，不会一条都不送。') : null,
+          (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-label': '' }, '私信推荐收件人 UID（与评论 @ 名单独立）') : null,
+          (dmMode && dmMode !== 'off') ? h('input', {
+            'data-bd-input': '', value: dmUid ?? '', type: 'number', min: 0,
+            placeholder: '输入数字 UID；留空仍兼容旧版昵称查找',
+            onChange: (e) => setDmUid(e.target.value),
+            onBlur: () => patch({dmUid: Math.max(0, Math.floor(Number(dmUid)||0))}, '私信收件人 UID'),
+          }) : null,
+          (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '这里的 UID 只控制刷视频报告发给谁，不是白名单，也不是公开评论 @ 对象。') : null,
+          h('div', { 'data-bd-sep': '' }),
+          h('div', { 'data-bd-label': '' }, '公开评论 @ 名单（每行一个 昵称|UID）'),
+          h('textarea', {
+            'data-bd-input': '', value: mentionTargets ?? '', rows: 3,
+            placeholder: '长条动物|12345678\n另一个好友|87654321',
+            onChange: (e) => setMentionTargets(e.target.value),
+            onBlur: () => {const t=String(mentionTargets??'').trim();patch(t?{mentionTargets:t}:{mentionTargets:'',clear:['mentionTargets']}, '@好友名单')},
+          }),
+          h('div', { 'data-bd-note': '' }, '名单为空会继承旧 mentionName。填写正确的 UID 能尝试 B站原生 @；真实提醒是否推送仍由平台决定。'),
+          h('div', { 'data-bd-label': '' }, '公开评论 @ 策略'),
+          h('select', { 'data-bd-input': '', value: mentionMode ?? 'ai', onChange:(e)=>{setMentionMode(e.target.value);patch({mentionMode:e.target.value}, '@ 策略')} },
+            h('option', {value:'ai'}, '大肥鱼视情况自主决定（推荐）'),
+            h('option', {value:'off'}, '永远不 @（只评论）'),
+            h('option', {value:'always'}, '每条评论 @ 所有好友')),
+          h('div', { 'data-bd-note': '' }, 'AI 模式不随机按概率：大肥鱼觉得值得分享才 @；触发时会带上全部名单，位置可在句首、句中或句尾。'),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信内容 = 本轮每条的「标题 + 链接 + 一句话」，一轮合并成一条发。⚠️ 建议先让这个号和收件人互关：B站 对「陌生人私信」会限流，还可能不弹提醒。') : null,
 
           (dmMode === 'off' || dmMode === 'both') ? h('div', { 'data-bd-sep': '' }) : null,
           (dmMode === 'off' || dmMode === 'both') ? h(ToggleRow, {
-            label: '自动评论并 @ 你',
-            note: '开了之后它会在挑中的视频下面留评论，并 @ 上面那个人',
+            label: '自动发表评论（@ 可选）',
+            note: '大肥鱼可根据视频内容决定是否 @；不需要每条 @',
             on: sw('autoComment'),
             onChange: (v) => patch({ autoComment: v }, '自动评论'),
           }) : null,
@@ -645,7 +671,7 @@ function WatchTab() {
             h('div', { 'data-bd-row': '' },
               h('div', { 'data-bd-grow': '' },
                 h('div', { 'data-bd-label': '' }, '每轮最多发几条评论'),
-                h('div', { 'data-bd-note': '' }, '每条评论里 @ 一次上面那个人；填 0 = 这一轮不发评论')),
+                h('div', { 'data-bd-note': '' }, '评论可以不 @；填 0 = 这一轮不发评论')),
               h('input', {
                 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0,
                 value: perRound ?? '',
