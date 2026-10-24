@@ -340,7 +340,17 @@ function WatchTab() {
         setBusy(JSON.stringify(p))
         try {
           const r = await jpost('/config', p)
-          if (r?.config) setSt((old) => ({ ...old, config: r.config }))
+          if (!r || r.ok !== true) throw new Error((r && r.error) || '设置接口没有确认保存成功')
+          // 收藏夹字段曾被服务端允许列表漏掉：必须核对服务端实际保存的 ID，杜绝假成功。
+          if (Object.prototype.hasOwnProperty.call(p, 'favFolderId')) {
+            const savedFid = Math.max(0, Math.floor(Number(r.config?.favFolderId) || 0))
+            const wantedFid = Math.max(0, Math.floor(Number(p.favFolderId) || 0))
+            if (savedFid !== wantedFid) {
+              setFavId(String(savedFid))
+              throw new Error('收藏夹没有保存成功：服务端返回 ' + savedFid + '，期望 ' + wantedFid + '。请确认插件文件已更新并重启 DSH')
+            }
+          }
+          if (r.config) setSt((old) => ({ ...old, config: r.config }))
           // ⭐ DSH 原生设置页里显式设过的键由宿主说了算 ⇒ 我们这份也得写进去；写失败要说出来，别假装"已保存"
           if (r?.host && r.host.ok === false) say(`${what || '设置'}：插件自己那份存了，但 DSH 设置页那份没写进去（${r.host.error}）`, 'warn')
           else say(what ? `${what}：已保存` : '已保存', 'good')
@@ -901,10 +911,10 @@ function WatchTab() {
           h('option', { value: '0' }, '不收藏（默认）'),
           (favFolders || []).map((f) => h('option', { key: String(f.id), value: String(f.id) }, `${f.title}（${f.count} 条）`))),
         h('div', { 'data-bd-row': '' },
-          h('button', { 'data-bd-btn': '', disabled: busy === 'fav', onClick: onFavToday }, '补收藏今天的'),
+          h('button', { 'data-bd-btn': '', disabled: Boolean(busy) || !(Number(cfg.favFolderId) > 0), onClick: onFavToday }, '补收藏今天的'),
           h('div', { 'data-bd-note': '' },
             favFolders === null ? '收藏夹列表读取中…'
-              : (favFolders.length ? '每轮跑完会把挑中的视频存进上面选的收藏夹'
+              : (favFolders.length ? (Number(cfg.favFolderId) > 0 ? '每轮跑完会把挑中的视频存进上面选的收藏夹' : '请先在上方选一个收藏夹，等待“自动收藏：已保存”后，再点补收藏')
                 : '读不到收藏夹 —— 先「扫码登录」，或过会儿重开设置页'))),
 
           h('div', { 'data-bd-row': '' },
