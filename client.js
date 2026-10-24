@@ -265,6 +265,10 @@ function WatchTab() {
       const [memeMemory, setMemeMemory] = React.useState(null)
       const [memeKeyword, setMemeKeyword] = React.useState('')
       const [memeBusy, setMemeBusy] = React.useState(false)
+      const [visionBV,setVisionBV] = React.useState('')
+      const [visionTest,setVisionTest] = React.useState(null)
+      const [visionBusy,setVisionBusy] = React.useState(false)
+      const [visionDraft,setVisionDraft] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
@@ -339,6 +343,7 @@ function WatchTab() {
         if (cfg && dmWhitelist === null) setDmWhitelist(cfg.dmWhitelist || '')
         if (cfg && dmStrangerText === null) setDmStrangerText(cfg.dmStrangerText || '')
         if (cfg && dmStrangerMax === null) setDmStrangerMax(String(cfg.dmStrangerMaxReplies ?? 1))
+        if(cfg && visionDraft===null) setVisionDraft(Object.fromEntries(['visionModelProvider','visionModelId','visionEndpoint','visionFrames'].map(k=>[k,cfg[k]??''])))
         if(cfg && modelDraft===null) setModelDraft(Object.fromEntries(['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort'].map(k=>[k,cfg[k]||''])))
         if(cfg && approvalPhrase===null) setApprovalPhrase(cfg.dmApprovalPhrase || '白饭🍚')
         if(cfg && approvedTotal===null) setApprovedTotal(String(cfg.dmApprovedTotalLimit ?? 50))
@@ -1002,7 +1007,7 @@ function WatchTab() {
             on: cfg.memeMemoryEnabled !== false,
             onChange: v => patch({memeMemoryEnabled:v},'梗知识库'),
           }),
-          h('div',{'data-bd-note':''}, '每条必须有视频文字证据；外观一律标记为「未识图」。AI 的猜测可能有误，你可以在这里删除。'),
+          h('div',{'data-bd-note':''}, '需要视频文字证据或已实际识别的低清预览证据；视觉推断一律待核实。AI 的猜测可能有误，你可以在这里删除。'),
           h('div',{'data-bd-row':''},
             h('input',{'data-bd-input':'',placeholder:'查梗名称，例如 奶蛙',value:memeKeyword,
               onChange:e=>setMemeKeyword(e.target.value),onKeyDown:e=>{if(e.key==='Enter')loadMemeMemory(memeKeyword)}}),
@@ -1021,6 +1026,41 @@ function WatchTab() {
         ),
 
         /* ── 关注什么 / 在哪儿刷 ── */
+        h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
+          h('div', { 'data-bd-h': '' }, '👀 视频预览快照识图（试验功能）'),
+          h(ToggleRow, {label:'开启低清预览识图', note:'默认关闭；刷视频时按需调用独立视觉模型分析少量播放器预览图。仅描述实际图片，不等于看完视频。',
+            on:sw('visionEnabled'),onChange:v=>patch({visionEnabled:v},'预览识图总开关')}),
+          h(ToggleRow, {label:'Debug：保存实际预览图', note:'默认关闭；开启后把送去识图的 JPEG 保存到插件数据目录 vision-debug/BV号/，方便自己查看。',
+            on:sw('visionDebug'),onChange:v=>patch({visionDebug:v},'预览图调试保存')}),
+          (cfg.visionEnabled||cfg.visionDebug) ? h('div',{'data-bd-sub':''},
+            h('div',{'data-bd-label':''},'独立视觉模型（不影响刷视频 / 私信模型）'),
+            h('div',{'data-bd-row':''},
+              h('div',{'data-bd-grow':''},h('div',{'data-bd-note':''},'视觉 API 协议')),
+              h('select',{'data-bd-input':'',value:(visionDraft||{}).visionModelProvider||'anthropic',style:{width:'190px'},
+                onChange:e=>{const v=e.target.value;setVisionDraft(old=>({...old,visionModelProvider:v}));patch({visionModelProvider:v},'视觉模型提供方')}},
+                h('option',{value:'anthropic'},'Anthropic Messages'),h('option',{value:'openai'},'OpenAI 兼容接口'))),
+            ...[['visionModelId','视觉模型 ID','填写服务商实际模型 ID，例如 claude-haiku-4-5-20251001'],['visionEndpoint','API 地址（选填）','留空使用官方地址，第三方代理须填 HTTPS 完整接口地址']].map(([key,label,placeholder])=>h('div',{key},
+              h('div',{'data-bd-note':''},label),h('input',{'data-bd-input':'',value:(visionDraft||{})[key]??'',placeholder,
+                onChange:e=>setVisionDraft(old=>({...old,[key]:e.target.value})),
+                onBlur:()=>patch({[key]:(visionDraft||{})[key]||''},label)}))),
+            h('div',{'data-bd-row':''},h('div',{'data-bd-grow':''},
+              h('div',{'data-bd-label':''},'每条最多取几张图'),h('div',{'data-bd-note':''},'1–3 张，默认 2；优先高能时间点，失败退回均匀抽取。')),
+              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:3,value:(visionDraft||{}).visionFrames??2,
+                onChange:e=>setVisionDraft(old=>({...old,visionFrames:e.target.value})),
+                onBlur:()=>patch({visionFrames:Math.max(1,Math.min(3,Number((visionDraft||{}).visionFrames)||2))},'预览帧数量')})),
+            h('div',{'data-bd-note':''},'API Key 不保存在插件配置中。使用进程环境变量 BILI_VISION_API_KEY，或 ANTHROPIC_API_KEY / OPENAI_API_KEY；DSH 内保存的模型密钥不保证自动传给本功能。'),
+            h('div',{'data-bd-row':''},
+              h('input',{'data-bd-input':'',placeholder:'输入一个 BV 号，测试预览图片',style:{flex:1,minWidth:'180px'},value:visionBV,
+                onChange:e=>setVisionBV(e.target.value)}),
+              h('button',{'data-bd-btn':'','data-primary':'',disabled:visionBusy||!/^BV[0-9A-Za-z]{10}$/.test(visionBV.trim()),
+                onClick:async()=>{setVisionBusy(true);setVisionTest(null);try{setVisionTest(await jpost('/vision-preview-test',{bvid:visionBV.trim()}))}catch(e){setVisionTest({ok:false,error:String(e?.message||e)})}finally{setVisionBusy(false)}}},visionBusy?'正在检查…':'测试预览')),
+            visionTest ? h('div',{'data-bd-msg':'','data-warn':visionTest.error?'':undefined},
+              `状态：${visionTest.status||'失败'} ${visionTest.error||''}`,
+              visionTest.times?.length ? ` | 时间点：${visionTest.times.join('、')} 秒` : '',
+              visionTest.description ? h('div',{'data-bd-pre':''},visionTest.description) : null,
+              visionTest.debug_dir ? h('div',null,'预览图保存到：'+visionTest.debug_dir) : null) : null,
+            h('div',{'data-bd-note':''},'Windows 默认目录：C:\\Users\\你的账号\\.dsh\\bili-duty\\vision-debug\\BV号。关闭 Debug 后不会自动删除旧图片。')):null,
+          h('div',{'data-bd-sep':''})),
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
           h('div', { 'data-bd-h': '' }, '关注什么'),
           h('textarea', {
