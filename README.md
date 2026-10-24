@@ -168,3 +168,16 @@ MIT（内置的 `vendor/bilibili-mcp/` 另见该目录下的 LICENSE）
 - **Plus 版问题 / 功能建议 / PR**：请到 [minedalang/dsh-bili-scroll-plus Issues](https://github.com/minedalang/dsh-bili-scroll-plus/issues)；提交时带上 DSH 版本、Plus 包版本、运行平台与错误日志。
 - **上游原项目、原作者及历史演示**：[https://github.com/c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)。原版 README 中的演示视频、QQ 群及相关沟通方式属于原项目，不代表 Plus 维护渠道。
 - **版权与第三方致谢**：参见 [LICENSE](./LICENSE)、[NOTICE.md](./NOTICE.md)、[CONTRIBUTORS.md](./CONTRIBUTORS.md)。
+
+
+### Plus 2.1.0：后台私信自动回复
+
+在 **设置 → 刷B站 → 互动** 中开启「后台自动检查并回复私信」：
+
+- **白名单 UID**：一行一个或逗号分隔。白名单用户支持 AI 多轮聊天，没有固定对话次数上限，但有间隔与发送速率保护。此前设置的“私信收件人 UID / 只回谁的私信”仍视为白名单，以兼容老用户。
+- **陌生人首次回复一次**：默认关闭，需要用户明确开启。非白名单用户发来新消息时，仅回复一条固定欢迎语；记录永久保留，重启不会补发第二条。
+- **后台监听**：默认每分钟检查一次，独立于「现在跑一轮」。第一次启用会先记录现有消息，不自动回复历史私信。
+- **发送**：通过项目原有 B站 MCP 的 `bili_send_message` 工具发送，实际能否投递取决于 B站接口、收件人设置和风控。
+- **状态**：持久化于 `$DSH_HOME/bili-duty/dm-autoreply-state.json`；请不要随意删除这个文件，否则会丢失陌生人已回复记录。
+
+注意：如果后台私信频繁返回限流或账号被风控，请暂停自动回复。回复内容由 AI 生成，建议不要授予其访问敏感文件或执行高权限工具的能力。

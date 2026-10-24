@@ -248,7 +248,9 @@ function WatchTab() {
       const [perRound, setPerRound] = React.useState(null)
       const [replyPer, setReplyPer] = React.useState(null)
       const [dmUid, setDmUid] = React.useState(null)        // 私信收件人 UID（本地草稿）
-      const [dmWatch, setDmWatch] = React.useState(null)          // 私信双向开关
+      const [dmWatch, setDmWatch] = React.useState(null)          // 后台私信总开关
+      const [dmWhitelist, setDmWhitelist] = React.useState(null)
+      const [dmStrangerText, setDmStrangerText] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
       const [login, setLogin] = React.useState(null)
@@ -285,7 +287,9 @@ function WatchTab() {
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && dmUid === null) setDmUid(cfg.dmUid ? String(cfg.dmUid) : '')
         if (cfg && dmMode === null) setDmMode(cfg.dmMode || 'only')
-        if (cfg && dmWatch === null) setDmWatch(cfg.dmWatch !== false)   // 2.0 起默认开
+        if (cfg && dmWatch === null) setDmWatch(cfg.dmWatch !== false)
+        if (cfg && dmWhitelist === null) setDmWhitelist(cfg.dmWhitelist || '')
+        if (cfg && dmStrangerText === null) setDmStrangerText(cfg.dmStrangerText || '')
         if (cfg && favId === null) setFavId(String(cfg.favFolderId ?? 0))
       }, [cfg])
 
@@ -641,18 +645,49 @@ function WatchTab() {
 
           h('div', { 'data-bd-sep': '' }),
           h(ToggleRow, {
-            label: '私信双向（有人私信它就回一句）',
-            note: '默认开。你在 B站 私信里跟它说话，它会回你（陌生人的私信不回）。⭐ 查私信本身不花 token，只有真收到你的新消息时才花一点点。',
+            label: '后台自动检查并回复私信',
+            note: '不必点击「跑一轮」；按间隔检查新私信。白名单可多轮聊天；陌生人自动回复需要单独开启。',
             on: Boolean(dmWatch),
-            onChange: (v) => { setDmWatch(v); patch({ dmWatch: v }, '私信双向') },
+            onChange: (v) => { setDmWatch(v); patch({ dmWatch: v }, '后台私信监听') },
           }),
-          // ⭐ 2026-10-23：**不加新输入框**，只把"它认谁当主人"显示出来 —— 填错当场看得见 ✓
-          (st.ownerInfo && dmWatch) ? h('div', { 'data-bd-note': '' },
-            '它会认这个人当主人：',
-            (st.ownerInfo.name ? st.ownerInfo.name + ' · ' : ''),
-            'uid ' + st.ownerInfo.uid,
-            st.ownerInfo.self ? '（就是现在登录的这个号）' : '',
-            ' —— 想换人，改上面那个「要 @ 谁」就行') : null,
+          dmWatch ? h('div', { 'data-bd-sub': '' },
+            h('div', { 'data-bd-label': '' }, '白名单 UID（每行一个，或用逗号分隔）'),
+            h('textarea', {
+              'data-bd-input': '', rows: 3,
+              value: dmWhitelist ?? '',
+              placeholder: '12345678\n87654321',
+              onChange: (e) => setDmWhitelist(e.target.value),
+            }),
+            h('div', { 'data-bd-note': '' }, '白名单用户可以一直和 AI 聊天（仍有防刷频率限制）。旧版设置的「私信收件人 UID / 只回谁的私信」也自动加入白名单。'),
+            h('button', { 'data-bd-btn': '', onClick: () => patch({ dmWhitelist: dmWhitelist ?? '', clear: ['dmWhitelist'] }, '私信白名单') }, '保存白名单'),
+            h(ToggleRow, {
+              label: '陌生人首次私信回复一次',
+              note: '默认关闭；开启后只对非白名单用户回复一条固定欢迎语，同一 UID 永不重复自动回复。首次启用会忽略历史消息。',
+              on: Boolean(cfg?.dmStrangerOnce),
+              onChange: (v) => patch({ dmStrangerOnce: v }, '陌生人单次回复'),
+            }),
+            cfg?.dmStrangerOnce ? h('div', null,
+              h('div', { 'data-bd-label': '' }, '陌生人欢迎语（最多 450 字）'),
+              h('textarea', {
+                'data-bd-input': '', rows: 3,
+                value: dmStrangerText ?? '',
+                onChange: (e) => setDmStrangerText(e.target.value),
+              }),
+              h('button', { 'data-bd-btn': '',
+                onClick: () => patch({ dmStrangerText: dmStrangerText ?? '' }, '陌生人欢迎语'),
+              }, '保存欢迎语')) : null,
+            h('div', { 'data-bd-row': '' },
+              h('div', { 'data-bd-label': '' }, '检查间隔（分钟）'),
+              h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 120,
+                defaultValue: cfg?.dmWatchMinutes ?? 1,
+                onBlur: (e) => patch({ dmWatchMinutes: Math.max(1, Math.min(120, Number(e.target.value) || 1)) }, '私信检查间隔'),
+              })),
+            h('div', { 'data-bd-note': '' },
+              '后台状态：',
+              st.dmAutoReplyStatus?.lastError ? '错误：' + st.dmAutoReplyStatus.lastError
+                : st.dmAutoReplyStatus?.polling ? '正在检查'
+                  : st.dmAutoReplyStatus?.lastPollAt ? '上次检查 ' + new Date(st.dmAutoReplyStatus.lastPollAt).toLocaleString() : '等待首次检查'),
+          ) : null,
           h(ToggleRow, {
             label: '本地转写没字幕的视频',
             note: '默认关；开了以后，没字幕的视频会在本机转写一遍（不花 API 钱）',
