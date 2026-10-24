@@ -1781,15 +1781,26 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const ids = pickIdsFromReport(report)
       if (!ids.length) return { ok: false, error: '今天的报告里没有挑中的视频（行首 ### BV号 那些）' }
       const failures = []
-      let added = 0
+      let added = 0, attempted = 0, stoppedEarly = false
       for (const bv of ids) {
         const r = await favOps(['add', bv, String(fid)])
-        if (r && r.ok) added++
-        else failures.push(bv + ': ' + ((r && r.error) || '未知原因'))
+        attempted++
+        if (r && r.ok) {
+          added++
+        } else {
+          const reason = String((r && r.error) || '未知原因').slice(0, 250)
+          failures.push(bv + ': ' + reason)
+          // Python环境/代码级错误不因重试剩余 29 个视频而自行恢复；停止后显示首条原因。
+          if (/NameError|not defined|No module named|ImportError|SyntaxError|can't open file|找不到指定的文件|ENOENT|还没扫码登录|403|412/.test(reason)) {
+            stoppedEarly = true
+            break
+          }
+        }
       }
-      log(`自动收藏（${why}）：${added}/${ids.length} 条` + (failures.length ? '，失败 ' + failures.length : ''))
+      log(`自动收藏（${why}）：成功 ${added}/${ids.length}，尝试 ${attempted}，失败 ${failures.length}` + (stoppedEarly ? '（遇到环境错误已停止）' : ''))
       if (failures.length) log('  收藏失败明细：' + failures.slice(0, 5).join(' | '))
-      return { ok: true, added, total: ids.length, failures }
+      return { ok: added > 0 || !failures.length, added, total: ids.length, attempted, failures, stoppedEarly,
+        ...(failures.length ? { error: `成功 ${added}/${ids.length}，尝试 ${attempted}，失败 ${failures.length}。首条：${failures[0]}` } : {}) }
     } finally { favBusy = false }
   }
 

@@ -48,21 +48,27 @@ async def folders():
 
 
 async def add(bvid, fid):
+    """使用 bilibili-api-python 17.x 的 Video.set_favorite 接口。
+
+    不再调用不存在的 favorite_list.FavoriteListResource；发送结果不等于最终页面可见。
+    """
     from bilibili_api import video as ba_video
+    if not isinstance(bvid, str) or not __import__('re').fullmatch(r'BV[0-9A-Za-z]{10}', bvid):
+        out({'ok': False, 'error': 'BV 号不合法', 'kind': 'input'})
+    if int(fid) <= 0:
+        out({'ok': False, 'error': '收藏夹 ID 不合法', 'kind': 'input'})
     cred, _ = load()
     v = ba_video.Video(bvid=bvid, credential=cred)
-    info = await v.get_info()
-    aid = int(info['aid'])
-    res = await favorite_list.FavoriteList(aid, credential=cred).get_info()
     try:
-        await favorite_list.FavoriteListResource(aid, type_=2, credential=cred).add(fid)
+        result = await v.set_favorite(add_media_ids=[int(fid)])
+        if isinstance(result, dict) and result.get('code', 0) not in (0, None):
+            out({'ok': False, 'error': 'B站拒绝收藏：' + str(result.get('message') or result['code'])[:160], 'kind': 'api'})
+        out({'ok': True, 'accepted': True})
     except Exception as error:  # noqa: BLE001
         msg = str(error)
-        # 已经收藏过不算失败
-        if '已经' in msg or 'already' in msg.lower():
+        if '已经收藏' in msg or 'already fav' in msg.lower():
             out({'ok': True, 'already': True})
-        out({'ok': False, 'error': msg[:200]})
-    out({'ok': True})
+        out({'ok': False, 'error': msg[:250], 'kind': 'api'})
 
 
 def main():

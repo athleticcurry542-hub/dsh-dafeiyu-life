@@ -551,8 +551,12 @@ function WatchTab() {
         setBusy('fav')
         try {
           const r = await jpost('/fav-today', {})
-          if (!r || r.ok === false) say('收藏没做成：' + ((r && r.error) || '未知原因'), 'warn')
-          else say(`收藏好了：${r.added}/${r.total} 条` + (r.failures && r.failures.length ? `（失败 ${r.failures.length} 条）` : ''), 'good')
+          if (!r || r.ok === false || (r.failures && r.failures.length)) {
+            const summary = (r && r.error) || (r && r.failures && r.failures[0]) || '未知原因'
+            say('收藏未全部成功：' + summary, 'warn')
+          } else {
+            say(`收藏 API 已接受：${r.added}/${r.total} 条（可到 B站收藏夹核对）`, 'good')
+          }
         } catch (e) { say(String(e?.message ?? e), 'warn') } finally { setBusy('') }
       }
 
