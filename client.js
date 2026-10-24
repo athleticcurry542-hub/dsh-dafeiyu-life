@@ -252,6 +252,11 @@ function WatchTab() {
       const [dmWatch, setDmWatch] = React.useState(null)          // 后台私信总开关
       const [dmWhitelist, setDmWhitelist] = React.useState(null)
       const [dmStrangerText, setDmStrangerText] = React.useState(null)
+      const [dmStrangerMax, setDmStrangerMax] = React.useState(null)
+      const [commentTopCount, setCommentTopCount] = React.useState(null)
+      const [commentTopVideoCount, setCommentTopVideoCount] = React.useState(null)
+      const [commentReplyPerPoll, setCommentReplyPerPoll] = React.useState(null)
+      const [commentReplyPerDay, setCommentReplyPerDay] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
       const [login, setLogin] = React.useState(null)
@@ -292,6 +297,11 @@ function WatchTab() {
         if (cfg && dmWatch === null) setDmWatch(cfg.dmWatch !== false)
         if (cfg && dmWhitelist === null) setDmWhitelist(cfg.dmWhitelist || '')
         if (cfg && dmStrangerText === null) setDmStrangerText(cfg.dmStrangerText || '')
+        if (cfg && dmStrangerMax === null) setDmStrangerMax(String(cfg.dmStrangerMaxReplies ?? 1))
+        if (cfg && commentTopCount === null) setCommentTopCount(String(cfg.commentTopCount ?? 5))
+        if (cfg && commentTopVideoCount === null) setCommentTopVideoCount(String(cfg.commentTopVideoCount ?? 3))
+        if (cfg && commentReplyPerPoll === null) setCommentReplyPerPoll(String(cfg.commentReplyPerPoll ?? 1))
+        if (cfg && commentReplyPerDay === null) setCommentReplyPerDay(String(cfg.commentReplyPerDay ?? 5))
         if (cfg && favId === null) setFavId(String(cfg.favFolderId ?? 0))
       }, [cfg])
 
@@ -678,13 +688,25 @@ function WatchTab() {
             h('div', { 'data-bd-note': '' }, '白名单用户可以一直和 AI 聊天（仍有防刷频率限制）。旧版设置的「私信收件人 UID / 只回谁的私信」也自动加入白名单。'),
             h('button', { 'data-bd-btn': '', onClick: () => patch({ dmWhitelist: dmWhitelist ?? '', clear: ['dmWhitelist'] }, '私信白名单') }, '保存白名单'),
             h(ToggleRow, {
-              label: '陌生人首次私信回复一次',
-              note: '默认关闭；开启后只对非白名单用户回复一条固定欢迎语，同一 UID 永不重复自动回复。首次启用会忽略历史消息。',
+              label: '开启陌生人自动回复',
+              note: '默认关闭；每个陌生人最多回复指定次数，按 UID 持久记录。首次启用不追发历史消息。',
               on: Boolean(cfg?.dmStrangerOnce),
-              onChange: (v) => patch({ dmStrangerOnce: v }, '陌生人单次回复'),
+              onChange: (v) => patch({ dmStrangerOnce: v }, '陌生人自动回复'),
             }),
-            cfg?.dmStrangerOnce ? h('div', null,
-              h('div', { 'data-bd-label': '' }, '陌生人欢迎语（最多 450 字）'),
+            cfg?.dmStrangerOnce ? h('div', { 'data-bd-sub': '' },
+              h('div', { 'data-bd-row': '' },
+                h('div', { 'data-bd-grow': '' },
+                  h('div', { 'data-bd-label': '' }, '每个陌生人最多回复几次（1–20）'),
+                  h('div', { 'data-bd-note': '' }, '白名单用户不受此次数限制；第二次起可以使用 AI。')),
+                h('input', { 'data-bd-input': '', 'data-bd-num': '', type:'number', min:1,max:20,
+                  value:dmStrangerMax ?? '',onChange:(e)=>setDmStrangerMax(e.target.value),
+                  onBlur:()=>{const n=Math.max(1,Math.min(20,Math.floor(Number(dmStrangerMax)||1)));setDmStrangerMax(String(n));patch({dmStrangerMaxReplies:n},'陌生人回复上限')} })),
+              h(ToggleRow, {label:'第一条使用固定欢迎语',
+                note:'打开：第一次固定文本（不花 Token），从第二次开始才调用 AI；关闭：从第一条开始交给 AI。',
+                on:cfg?.dmStrangerFirstFixed!==false,
+                onChange:(v)=>patch({dmStrangerFirstFixed:v},'首次固定欢迎语')}),
+              cfg?.dmStrangerFirstFixed!==false ? h('div', { 'data-bd-label': '' }, '陌生人固定欢迎语（最多 450 字）') : null,
+              cfg?.dmStrangerFirstFixed!==false ? h('div', null,
               h('textarea', {
                 'data-bd-input': '', rows: 3,
                 value: dmStrangerText ?? '',
@@ -692,7 +714,7 @@ function WatchTab() {
               }),
               h('button', { 'data-bd-btn': '',
                 onClick: () => patch({ dmStrangerText: dmStrangerText ?? '' }, '陌生人欢迎语'),
-              }, '保存欢迎语')) : null,
+              }, '保存欢迎语')) : null) : null,
             h('div', { 'data-bd-row': '' },
               h('div', { 'data-bd-label': '' }, '检查间隔（分钟）'),
               h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 120,
@@ -705,6 +727,49 @@ function WatchTab() {
                 : st.dmAutoReplyStatus?.polling ? '正在检查'
                   : st.dmAutoReplyStatus?.lastPollAt ? '上次检查 ' + new Date(st.dmAutoReplyStatus.lastPollAt).toLocaleString() : '等待首次检查'),
           ) : null,
+          h('div', { 'data-bd-sep': '' }),
+          h('div', { 'data-bd-label': '' }, '后台评论互动（独立于「跑一轮」）'),
+          h(ToggleRow, {
+            label: '后台回复别人对我的评论',
+            note: '每3分钟读取最近回复通知；首次开启只记录旧通知，不追发。与旧版跑一轮楼中楼回复建议不要同时开启。',
+            on: Boolean(cfg?.commentWatchReplies),
+            onChange: v => patch({commentWatchReplies:v}, '后台回复评论通知'),
+          }),
+          h(ToggleRow, {
+            label: '主动参与近期视频的热门评论',
+            note: '每5分钟检查最近7天挑选的视频的前几条热门评论；优先大肥鱼、投喂、大米饭等玩梗。默认关闭。',
+            on: Boolean(cfg?.commentWatchTop),
+            onChange: v => patch({commentWatchTop:v}, '主动参与热门评论'),
+          }),
+          (cfg?.commentWatchReplies || cfg?.commentWatchTop) ? h('div', {'data-bd-sub':''},
+            cfg?.commentWatchTop ? h('div',null,
+              h('div',{'data-bd-row':''},
+                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每个视频查看前几条热评')),
+                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:20,
+                  value:commentTopCount ?? '',onChange:e=>setCommentTopCount(e.target.value),
+                  onBlur:()=>{const n=Math.max(1,Math.min(20,Number(commentTopCount)||5));setCommentTopCount(String(n));patch({commentTopCount:n},'查看热门评论数量')}})),
+              h('div',{'data-bd-row':''},
+                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每轮查看最近几个视频')),
+                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:6,
+                  value:commentTopVideoCount ?? '',onChange:e=>setCommentTopVideoCount(e.target.value),
+                  onBlur:()=>{const n=Math.max(1,Math.min(6,Number(commentTopVideoCount)||3));setCommentTopVideoCount(String(n));patch({commentTopVideoCount:n},'检查视频数')}})),
+              h(ToggleRow,{label:'也允许回复其他有趣的热门评论',
+                note:'关闭时仅尝试回应提到大肥鱼/鲸鱼/投喂等的热评；开启会增加 AI Token 消耗。',
+                on:Boolean(cfg?.commentAllowGeneralTop),
+                onChange:v=>patch({commentAllowGeneralTop:v},'热门评论拓展互动')})) : null,
+            h('div',{'data-bd-row':''},
+              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每轮最多回复评论')),
+              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:5,
+                value:commentReplyPerPoll ?? '',onChange:e=>setCommentReplyPerPoll(e.target.value),
+                onBlur:()=>{const n=Math.max(1,Math.min(5,Number(commentReplyPerPoll)||1));setCommentReplyPerPoll(String(n));patch({commentReplyPerPoll:n},'每轮评论回复限制')}})),
+            h('div',{'data-bd-row':''},
+              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'近24小时最多自动回复评论')),
+              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:30,
+                value:commentReplyPerDay ?? '',onChange:e=>setCommentReplyPerDay(e.target.value),
+                onBlur:()=>{const n=Math.max(1,Math.min(30,Number(commentReplyPerDay)||5));setCommentReplyPerDay(String(n));patch({commentReplyPerDay:n},'每日评论回复限制')}})),
+            h('div',{'data-bd-note':''},'互动状态：',st.commentInteractStatus?.lastError ? '错误：'+st.commentInteractStatus.lastError :
+              st.commentInteractStatus?.lastPollAt ? '上次检查 '+new Date(st.commentInteractStatus.lastPollAt).toLocaleString() : '等待检查'),
+            h('div',{'data-bd-note':''},'不会强制每轮发评论；无值得回应的内容就不回复。')) : null,
           h(ToggleRow, {
             label: '本地转写没字幕的视频',
             note: '默认关；开了以后，没字幕的视频会在本机转写一遍（不花 API 钱）',

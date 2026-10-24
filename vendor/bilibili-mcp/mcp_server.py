@@ -358,6 +358,7 @@ async def bili_comments(bvid: str, num: int = 30) -> str:
                 content = r.get("content", {})
                 c = {
                     "rpid": r.get("rpid", 0),
+                    "mid": member.get("mid", 0),
                     "user": member.get("uname", ""),
                     "content": content.get("message", ""),
                     "like": r.get("like", 0),
@@ -521,7 +522,7 @@ async def bili_video_info(bvid: str) -> str:
 # ========== Tool 6: 回复评论 ==========
 
 @tool()
-async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0) -> str:
+async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: int = 0) -> str:
     """
     在B站视频下发表评论或回复某条评论
 
@@ -537,9 +538,10 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0) -> str:
     _deny = _guard("bili_reply")
     if _deny: return _deny
     cred = get_cred()
-    v = video.Video(bvid=bvid, credential=cred)
-    info = await v.get_info()
-    aid = info["aid"]
+    if not aid:
+        v = video.Video(bvid=bvid, credential=cred)
+        info = await v.get_info()
+        aid = info["aid"]
 
     try:
         if rpid == 0:

@@ -37,6 +37,9 @@ import { ensureUv } from './lib/uvfetch.mjs'
 import { createDmAutoReply } from './lib/dm-autoreply.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
+import { createCommentInteract } from './lib/comment-interact.mjs'
+import { createInteractionBatcher } from './lib/interaction-batch.mjs'
+import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 
 export const name = 'bili-scroll'
 export const inject = ['webServer', 'tools', 'settings']
@@ -101,6 +104,15 @@ export const Config = !z ? undefined : z.object({
   /** 需要明确开启：非白名单首次私信只自动回复一条欢迎消息 */
   dmStrangerOnce: z.boolean().default(false).extra('volatile', true),
   dmStrangerText: z.string().default('你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。').extra('volatile', true),
+  dmStrangerMaxReplies: z.natural().default(1).extra('volatile', true),
+  dmStrangerFirstFixed: z.boolean().default(true).extra('volatile', true),
+  commentWatchReplies: z.boolean().default(false).extra('volatile', true),
+  commentWatchTop: z.boolean().default(false).extra('volatile', true),
+  commentTopCount: z.natural().default(5).extra('volatile', true),
+  commentTopVideoCount: z.natural().default(3).extra('volatile', true),
+  commentAllowGeneralTop: z.boolean().default(false).extra('volatile', true),
+  commentReplyPerPoll: z.natural().default(1).extra('volatile', true),
+  commentReplyPerDay: z.natural().default(5).extra('volatile', true),
   workspace: z.string().default('').extra('volatile', true),
   /** 日报形态：full=完整（现状）· brief=每条一两行 · off=不写报告（只发评论） */
   reportLevel: z.string().default('full').extra('volatile', true),
@@ -245,7 +257,9 @@ function reportMeta() {
    */
   const DEFAULTS = {
     dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0,
-    dmWhitelist: '', dmStrangerOnce: false,
+    dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
+    commentWatchReplies: false, commentWatchTop: false, commentTopCount: 5, commentTopVideoCount: 3,
+    commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: '',
     perDay: 50, pickPerRound: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
@@ -290,6 +304,12 @@ function reportMeta() {
     if ('dmWhitelist' in p) p.dmWhitelist = String(p.dmWhitelist || '').slice(0, 2500)
     if ('dmStrangerOnce' in p) p.dmStrangerOnce = p.dmStrangerOnce === true
     if ('dmStrangerText' in p) p.dmStrangerText = String(p.dmStrangerText || '').slice(0, 450)
+    if ('dmStrangerMaxReplies' in p) p.dmStrangerMaxReplies = Math.max(1, Math.min(20, Math.floor(Number(p.dmStrangerMaxReplies) || 1)))
+    if ('dmStrangerFirstFixed' in p) p.dmStrangerFirstFixed = p.dmStrangerFirstFixed === true
+    for (const k of ['commentWatchReplies', 'commentWatchTop', 'commentAllowGeneralTop']) if(k in p) p[k] = p[k] === true
+    for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,30,5]]) {
+      if(k in p) p[k] = Math.max(min, Math.min(max, Math.floor(Number(p[k]) || def)))
+    }
     if ('replyToComments' in p) p.replyToComments = Boolean(p.replyToComments)
     if ('replyPerRound' in p) p.replyPerRound = Math.max(1, Math.min(Number(p.replyPerRound) || 1, 10))
     if ('favFolderId' in p) p.favFolderId = Math.max(0, Math.floor(Number(p.favFolderId) || 0))
@@ -1093,7 +1113,7 @@ function reportMeta() {
           + `⚠️ 私信里**不要**写"本鱼 / 本鲸 / 主人 / 人家"那套；⚠️ 发完把"已私信"记进报告（**报告里**可以写口径）。`
           + (cfg.dmMode === 'both' ? `⚠️ 现在是 **both**：公开评论照发（走下面那一整套规矩），私信**另外**再发一条。` : '')
         : '')
-      + (cfg.replyToComments
+      + (cfg.replyToComments && !cfg.commentWatchReplies
       ? `回复评论：开着 —— 只回「直接回复到你那条评论下面的人」，回完记进报告；找不到你那条评论就跳过，别硬找。`
         + `\n⭐ 条数规矩（2026-10-22 主人定）：**别人**每轮最多回 ${Number(cfg.replyPerRound) || 1} 条；**主人本人（uid=${Number(cfg.dmOwnerUid) || Number(cfg.dmUid) || dmUidCache || '没填'}）不受条数限制**，他回你几次你就答几次；但**同一条评论只回一次**（别对同一句话重复回）。`
         : `回复评论：关着（一个字都不要回任何人 —— 有人回复你那条评论也不要理）。`)
@@ -1123,7 +1143,7 @@ function reportMeta() {
     // ⭐⭐ 2.0.4（第三方体检第 3 条）：**"只发私信"时评论通道必须硬关** —— 以前只看 autoComment，
     //    用户以前开过自动评论、后来切到"只私信"，那个 true 还在 config 里 ⇒ 评论工具照样下发 ✗
     const dmOnly = String(cfg.dmMode || '').trim() === 'only'
-    if (!dmOnly && (cfg.autoComment || cfg.replyToComments)) list.push('bili_reply')
+    if (!dmOnly && (cfg.autoComment || (cfg.replyToComments && !cfg.commentWatchReplies))) list.push('bili_reply')
     // ⭐ 2026-10-19（issue #25 / #16 的实证，做法参考社区 PR #37）：私信开着却忘了给 bili_send_message ⇒
     //   模型手里压根没有这只工具 ⇒ 表现成"开关也开了、这一轮也跑了，但从来没发出去过" ✗
     //   ⇒ dmMode 不是 off、且填了收件人 UID 才放进去（关着就不给，白名单别松）
@@ -1399,6 +1419,7 @@ function reportMeta() {
     return {
       enabled: cfg.dmWatch === true,
       strangerEnabled: cfg.dmStrangerOnce === true,
+      strangerMaxReplies: cfg.dmStrangerMaxReplies, strangerFirstFixed: cfg.dmStrangerFirstFixed,
       whitelist: [...allow], strangerText: cfg.dmStrangerText,
       intervalMinutes: cfg.dmWatchMinutes,
       maxPerPoll: 3, maxPerHour: 40,
@@ -1449,14 +1470,14 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
 请直接回复最后一条消息：${JSON.stringify(String(text || '').slice(0, 600))}`
   }
 
-  async function generateDmReply(request) {
+  async function invokeInteractionPrompt(promptText, maxChars = 450) {
     refreshCfg()
     const dsh = resolveDsh()
     if (dsh.missing) throw new Error('DSH 命令不可用：' + dsh.hint)
     // 专用 overlay 只保留账号模型相关配置，不给私信 Agent 装载 B站 MCP 发送工具。
     const overlay = ensureOverlay(true)
     if (!overlay) throw new Error('生成私信专用 DSH overlay 失败')
-    const args = [...dsh.args, '--profile', cfg.headlessProfile || 'headless', '--patch', overlay, dmChatPrompt(request)]
+    const args = [...dsh.args, '--profile', cfg.headlessProfile || 'headless', '--patch', overlay, promptText]
     return new Promise((resolve, reject) => {
       const child = spawn(dsh.command, args, {
         cwd: stateDir, shell: dsh.shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
@@ -1480,19 +1501,25 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       child.on('error', (e) => finish(e))
       child.on('close', (code) => {
         if (code !== 0) return finish(new Error('DSH 回复生成失败（exit=' + code + '）：' + err.slice(-250)))
-        const answer = out.trim().replace(/^```(?:text)?\s*|\s*```$/g, '').trim().slice(0, 450)
+        const answer = out.trim().slice(0, maxChars)
         if (!answer) return finish(new Error('DSH 返回空私信回复'))
         finish(null, answer)
       })
     })
   }
 
+  const interactionBatcher = createInteractionBatcher({
+    invoke: (prompt) => invokeInteractionPrompt(prompt, 24000),
+    getPersona: () => String(cfg.personaPrompt || ''),
+    logger: {warn: (msg) => log('互动 AI：' + msg)},
+  })
+
   const dmAutoreply = createDmAutoReply({
     dataDir: stateDir,
     getConfig: dmConfig,
     selfUid: () => String(dmCred(stateDir)?.dedeuserid || ''),
     fetchIncoming: getNewDmMessages,
-    generateReply: generateDmReply,
+    generateReply: (req) => interactionBatcher.generate({kind:'dm', ...req}),
     send: async ({ uid, text }) => {
       const result = await call('bili_send_message', { receiver_uid: Number(uid), text: String(text).slice(0, 450) })
       if (result?.success === true) return { ok: true }
@@ -1503,12 +1530,48 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       error: (msg) => log('私信自动回复错误：' + String(msg)),
     },
   })
+  const commentInteract = createCommentInteract({
+    dataDir: stateDir,
+    selfUid: () => String(dmCred(stateDir)?.dedeuserid || ''),
+    getConfig: () => {
+      refreshCfg()
+      return {
+        watchReplies: cfg.commentWatchReplies === true,
+        watchTop: cfg.commentWatchTop === true,
+        topCount: cfg.commentTopCount, topVideoCount: cfg.commentTopVideoCount,
+        replyPerPoll: cfg.commentReplyPerPoll, replyPerDay: cfg.commentReplyPerDay,
+        allowGeneralTop: cfg.commentAllowGeneralTop === true,
+      }
+    },
+    getNotifications: () => call('bili_received_replies', {}),
+    getVideos: async () => {
+      // 只看最近7天筛选过的视频，绝不去任意视频批量搭讪。
+      const cutoff = dayKey(new Date(Date.now()-7*86400_000))
+      return [...new Set(parseSeenTable().filter(x => x.day >= cutoff && (x.picked || x.delivered)).map(x => x.bvid))]
+    },
+    getComments: (bvid, num) => call('bili_comments', {bvid, num}),
+    generateReply: (req) => interactionBatcher.generate(req),
+    send: async (req) => {
+      // 后台独立发送，受评论互动专用开关保护，不使用 model 的 force 绕过公开评论安全闸。
+      refreshCfg()
+      if (!(cfg.commentWatchReplies || cfg.commentWatchTop)) return {ok:false,error:'后台评论回复已关闭'}
+      const r = await call('bili_reply', {bvid: req.bvid || '', aid: Number(req.aid)||0,
+        rpid: Number(req.rpid), root: Number(req.root)||0, text:String(req.text).slice(0,130)})
+      return r?.success === true ? {ok:true} : {ok:false,error:String(r?.error||r?.message||'评论未确认成功')}
+    },
+    logger: {warn: (msg) => log('评论互动警告：'+msg),error:(msg)=>log('评论互动错误：'+msg)},
+  })
+  const interactionScheduler = createInteractionScheduler({
+    dm: dmAutoreply, comments: commentInteract,
+    getConfig: () => {refreshCfg();return cfg},
+    logger: {error:(msg)=>log(msg)},
+  })
   try { MIG_200() } catch (e) { log('迁移没跑：' + String(e?.message ?? e)) }
   try {
-    dmAutoreply.start()
-    log('Plus 私信后台监听已启动（每分钟配置动态生效；首次启动只记录已有私信，不追发）')
-  } catch (e) { log('私信监听启动失败：' + String(e?.message ?? e)) }
-  ctx.effect(() => () => dmAutoreply.stop(), 'bili-duty: Plus 私信监听')
+    interactionScheduler.start()
+    log('Plus 统一互动后台已启动（私信/评论共用调度与 AI 生成队列，评论默认关闭）')
+  } catch (e) { log('统一互动后台启动失败：' + String(e?.message ?? e)) }
+  ctx.effect(() => () => {interactionScheduler.stop();interactionBatcher.stop()}, 'bili-duty: Plus 统一互动')
 
   // ⭐ 2.0.4：插件被卸载/宿主退出时，把还在跑的那一轮一起收掉（以前它会变孤儿进程）
   ctx.effect(() => () => {
@@ -2060,6 +2123,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       missingDeps: (() => { try { return missingVenvDeps() } catch { return [] } })(),
       dmUidResolved: Number(cfg.dmUid) || dmUidCache || 0,
       dmAutoReplyStatus: dmAutoreply.status(),
+      commentInteractStatus: commentInteract.status(),
+      interactionSchedulerStatus: interactionScheduler.status(),
       // ⭐ 人设：老用户（只填过工作区）可以一键导入他那份 AGENTS.md
       personaFromWs: (() => {
         if (String(cfg.personaPrompt || '').trim()) return ''
@@ -2144,7 +2209,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const patch = {}
       for (const k of ['perDay', 'pickPerRound', 'peakValley', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
         'commentPerRound', 'mentionName', 'dmMode', 'dmUid',
-        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'replyToComments', 'replyPerRound', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText']) {
+        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'replyToComments', 'replyPerRound', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed',
+        'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，
