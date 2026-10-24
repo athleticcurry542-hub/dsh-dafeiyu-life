@@ -1,4 +1,15 @@
-# dsh-bili-scroll ｜ 刷B站
+# dsh-bili-scroll-plus ｜ 刷B站 Plus
+
+## 项目来源与维护
+
+**本项目是独立维护的 Plus 衍生版本，不是原作者发布的官方版本。**
+
+- **原项目**：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，感谢原作者 [@c1overzz](https://github.com/c1overzz) 的开源贡献。
+- **Plus 版本**：[minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)，独立维护、独立发布；问题反馈请前往 [Plus Issues](https://github.com/minedalang/dsh-bili-scroll-plus/issues)。
+- **版权及授权**：基于原项目的 MIT 许可进行二次开发，保留原项目的 `LICENSE`、既有版权声明及第三方署名；详见 `LICENSE`、`NOTICE.md` 和 `CONTRIBUTORS.md`。
+
+请勿将 Plus 版的安装、更新或 Bug 反馈链接与原版混用；两个版本暂不建议在同一 DSH profile 中同时启用。
+
 
 > **先看三行**
 > - 需要 **dsh ≥ `0.1.7-rc.1`**（本机是 `0.1.7-rc.2`）。⚠️ 版本不满足时，**内核会静默跳过这个插件** —— 装了跟没装一样，不会报错。
@@ -10,7 +21,7 @@
 >   另有用户反馈桌面版上「自动跑那一轮会卡住」—— 卡住就先只用设置页的「**现在跑一轮**」手动跑（那条稳）。
 >
 > ⚠️ **装的是旧版吗？** 如果设置页里那个按钮写的是「**重装依赖**」（而不是「**重装主依赖**」），说明你装的是 0.1.0 ——
-> 跑一次 `dsh plugin --profile web add dsh-bili-scroll` 升级就好（那一版建 Python 环境时缺一个参数，
+> 跑一次 `dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus` 升级就好（那一版建 Python 环境时缺一个参数，
 > 依赖装不上、二维码也画不出来，重装多少次都一样）。
 
 > 🎬 演示视频：**https://www.bilibili.com/video/BV1d8pU6xEZX/**　·　💬 交流群（QQ）：**1128547307**
@@ -43,25 +54,25 @@
 > ⚠️ 万一它自己也下不动（有用户反馈桌面版上这条链路经常不通）：**手动放一份 `uv.exe` 到 `<家目录>\bin\`** 就行 ——
 > 插件会**用那一份、跳过下载**（你的 `PATH` 里本来就有 `uv` 的话，它直接用那个）。
 
-## 装
+## 安装（Plus 版）
 
-
-> 🔴 **先看这条：npm 上还是旧版（0.1.7），别用 `add dsh-bili-scroll` 装。**
-> 我们的 npm 发布账号还在申诉里（工单 4880295），2026-10-17 之后的新版本**只能**从下面两条装。
+目前以 **GitHub 源码安装** 为主：
 
 ```bash
-# ⭐ 首选：Release 里的 tgz 直链（不需要 git，也不会被 pnpm 拦构建脚本）
-dsh plugin --profile web add https://github.com/c1overzz/dsh-bili-scroll/releases/download/v2.0.2/dsh-bili-scroll-2.0.2.tgz
+# Web profile
+dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus
 
-# 备选：git 方式（需要机器上装了 git；pnpm 10 可能拦它的构建脚本）
-dsh plugin --profile web add github:c1overzz/dsh-bili-scroll
+# Desktop profile（使用桌面版时）
+dsh plugin --profile desktop add github:minedalang/dsh-bili-scroll-plus
 ```
 
-> 连不上 github 的话，在链接前面加镜像：`https://gh-proxy.com/`（实测可用，返回的是同一个文件）。
-> 版本号那一节会变，最新的下载地址在 **Releases** 页（`…/releases/latest`）。
-（⭐ 最省事的一条：把仓库链接贴给你自己的 dsh，说「**帮我装这个插件**」，它会自己装。）
+> GitHub 源码安装通常需要本机有 Git；若遇到 pnpm 的构建脚本拦截，请按 DSH 的提示批准后重试。安装后必须重启 DSH。
 
-⚠️ 装完**必须重启一次 dsh**（bundle 层要重启才组装）。然后进 **设置 → 刷B站**。
+- **GitHub Releases（独立发布）**：[Plus Releases](https://github.com/minedalang/dsh-bili-scroll-plus/releases)。创建 `v<package.json 中的 version>` 标签并完成 Release 后，才会有对应 `.tgz` 附件；**在发布前不要使用或传播尚不存在的下载直链**。
+- **npm（备用渠道）**：计划使用与原版不同的包名 `dsh-bili-scroll-plus`。只有确认 Plus 包已真正发布到 npm 后，才使用 `dsh plugin --profile web add dsh-bili-scroll-plus`；原版的 `dsh-bili-scroll` 不是 Plus 版。
+- **源码 / Issue**：https://github.com/minedalang/dsh-bili-scroll-plus · https://github.com/minedalang/dsh-bili-scroll-plus/issues
+
+⚠️ 升级时也应使用 Plus 的仓库或对应 Release，切勿使用 `c1overzz/dsh-bili-scroll` 的包作为 Plus 升级来源。
 
 ## 装不上 / 卡住时，先看这五条（都是用户实测撞过的）
 
@@ -77,7 +88,7 @@ dsh plugin --profile web add github:c1overzz/dsh-bili-scroll
 5. ⭐ **桌面版：装完设置页里根本不出现「刷B站」，日志只有一句 `1 entry did not activate … failed to import`** ——
    这是 0.1.3 及以前在桌面版上的一个真 bug：插件宿主半 import 的两个包是 *optional peer*，
    而桌面版 profile（`autoInstallPeers: false`）**不会装它们** ⇒ 插件整条不激活。
-   **0.1.4 起已修**（不再裸 import 那两个包）。⇒ 升级一次就好：`dsh plugin --profile desktop add dsh-bili-scroll`。
+   **0.1.4 起已修**（不再裸 import 那两个包）。⇒ 升级一次就好：`dsh plugin --profile desktop add github:minedalang/dsh-bili-scroll-plus`。
    ⚠️ 我们自己也只在 **npm 0.1.7-rc.x + web profile** 上实测过；桌面版这条路靠用户反馈修好的 ——
    装完还是不行的话，把 `duty.log` 里那几行发来（里面会写清楚"宿主依赖是从哪儿取的"）。
 
@@ -145,7 +156,7 @@ dsh plugin --profile web add github:c1overzz/dsh-bili-scroll
 
 ## 路线图
 
-- **2.0.0（当前）**：私信投递默认 · 私信双向 · 「它刷过的视频」列表（档位/筛选/分页/卡片墙）· 人设提示词框 · 诊断与自检 · 每条视频一份笔记 · 设置页四页签
+- **2.0.0（原版功能里程碑，Plus 当前版本见 package.json）**：私信投递默认 · 私信双向 · 「它刷过的视频」列表（档位/筛选/分页/卡片墙）· 人设提示词框 · 诊断与自检 · 每条视频一份笔记 · 设置页四页签
 - **下一步**：用 JS 重写 search / subtitle / comments / reply ⇒ **不再需要 Python**（零安装）· 手机窄屏入口 · 「停掉这一轮」按钮
 
 ## 许可证
@@ -154,15 +165,6 @@ MIT（内置的 `vendor/bilibili-mcp/` 另见该目录下的 LICENSE）
 
 ## 交流与反馈
 
-- **遇到问题先去群里问一句** —— 安装、报错、设置这些，群里大多有人踩过；比自己从头试快得多。
-  - **QQ 交流群：1128547307**
-- **确实像 bug 的**（能复现、有报错原文），欢迎开 [Issue](https://github.com/c1overzz/dsh-bili-scroll/issues/new)：
-  请带上 **dsh 版本 / 插件版本（设置页顶部徽章）/ 系统（web 还是桌面版）/ 报错原文或 `duty.log` 最后几十行**。
-  有这个我基本一轮就能定位；只说"装不上"，通常要来回问三四次。
-- **想改进它**：欢迎 PR。⚠️ 但请**一件事一个 PR**（不要一个 PR 塞五个功能），
-  这样我能独立合并、出问题也好回滚。
-- **二次分发 / 二创**：本仓库是 **MIT**，允许改、允许再发、允许商用，**保留 `LICENSE` 里的版权行和 MIT 正文**即可；
-  提一句"基于 dsh-bili-scroll 改的"就更好了。第三方代码与署名见 [NOTICE.md](NOTICE.md)。
-- **演示视频**：<https://www.bilibili.com/video/BV1d8pU6xEZX/>
-
-*反馈请不要去打扰素材作者（上善 / ZipZipPipe 等），他们只管角色形象，不管这个插件。*
+- **Plus 版问题 / 功能建议 / PR**：请到 [minedalang/dsh-bili-scroll-plus Issues](https://github.com/minedalang/dsh-bili-scroll-plus/issues)；提交时带上 DSH 版本、Plus 包版本、运行平台与错误日志。
+- **上游原项目、原作者及历史演示**：[https://github.com/c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)。原版 README 中的演示视频、QQ 群及相关沟通方式属于原项目，不代表 Plus 维护渠道。
+- **版权与第三方致谢**：参见 [LICENSE](./LICENSE)、[NOTICE.md](./NOTICE.md)、[CONTRIBUTORS.md](./CONTRIBUTORS.md)。

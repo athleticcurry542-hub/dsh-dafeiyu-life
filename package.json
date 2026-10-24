@@ -1,18 +1,24 @@
 {
-  "name": "dsh-bili-scroll",
+  "name": "dsh-bili-scroll-plus",
   "version": "2.0.4",
-  "description": "DSH 插件：每天替你刷一轮 B站 —— 读字幕挑出值得的、写一份日报，值得的就 @ 你",
+  "description": "DSH 刷B站 Plus：基于 c1overzz/dsh-bili-scroll 的独立维护版本",
   "keywords": [
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
     "bilibili",
     "mcp",
-    "duty"
+    "duty",
+    "plus"
   ],
-  "repository": { "type": "git", "url": "git+https://github.com/c1overzz/dsh-bili-scroll.git" },
-  "homepage": "https://github.com/c1overzz/dsh-bili-scroll#readme",
-  "bugs": { "url": "https://github.com/c1overzz/dsh-bili-scroll/issues" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minedalang/dsh-bili-scroll-plus.git"
+  },
+  "homepage": "https://github.com/minedalang/dsh-bili-scroll-plus#readme",
+  "bugs": {
+    "url": "https://github.com/minedalang/dsh-bili-scroll-plus/issues"
+  },
   "license": "MIT",
   "type": "module",
   "main": "index.js",

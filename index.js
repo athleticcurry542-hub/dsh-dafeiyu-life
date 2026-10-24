@@ -1,5 +1,5 @@
 /**
- * dsh-bili-scroll —— host 半端
+ * dsh-bili-scroll-plus —— host 半端
  * ============================================================================
  * 它是什么：每天替你刷一轮 B站 的插件版。
  *   1. **插件内部起那份 Python MCP**（`vendor/bilibili-mcp/mcp_server.py`），把它的能力
@@ -756,31 +756,31 @@ function reportMeta() {
     return st.day === dayKey(now) ? Number(st.count || 0) : 0
   }
 
-  // ⭐ 一键升级：由宿主自己跑 `dsh plugin --profile web add dsh-bili-scroll`
+  // ⭐ 一键升级：由宿主自己跑 `dsh plugin --profile web add dsh-bili-scroll-plus`
   //    ⚠️ 装完必须重启 dsh 才生效；⚠️ Windows 上"替换正在运行的插件"可能被文件占用挡住（我们踩过）
   let upgrading = false
-  let lastUpdateSource = 'npm'   // 上一次「检查更新」是从哪儿查到新版的：npm / github（一键升级按它选装法）
+  let lastUpdateSource = 'github'   // 上一次「检查更新」是从哪儿查到新版的：npm / github（一键升级按它选装法）
   let ghUpdateCache = null
   const runUpgrade = () => {
     if (upgrading) return { ok: true, busy: true, log: installLogFile, hint: '正在升级，别重复点' }
     upgrading = true
-    let spec = lastUpdateSource === 'github' ? 'github:c1overzz/dsh-bili-scroll' : 'dsh-bili-scroll'
+    let spec = lastUpdateSource === 'github' ? 'github:minedalang/dsh-bili-scroll-plus' : 'dsh-bili-scroll-plus'
     ;(async () => {
       try {
       // ⭐ 2026-10-22（用户实证）：没装 git 的机器上 `add github:` 必失败（pnpm 要调 git ls-remote）
       //    ⇒ 从 GitHub 升级时**直接取 Release 里的 tgz 直链**，https 下载，不需要 git ✓
       if (lastUpdateSource === 'github') {
         try {
-          const rr = await fetch('https://api.github.com/repos/c1overzz/dsh-bili-scroll/releases/latest', {
+          const rr = await fetch('https://api.github.com/repos/minedalang/dsh-bili-scroll-plus/releases/latest', {
             signal: AbortSignal.timeout(8000),
-            headers: { 'user-agent': 'dsh-bili-scroll', accept: 'application/vnd.github+json' },
+            headers: { 'user-agent': 'dsh-bili-scroll-plus', accept: 'application/vnd.github+json' },
           })
           if (rr.ok) {
             const jj = await rr.json()
             const tag = String(jj.tag_name || '').trim()
             const ver = tag.replace(/^v/, '')
             if (ver && ver !== myVersion()) {
-              const url = 'https://github.com/c1overzz/dsh-bili-scroll/releases/download/' + tag + '/dsh-bili-scroll-' + ver + '.tgz'
+              const url = 'https://github.com/minedalang/dsh-bili-scroll-plus/releases/download/' + tag + '/dsh-bili-scroll-plus-' + ver + '.tgz'
               spec = url
               appendInstall('（用 Release 的 tgz 直链：' + url + '）\n')
             }
@@ -794,7 +794,7 @@ function reportMeta() {
         // ⚠️ 2026-10-19：找不到 dsh 时不再硬跑，直接把要做的事说清楚
         if (dsh.missing) {
           appendInstall('=== 没法自动升级：找不到 dsh。' + dsh.hint + ' ===\n')
-          appendInstall('=== 也可以自己手动跑一次：dsh plugin --profile web add dsh-bili-scroll ===\n')
+          appendInstall('=== 也可以自己手动跑一次：dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus ===\n')
           upgrading = false
           return
         }
@@ -804,7 +804,7 @@ function reportMeta() {
         appendInstall('$ ' + cmd + ' ' + args.join(' ') + '\n')
         const code = await spawnTo(cmd, args, { sink: appendInstall })
         if (code === 0) appendInstall('=== 升级完成 —— 重启一次 dsh 才生效 ===\n')
-        else appendInstall('=== 升级没成功（exit ' + code + '）。可以自己手动跑一次：dsh plugin --profile web add dsh-bili-scroll ===\n')
+        else appendInstall('=== 升级没成功（exit ' + code + '）。可以自己手动跑一次：dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus ===\n')
       } catch (e) { appendInstall('升级崩了：' + (e?.stack ?? e) + '\n') } finally { upgrading = false }
     })()
     return { ok: true, started: true, log: installLogFile, hint: '正在升级 —— 完成后重启一次 dsh 才生效' }
@@ -2322,9 +2322,9 @@ function reportMeta() {
     // 「检查更新」：⚠️ 只在用户点按钮时才联网（不偷偷发请求 ✓），结果缓存一天 ✓
     // ⭐ 2026-10-19（主人："现在自动更新能让扫 github 吗"）：**两条源都问** ——
     //    npm 上可能还没发上去（账号被暂停时会停在旧版），那时候 GitHub 才是最新 ✓
-    //    ⇒ 谁给的版本号更新就用谁，并记住来源：一键升级按来源选 `add dsh-bili-scroll` / `add github:…` ✓
+    //    ⇒ 谁给的版本号更新就用谁，并记住来源：一键升级按来源选 `add dsh-bili-scroll-plus` / `add github:…` ✓
     if (req.method === 'GET' && path === '/api/bili-duty/update') {
-      const out = { ok: true, current: myVersion(), latest: '', hasNew: false, source: 'npm', page: 'https://www.npmjs.com/package/dsh-bili-scroll' }
+      const out = { ok: true, current: myVersion(), latest: '', hasNew: false, source: 'npm', page: 'https://www.npmjs.com/package/dsh-bili-scroll-plus' }
       // ⭐ 要比谁更新，不能只比不相等 —— 否则本地版本高于 npm 时会误报有新版
       // ⭐ 2026-10-20：预发布标签要单独看 —— 以前只比三段数字 ⇒ `0.2.0-rc.1` 被当成 [0,2,0]，
       //    跟正式版打平、却比 0.1.18 更大 ⇒ 用户会被提示"升级到 rc 版" ✗；现在数字段相同时**正式版 > 预发布版**
@@ -2343,7 +2343,7 @@ function reportMeta() {
       try {
         if (fresh(updateCache)) npmVer = updateCache.latest
         else {
-          const r = await fetch('https://registry.npmjs.org/dsh-bili-scroll/latest', { signal: AbortSignal.timeout(8000) })
+          const r = await fetch('https://registry.npmjs.org/dsh-bili-scroll-plus/latest', { signal: AbortSignal.timeout(8000) })
           const j = await r.json()
           npmVer = String(j.version || '')
           updateCache = { at: Date.now(), latest: npmVer }
@@ -2354,9 +2354,9 @@ function reportMeta() {
       try {
         if (fresh(ghUpdateCache)) ghVer = ghUpdateCache.latest
         else {
-          const r = await fetch('https://api.github.com/repos/c1overzz/dsh-bili-scroll/contents/package.json', {
+          const r = await fetch('https://api.github.com/repos/minedalang/dsh-bili-scroll-plus/contents/package.json', {
             signal: AbortSignal.timeout(6000),
-            headers: { 'user-agent': 'dsh-bili-scroll', accept: 'application/vnd.github+json' },
+            headers: { 'user-agent': 'dsh-bili-scroll-plus', accept: 'application/vnd.github+json' },
           })
           if (r.ok) {
             const j = await r.json()
@@ -2369,7 +2369,7 @@ function reportMeta() {
       // 谁新用谁；一样新时优先 npm（装起来快）
       if (ghVer && (!npmVer || cmp(ghVer, npmVer) > 0)) { out.latest = ghVer; out.source = 'github' }
       else out.latest = npmVer || ghVer
-      if (out.source === 'github') out.page = 'https://github.com/c1overzz/dsh-bili-scroll'
+      if (out.source === 'github') out.page = 'https://github.com/minedalang/dsh-bili-scroll-plus'
       out.hasNew = Boolean(out.latest) && cmp(out.latest, out.current) > 0
       lastUpdateSource = out.source
       if (!out.latest) { out.ok = false; out.error = '两条源都没查到版本号（网络可能不通）' }

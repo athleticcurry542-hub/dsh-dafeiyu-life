@@ -1,5 +1,5 @@
 /**
- * dsh-bili-scroll —— 浏览器半端（**设置在「设置」里的一页**）
+ * dsh-bili-scroll-plus —— 浏览器半端（**设置在「设置」里的一页**）
  * ============================================================================
  * ⭐ **client bundle 不是 ESM，是自注册脚本**（2026-10-14 从官方包里挖到的约定）：
  *
@@ -26,7 +26,7 @@
  * ============================================================================
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-bili-scroll',
+  id: 'dsh-bili-scroll-plus',
   factory: (require) => {
     const React = require('react')
     const h = React.createElement
@@ -521,7 +521,7 @@ function WatchTab() {
             ? '读不到插件配置（已经试了 ' + fails + ' 次）。常见原因有三个：装的还是 0.1.11 / 0.1.12（那两版有 bug，会卡在这里）；刚装完没重启 dsh；或者插件加载失败。'
             : '读设置中…'),
           fails >= 6 ? h('div', { 'data-bd-note': '' },
-            '可以先试：升级到最新版（dsh plugin --profile web add github:c1overzz/dsh-bili-scroll）→ 重启 dsh；还不行就把 ' +
+            '可以先试：升级到最新版（dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus）→ 重启 dsh；还不行就把 ' +
             '%USERPROFILE%\\.dsh\\bili-duty\\duty.log 的最后几十行发给作者。') : null)
       }
 
@@ -807,10 +807,10 @@ function WatchTab() {
       inject: ['slots'],
       apply(ctx) {
         const style = document.createElement('style')
-        style.setAttribute('data-plugin-css', 'dsh-bili-scroll')
+        style.setAttribute('data-plugin-css', 'dsh-bili-scroll-plus')
         style.textContent = CSS
         document.head.appendChild(style)
-        ctx.effect(() => () => style.remove(), 'dsh-bili-scroll: 设置页样式')
+        ctx.effect(() => () => style.remove(), 'dsh-bili-scroll-plus: 设置页样式')
 
         // ⭐ 进「设置」：label 就是左侧导航里那一项（抄 dsh-meme 的写法）
         const slots = (typeof ctx.get === 'function' ? ctx.get('slots') : undefined) || ctx.slots

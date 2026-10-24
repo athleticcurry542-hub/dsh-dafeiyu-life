@@ -1,6 +1,6 @@
 # 给 AI 助手看的（本仓库 = 一个 DSH 插件）
 
-`dsh-bili-scroll`（中文名「**刷B站**」）：每天替用户刷一轮 B 站 —— 搜、**读字幕原文**判断、写一份日报，特别值得的会发一条评论 **@ 用户**。
+`dsh-bili-scroll-plus`（中文名「**刷B站**」）：每天替用户刷一轮 B 站 —— 搜、**读字幕原文**判断、写一份日报，特别值得的会发一条评论 **@ 用户**。
 
 ## 帮用户安装时，按这个顺序
 
@@ -11,7 +11,7 @@
    · ⚠️ 若用户机器上的**杀软拦了这次下载**：让他把 `%USERPROFILE%\.dsh\bili-duty\bin\` 加白，或干脆自己装 uv / Python 3.10+ ✓
    · ⭐ **万一下载链路都不通**（有用户反馈"桌面版上这条链路经常不通"）：**手动放一份 `uv.exe` 到 `<家目录>\bin\` 就行**
      —— 插件会**用那一份、跳过下载** ✓（他 `PATH` 里本来就有 `uv` 的话，直接用那个 ✓）
-2. `dsh plugin --profile web add dsh-bili-scroll`（npm，推荐）
+  2. `dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus`（Plus 版唯一推荐安装源；Plus npm `dsh-bili-scroll-plus` 未独立发布前不可使用，严禁退回原版包）。
    · 备选：`dsh plugin --profile web add github:c1overzz/dsh-bili-scroll`
    · ⚠️ **升级旧版**：如果用户在设置页看到的按钮叫「**重装依赖**」（不是「**重装主依赖**」），
      说明装的还是 **0.1.0** —— 那一版建 Python 环境时缺一个参数，**依赖装不上、二维码也画不出来**。
@@ -53,3 +53,10 @@
 
 - 配置与运行数据都在用户的 `$DSH_HOME/bili-duty/`，**不写进插件包目录**
 - 谷时窗口按 DeepSeek 官方口径：工作日 9–12 / 14–18 是高峰，其余（含周末）都是谷时
+
+## 分支来源与发布纪律
+
+- 当前独立维护版：https://github.com/minedalang/dsh-bili-scroll-plus，npm 包名 `dsh-bili-scroll-plus`；宿主挂载清单中的 `name` 必须同包名一致。
+- 原作者 / 原仓库：https://github.com/c1overzz/dsh-bili-scroll。保留原项目 MIT 版权、第三方署名，不将 Plus 说成官方版本。
+- GitHub Releases 发布 `dsh-bili-scroll-plus-<version>.tgz`，插件自动升级必须查询 **Plus** Releases；未发布 npm 前，不引导用户安装 npm 包。
+- `bili-scroll` 原 Cordis 插件 id 和 `bili-duty` 用户数据目录暂不改动，以防破坏旧设置。不要在同一 profile 同时启用原版与 Plus。

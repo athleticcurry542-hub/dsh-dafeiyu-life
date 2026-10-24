@@ -1,0 +1,40 @@
+name: GitHub Release (Plus)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          test "${GITHUB_REF_NAME}" = "v$(node -p "require('./package.json').version")" || {
+            echo 'Git tag must equal v<package.json version>' >&2
+            exit 1
+          }
+          test "$(node -p "require('./package.json').name")" = 'dsh-bili-scroll-plus'
+      - name: Syntax checks
+        run: |
+          node --check index.js
+          node --check client.js
+          node --check selfcheck.mjs
+      - name: Pack installable npm archive
+        run: npm pack --ignore-scripts
+      - name: Publish independent Plus GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dsh-bili-scroll-plus-*.tgz
+          generate_release_notes: true
+          fail_on_unmatched_files: true
