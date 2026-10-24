@@ -262,6 +262,9 @@ function WatchTab() {
       const [dynamicDailyLimitDraft, setDynamicDailyLimitDraft] = React.useState(null)
       const [commentQuota, setCommentQuota] = React.useState(null)
       const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
+      const [memeMemory, setMemeMemory] = React.useState(null)
+      const [memeKeyword, setMemeKeyword] = React.useState('')
+      const [memeBusy, setMemeBusy] = React.useState(false)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
@@ -293,6 +296,24 @@ function WatchTab() {
         alive.current = false
         if (loginTimer.current) { clearInterval(loginTimer.current); loginTimer.current = null }
       }, [])
+
+      const loadMemeMemory = (q='') => jget('/meme-memory?q='+encodeURIComponent(q)).then(r => {
+        if(alive.current) setMemeMemory(r)
+      }).catch(() => {if(alive.current)setMemeMemory({ok:false})})
+      React.useEffect(() => {
+        if (tab !== 'taste') return
+        loadMemeMemory(memeKeyword)
+      }, [tab])
+      const deleteMeme = async (id) => {
+        setMemeBusy(true)
+        try {
+          const r=await jpost('/meme-memory/delete',{id})
+          if(!r?.ok) throw new Error(r?.error || '删除失败')
+          await loadMemeMemory(memeKeyword)
+          say('已删除这条梗记忆','good')
+        } catch(e) { say(String(e?.message||e),'warn') }
+        finally {setMemeBusy(false)}
+      }
 
       const cfg = st?.config
       React.useEffect(()=>{
@@ -971,6 +992,33 @@ function WatchTab() {
             st.asrTail ? h('div', null,
               h('div', { 'data-bd-note': '' }, st.asrInstalling ? '正在装转写依赖（进度）：' : '转写依赖的日志（末尾）—— 只有「没字幕的视频」用得到它：'),
               h('pre', { 'data-bd-pre': '' }, st.asrTail)) : null) : null),
+
+        /* ── 长期梗记忆：有来源、可查询、可删除，默认开启，不要求用户整理 JSON ── */
+        h('div', { 'data-bd-sec':'', 'data-bd-group':'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
+          h('div', { 'data-bd-h': '' }, '🧠 梗知识库 · 长期记忆'),
+          h(ToggleRow, {
+            label: '记住视频里的梗和角色',
+            note: '默认开启。跨轮记住文字梗、别名、出处 BV；不会重新识别已看过的画面，也不会额外调用 AI。关掉只暂停检索和写入，不删除历史。',
+            on: cfg.memeMemoryEnabled !== false,
+            onChange: v => patch({memeMemoryEnabled:v},'梗知识库'),
+          }),
+          h('div',{'data-bd-note':''}, '每条必须有视频文字证据；外观一律标记为「未识图」。AI 的猜测可能有误，你可以在这里删除。'),
+          h('div',{'data-bd-row':''},
+            h('input',{'data-bd-input':'',placeholder:'查梗名称，例如 奶蛙',value:memeKeyword,
+              onChange:e=>setMemeKeyword(e.target.value),onKeyDown:e=>{if(e.key==='Enter')loadMemeMemory(memeKeyword)}}),
+            h('button',{'data-bd-btn':'',onClick:()=>loadMemeMemory(memeKeyword)},'查询 / 刷新')),
+          h('div',{'data-bd-note':''},memeMemory?.ok
+            ? `已记住 ${memeMemory.total} 条 · 当前显示 ${memeMemory.entries?.length||0} 条（最多 30 条）`
+            : memeMemory ? '梗知识库暂时无法读取，可检查 Python 环境' : '加载中…'),
+          ...(memeMemory?.ok ? (memeMemory.entries||[]).map(x=>h('div',{'data-bd-item':'',key:'meme-'+x.id},
+            h('div',{'data-bd-item-body':''},
+              h('div',{'data-bd-item-t':''},x.name, x.aliases ? `（${x.aliases}）`:''),
+              h('div',{'data-bd-note':''},`类型：${x.kind} · ${x.confidence} · ${x.visual_status}`),
+              h('div',{'data-bd-item-why':''},x.meaning),
+              ...(x.sources||[]).slice(0,2).map(src=>h('div',{'data-bd-note':'',key:src.bvid},
+                `来自 ${src.bvid} · ${src.evidence_type}：${src.evidence}`)),
+              h('button',{'data-bd-btn':'',disabled:memeBusy,onClick:()=>deleteMeme(x.id)},'删除错误记忆')))) : []),
+        ),
 
         /* ── 关注什么 / 在哪儿刷 ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
