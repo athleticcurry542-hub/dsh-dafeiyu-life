@@ -41,6 +41,7 @@ import { createCommentInteract } from './lib/comment-interact.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
+import { shouldRunWindow } from './lib/peak-schedule.mjs'
 import { effectiveModelSelection } from './lib/model-routing.mjs'
 import { mergeWatchedRows } from './lib/watched.mjs'
 
@@ -64,6 +65,8 @@ export const Config = !z ? undefined : z.object({
   masterEnabled: z.boolean().default(true).extra('volatile', true),
   /** 峰谷自动刷（总开关） */
   peakValley: z.boolean().default(false).extra('volatile', true),
+  /** 峰谷窗口重复运行间隔；0=旧版每个窗口每天一轮，30–720=按分钟重复（不抢占正在运行的任务） */
+  peakIntervalMinutes: z.natural().default(0).extra('volatile', true),
   /** 峰谷子开关：中午 / 晚上 */
   noon: z.boolean().default(true).extra('volatile', true),
   night: z.boolean().default(true).extra('volatile', true),
@@ -283,7 +286,7 @@ function reportMeta() {
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: '',
-    perDay: 50, pickPerRound: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
+    perDay: 50, pickPerRound: 5, peakValley: false, peakIntervalMinutes: 0, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0, commentSyncDynamic: false, commentDailyLimit: 10,
     keywords: [], commentPerRound: 5, mentionName: '', mentionTargets: '', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
   }
@@ -319,6 +322,10 @@ function reportMeta() {
     if ('mentionMode' in p) p.mentionMode = ['off', 'ai', 'ai_select', 'always'].includes(String(p.mentionMode)) ? String(p.mentionMode) : 'ai'
     if ('perDay' in p) p.perDay = Math.max(0, Math.floor(Number(p.perDay) || 0))
     if ('pickPerRound' in p) p.pickPerRound = Math.max(1, Math.min(50, Math.floor(Number(p.pickPerRound) || 5)))
+    if ('peakIntervalMinutes' in p) {
+      const n = Math.floor(Number(p.peakIntervalMinutes) || 0)
+      p.peakIntervalMinutes = n <= 0 ? 0 : Math.max(30, Math.min(720, n))
+    }
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     for (const k of ['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort']) if(k in p) p[k]=String(p[k]||'').trim().slice(0,160).replace(/[\r\n\0]/g,'')
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
@@ -1145,6 +1152,7 @@ function reportMeta() {
           + `在 ai 或 ai_select 模式，每次调用 bili_reply 时显式填写 should_mention: true/false；在 ai_select 模式还要填写 mention_names（只填真正想邀请的名单内昵称，可为空/一个/几个），`
           + `大部分普通吐槽选 false。ai 模式触发时@名单全部好友；ai_select 仅@选中的好友；mention_position 可选 start/middle/end。`
           + `text 只写自然评论，不要手工附加 @ 昵称；发送工具负责插入。`
+          + `完成发表评论后，在日报备注一行 @ 决策状态（未选择 / 名单为空 / 提交了 @ 映射 / 仅正文 @）；如工具回执没有说明，不得猜测已通知。`
         : (dmModeEff === 'only'
           ? '关闭 —— 当前只私信，禁止公开评论'
           : '关闭（只写报告，不发公开评论）')}。`
@@ -1468,9 +1476,14 @@ function reportMeta() {
         if (!cfg[k]) continue
         if (!inWindow(now, WINDOWS[k])) continue
         const key = `${today}:${k}`
-        if (st.windows?.[key]) continue
-        bumpState({ windows: { ...(st.windows || {}), [key]: true }, count: roundsToday(now) + 1, lastRunAt: now.toISOString(), lastWhy: k })
-        runDuty(`window:${k}`)
+        const decision = shouldRunWindow({ now, windowKey: key, intervalMinutes: cfg.peakIntervalMinutes,
+          windows: st.windows, lastRunAt: st.lastRunAt })
+        if (!decision.allowed) continue
+        const started = runDuty(`window:${k}`)
+        // 🔒 只有成功拉起 Agent 才记录时段触发时间；当前正在跑/启动失败不会吞掉下一次机会。
+        if (!started?.started) { log(`谷时任务未启动（${decision.reason}）：${started?.error || started?.why || '忙碌'}`); return }
+        bumpState({ windows: { ...(st.windows || {}), [key]: true }, count: roundsToday(now) + 1,
+          lastRunAt: now.toISOString(), lastWhy: k })
         return
       }
     } catch (e) {
@@ -2317,7 +2330,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (req.method === 'POST' && path === '/api/bili-duty/config') {
       const body = await readBody(req)
       const patch = {}
-      for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
+      for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakIntervalMinutes', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
         'commentPerRound', 'mentionName', 'mentionTargets', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit',

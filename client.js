@@ -247,6 +247,7 @@ function WatchTab() {
       //    ⇒ 直接绑 cfg 的话，用户打字打到一半就被冲没了 ✗（2026-10-14 陌生人验收时抓到）
       const [perDay, setPerDay] = React.useState(null)
       const [pickPerRound, setPickPerRound] = React.useState(null)
+      const [peakIntervalDraft, setPeakIntervalDraft] = React.useState(null)
       const [perRound, setPerRound] = React.useState(null)
       const [dmUid, setDmUid] = React.useState(null)        // 私信收件人 UID（本地草稿）
       const [dmWatch, setDmWatch] = React.useState(null)          // 后台私信总开关
@@ -302,6 +303,7 @@ function WatchTab() {
         if (cfg && rl === null) setRl(cfg.reportLevel || 'full')
         if (cfg && perDay === null) setPerDay(String(cfg.perDay ?? 50))
         if (cfg && pickPerRound === null) setPickPerRound(String(cfg.pickPerRound ?? 5))
+        if (cfg && peakIntervalDraft === null) setPeakIntervalDraft(String(cfg.peakIntervalMinutes ?? 0))
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && dailyPublicCommentLimit === null) setDailyPublicCommentLimit(String(cfg.commentDailyLimit ?? 10))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
@@ -640,7 +642,17 @@ function WatchTab() {
               note: `${win[k].start} – ${win[k].end}`,
               on: sw(k),
               onChange: (v) => patch({ [k]: v }, win[k].label),
-            }))) : null),
+            })),
+            h('div', { 'data-bd-row': '' },
+              h('div', { 'data-bd-grow': '' },
+                h('div', { 'data-bd-label': '' }, '谷时自动运行间隔（分钟）'),
+                h('div', { 'data-bd-note': '' }, '0 = 兼容旧版（每个时段每天一轮）；30～720 = 同一谷时窗口内按分钟再次运行。到日上限、正在运行、总开关关闭时不会新开轮次。')),
+              h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0, max: 720, step: 1,
+                value: peakIntervalDraft ?? '',
+                onChange: (e) => setPeakIntervalDraft(e.target.value),
+                onBlur: () => { const raw = Number(peakIntervalDraft) || 0; const n = raw <= 0 ? 0 : Math.max(30,Math.min(720,Math.floor(raw))); setPeakIntervalDraft(String(n)); patch({ peakIntervalMinutes: n }, '自动运行间隔') },
+              })
+            )) : null),
 
         /* ── 一轮挑几条 ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },

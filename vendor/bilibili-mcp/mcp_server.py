@@ -837,6 +837,25 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             selected = [x for x in targets if x["name"] in wanted]
         use_mentions = (rpid == 0 and selected and
                         (mode == "always" or (mode in ("ai", "ai_select") and should_mention is True)))
+        # 结构化诊断写在工具回执中，Agent 可记到日报；绝不声称通知已送达。
+        if rpid != 0:
+            mention_reason = "reply_no_group_mentions"
+        elif mode == "off":
+            mention_reason = "mention_disabled"
+        elif not targets:
+            mention_reason = "no_mention_targets"
+        elif mode == "ai_select" and not selected:
+            mention_reason = "ai_selected_no_names"
+        elif mode in ("ai", "ai_select") and should_mention is not True:
+            mention_reason = "ai_declined"
+        elif use_mentions and not all(item.get("uid") for item in selected):
+            mention_reason = "mentioned_text_only_missing_uid"
+        else:
+            mention_reason = "mention_requested"
+        mention_diagnostic = {"reason": mention_reason, "mode": mode,
+                              "should_mention": should_mention is True,
+                              "configured_count": len(targets),
+                              "selected_count": len(selected) if use_mentions else 0}
         # 即使不@也必须移除模型偷加的名单昵称。
         clean_text, _ = _decorate_comment(text, targets, False, mention_position)
         text, mentioned = _decorate_comment(clean_text, selected, use_mentions, mention_position)
@@ -853,13 +872,13 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             raw = await _send_video_comment_with_mentions(bvid, aid, text, cred, mentioned)
             if raw.get("code") != 0:
                 return json.dumps({"success": False, "error": str(raw.get("message") or raw.get("code")),
-                                   "mention_delivery": "not_sent"}, ensure_ascii=False)
+                                   "mention_delivery": "not_sent", "mention_diagnostic": mention_diagnostic}, ensure_ascii=False)
             data = raw.get("data") or {}
             if not isinstance(data, dict) or data.get("need_captcha") or not (data.get("rpid") or data.get("rpid_str")):
                 return json.dumps({"success": False, "error": "评论回执未包含评论ID，可能需要验证码/审核；请先人工核实，不自动重试",
-                                   "mention_delivery": "unverified"}, ensure_ascii=False)
+                                   "mention_delivery": "unverified", "mention_diagnostic": mention_diagnostic}, ensure_ascii=False)
             out = {"success": True, "message": "评论接口已接受（@提醒是否送达未确认）",
-                   "mention_delivery": "uid_mapping_submitted_unverified"}
+                   "mention_delivery": "uid_mapping_submitted_unverified", "mention_diagnostic": mention_diagnostic}
             if isinstance(data, dict):
                 for key in ("rpid", "rpid_str", "root", "parent"):
                     if data.get(key): out[key] = data[key]
@@ -893,7 +912,8 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         if isinstance(result,dict) and result.get("code", 0) != 0:
             return json.dumps({"success": False, "error": str(result.get("message") or result.get("code"))}, ensure_ascii=False)
         out = {"success": True, "message": "评论发送成功",
-               "mention_delivery": "text_only_unverified" if mentioned else "none"}
+               "mention_delivery": "text_only_unverified" if mentioned else "none",
+               "mention_diagnostic": mention_diagnostic}
         if isinstance(result, dict):
             receipt = result.get("data") if isinstance(result.get("data"), dict) else result
             for key in ("rpid", "rpid_str", "root", "parent"):
