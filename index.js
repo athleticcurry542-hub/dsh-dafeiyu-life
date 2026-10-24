@@ -67,6 +67,8 @@ export const Config = !z ? undefined : z.object({
   night: z.boolean().default(true).extra('volatile', true),
   /** 自动评论 @ 使用者（默认关 —— 会拿用户的号说话，必须他自己开） */
   autoComment: z.boolean().default(false).extra('volatile', true),
+  commentSyncDynamic: z.boolean().default(false).extra('volatile', true),
+  commentDailyLimit: z.natural().default(10).extra('volatile', true),
   /** ⭐ 私信投递：off=只发评论（现状）· only=只私信（完全不公开评论）· both=评论 + 私信 */
   dmMode: z.string().default('only').extra('volatile', true),
   /** ⭐ 私信发给谁的 UID（数字）。要在 dmMode 不是 off 时填 */
@@ -283,7 +285,7 @@ function reportMeta() {
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: '',
     perDay: 50, pickPerRound: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
-    dmMode: 'only', dmUid: 0,
+    dmMode: 'only', dmUid: 0, commentSyncDynamic: false, commentDailyLimit: 10,
     keywords: [], commentPerRound: 5, mentionName: '', mentionTargets: '', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
   }
   const normalize = (src, base) => {
@@ -337,6 +339,8 @@ function reportMeta() {
     for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,30,5]]) {
       if(k in p) p[k] = Math.max(min, Math.min(max, Math.floor(Number(p[k]) || def)))
     }
+    if ('commentSyncDynamic' in p) p.commentSyncDynamic = p.commentSyncDynamic === true
+    if ('commentDailyLimit' in p) p.commentDailyLimit = Math.max(0, Math.min(100, Math.floor(Number(p.commentDailyLimit) || 0)))
     if ('replyToComments' in p) p.replyToComments = Boolean(p.replyToComments)
     if ('replyPerRound' in p) p.replyPerRound = Math.max(1, Math.min(Number(p.replyPerRound) || 1, 10))
     if ('favFolderId' in p) p.favFolderId = Math.max(0, Math.floor(Number(p.favFolderId) || 0))
@@ -533,9 +537,22 @@ function reportMeta() {
 
   let mcp = null
   let mcpKey = ''
-  const mcpKeyNow = () => `${cfg.pythonPath}|${join(stateDir, 'mcp_server.py')}`
+  const mcpKeyNow = () => `${cfg.pythonPath}|${join(stateDir, 'mcp_server.py')}|${cfg.commentDailyLimit}`
+
+  const assertSecureMcp = () => {
+    // 安全升级必须拒绝继续使用旧/用户自行修改但未经复核的 MCP 副本。
+    // state.mjs 会将冲突新版保存成 mcp_server.py.new，不会悄悄覆盖用户修改。
+    const actual = join(stateDir, 'mcp_server.py')
+    const shipped = join(pluginDir, 'vendor', 'bilibili-mcp', 'mcp_server.py')
+    try {
+      if (readFileSync(actual, 'utf8') === readFileSync(shipped, 'utf8')) return true
+    } catch { /* 文件未就绪也不启动 */ }
+    log('🔒 安全保护：当前插件家目录的 mcp_server.py 与 v2.4.0 已审版本不一致，拒绝执行。请备份自定义文件，核对 mcp_server.py.new 后人工升级。')
+    return false
+  }
 
   const ensureMcp = async () => {
+    if (!assertSecureMcp()) throw new Error('Python MCP 不符合安全版本要求')
     if (mcp?.running && mcpKey === mcpKeyNow()) return mcp
     if (mcp) { mcp.stop(); mcp = null }
     const script = join(stateDir, 'mcp_server.py')
@@ -547,7 +564,7 @@ function reportMeta() {
       cwd: stateDir,                     // 凭证落在家里 ✓
       // ⭐ 这个内置的 Python MCP 会往 stdout 打中文（ensure_ascii=False）；
       //    Windows 默认 GBK 的话，中文/emoji 一进管道就可能炸 ⇒ 钉死 UTF-8
-      env: uvEnv(),
+      env: uvEnv({ BILI_DUTY_HOME: stateDir, BILI_COMMENT_DAILY_LIMIT: String(cfg.commentDailyLimit) }),
       log,
     })
     return mcp
@@ -639,8 +656,7 @@ function reportMeta() {
   tool({
     name: 'bili_reply',
     description: '发一条自然的视频评论，或回复一条评论。由 AI 判断这句话是否有必要 @ 配置中的好友，不能为了完成任务而强行 @。\n'
-      + '🔴 安全闸：「自动发表评论」默认是关的；关闭时会拒绝 —— '
-      + '除非本人当场让你发（那时传 force: true）。',
+      + '🔴 安全闸：「自动发表评论」默认关闭；关闭时一律拒绝，不接受 force 绕过。',
     parameters: {
       bvid: { type: 'string', description: 'BV号' },
       text: { type: 'string', description: '自然评论正文（通常一两句话）。不要自己添加配置名单里的 @，由工具负责。' },
@@ -648,19 +664,18 @@ function reportMeta() {
       mention_names: {type:'array',items:{type:'string'}, description:'仅在 ai_select 模式下：选择想@的一个或多个名单昵称；留空代表不@，不得编造名单外昵称'},
       mention_position: { type: 'string', description: 'AI判断要@时，选择自然的插入位置 start/middle/end；默认 end' },
       rpid: { type: 'number', description: '要回复的评论 id（0/不填 = 发新评论）' },
-      force: { type: 'boolean', description: '本人当场让你发的，传 true 越过"自动评论关着"的闸' },
     },
     async execute(args) {
       refreshCfg()
-      // dmMode==='only' 时本轮根本不该发公开评论 —— 在工具层也一并挡掉（除非当场 force）
+      // dmMode==='only' 时禁止公开评论；无 force 绕过入口。
       const commentOn = Boolean(cfg.autoComment && cfg.dmMode !== 'only')
-      if (!commentOn && !args.force) {
+      if (!commentOn) {
         return {
           ok: false,
           blocked: true,
           hint: cfg.dmMode === 'only'
-            ? '现在是「只私信」模式（dmMode=only）—— 规定不发公开评论，改成用 bili_send_message 私信。确实要发时传 force: true。'
-            : '要发评论需要开启「自动发表评论」，或者本人明确要求时传 force: true；不要求必须 @ 任何人。',
+            ? '现在是「只私信」模式（dmMode=only）—— 未授权公开评论，请在设置里开启。'
+            : '要发评论需要开启「自动发表评论」；默认拒绝对外发布。',
         }
       }
       const targets = parseMentionTargets(cfg.mentionTargets, cfg.mentionName)
@@ -675,6 +690,7 @@ function reportMeta() {
         should_mention: choice.shouldMention,
         mention_names: choice.targets.map(t=>t.name),
         mention_position: choice.position,
+        sync_to_dynamic: cfg.commentSyncDynamic === true && Number(args.rpid || 0) === 0,
       })
     },
   })
@@ -1040,49 +1056,15 @@ function reportMeta() {
       charterText = readFileSync(duty, 'utf8').split('<家目录>').join(stateDir)
     } catch { /* 读不到就退回"让它自己读路径"（下面提示词里会说） */ }
     const kws = Array.isArray(cfg.keywords) ? cfg.keywords.filter(Boolean) : []
+    // 🔒 不再自动加载或引用任何工作区 AGENTS.md，这会泄露其他 DSH 用户数据。
     // ⭐ 开场先让它读**工作区**的 AGENTS.md —— 这一轮的工作目录就是使用者的工作区，
     //    AGENTS.md 本来就会自动注入；这里再点一句，保证它真按使用者的设定来（别人的设定同理）。
     // ⭐ 那一轮的工作目录是**插件家**（沙箱只让它写自己工作目录里的东西 ✗），
     //    所以"使用者的设定"由**我们自己读进来**喂给它 —— 它在宿主进程里跑，没有沙箱限制 ✓
-    let ownerDoc = ''
-    try {
-      // ⚠️ 2026-10-16 用户反馈（"只要给人设就会走偏"）：留空时我们以前退到 `process.cwd()`，
-      //    也就是 **dsh 进程自己的工作目录** —— 那对多数人根本不是他的工作区 ✗
-      //    ⇒ 读错人设、甚至把别的目录的设定读进来 ✓
-      //    ⭐ 现在的规矩：**留空 = 不读设定**（宁可按中性说话，也别猜错 ✓）；要按人设就自己填工作区 ✓。
-    // ⭐ 2026-10-21：优先用「人设提示词」这个框（主人原话：工作区确实可以不要，有人不会用，改成直接填人设提示词确实更方便）
-    // ⭐ 2026-10-21：人设框既收「文字」，也收「一个路径」——填路径就去读那个文件/目录下的 AGENTS.md，
-    //    这样"从一个文件导入"和"自己写一段"用同一个框，不用额外按钮 ✓（老用户的工作区兜底逻辑不变）
-    const personaRaw = String(cfg.personaPrompt || '').trim()
-    let persona = personaRaw
-    let personaFromFile = ''
-    if (personaRaw && !personaRaw.includes('\n')) {
-      const looksPath = /^[A-Za-z]:[\\/]/.test(personaRaw) || /^\\\\/.test(personaRaw) || personaRaw.startsWith('~/')
-      if (looksPath) {
-        try {
-          let f = personaRaw.replace(/^~\//, process.env.USERPROFILE ? process.env.USERPROFILE + '/' : '~/')
-          if (existsSync(f) && statSync(f).isDirectory()) f = join(f, 'AGENTS.md')
-          if (existsSync(f)) {
-            persona = readFileSync(f, 'utf8')
-            personaFromFile = f
-          }
-        } catch { /* 读不到就当普通文字 */ }
-      }
-    }
-    if (persona) {
-      ownerDoc = '\n\n===== 使用者的人设' + (personaFromFile ? '（读自 ' + personaFromFile + '）' : '提示词') + '（**按这个来**）=====\n'
-        + persona.slice(0, 6000)
-        + '\n===== 人设结束 =====\n'
-    }
-      const wsDir = String(cfg.workspace || '').trim()
-      const agents = (!persona && wsDir) ? join(wsDir, 'AGENTS.md') : ''
-      if (agents && existsSync(agents)) {
-        const text = readFileSync(agents, 'utf8')
-        ownerDoc = '\n\n===== 使用者的 AGENTS.md（他写给自己 AI 的人设与准则，**按这个来**）=====\n'
-          + text.slice(0, 6000)
-          + '\n===== 设定结束 =====\n'
-      }
-    } catch { /* 读不到就算了，别因此跑不成 */ }
+    // 🔒 主动设置的人设才准送入公开内容生成模型；不再通过任意路径隐式读取 AGENTS.md / workspace。
+    // 用户可以复制需要的文字到设置中的“人设提示词”框；避免宿主代 Agent 读入用户私人文件。
+    const persona = String(cfg.personaPrompt || '').trim().slice(0, 6000)
+    const ownerDoc = persona ? '\n\n===== 用户手动填写的人设（仅风格，不应原文公开）=====\n' + persona + '\n===== 人设结束 =====\n' : ''
     // ⭐ 「每天最多挑 N 条」是**全天**的账：上一轮已经挑过的要扣掉，这一轮只给剩下的额度
     const quota = Math.max(0, Number(cfg.perDay) || 0)
     const already = countPickedToday()
@@ -1101,7 +1083,7 @@ function reportMeta() {
       + ownerDoc
       + (ownerDoc
         ? ''
-        : '⭐ 这一轮**没有**拿到使用者的设定（他没填「工作区」，或那个目录里没有 `AGENTS.md`）⇒ **按中性说话**：别扮演任何人、也别自己编一套设定 ✓。')
+        : '⭐ 没有填写人设提示词时就中性说话；不能自行读取工作区、DSH 会话或任何其他私人文件。')
       + (charterText
           ? '下面是**值班章程**（里面的「<家目录>」已经替换成真实绝对路径了）—— 严格按它执行：\n\n'
             + charterText + '\n\n按上面的章程刷一轮 B站，'
@@ -1110,7 +1092,7 @@ function reportMeta() {
         ? `日报写成薄版：每条一两行（值不值得 + 链接）就够，别写长摘要。`
         : cfg.reportLevel === 'off'
           ? `这一轮不要写日报文件，也别生成任何报告；只有真发了评论就一句话记下。`
-          : `把报告写到 ${join(outDir, `${dayKey()}.md`)}。`)
+          : `报告内容通过 bili_report_append 工具追加到今天日报，不得使用文件工具或命令。`)
       + (cfg.reportLevel === 'off' ? '' : `⚠️ 今天那份报告里可能已经有上一轮写的东西 —— 有就**追加到末尾**，别覆盖（配额按全天算）。`)
       + (cfg.reportLevel === 'off' ? '' : '⭐ 报告里**每挑中一条**，第一行写成 `### BV号`（例：`### BV1xxxxxxx`）—— 宿主**就数这些标题行**算今天挑了几条：漏写当成没挑中，给只是提到 / 跳过的视频加上标题则当成挑中。')
       + `⭐ **本轮选片硬性数量要求**：每天最多 ${quota} 条，今天已挑 ${already} 条，今天还剩 ${left} 条；`
@@ -1120,15 +1102,18 @@ function reportMeta() {
       + `关键词${kws.length ? `用这些：${kws.join('、')}` : '用章程里的默认那几组'}。`
       + `本地转写：${cfg.transcribe
         ? (asrReadyNow()
-          ? '开着，而且装好了（没字幕的视频用家里那份 asr.py 转，命令见章程）'
+          ? '开着，而且装好了（只能使用 bili_transcribe_safe 工具，不允许执行脚本命令）'
           : '**开着、但依赖没装好** ⇒ 这一轮没字幕的视频只能跳过')
         : '关着（没字幕的视频就跳过）'}；`
       + `⭐ 不管哪种情况，**报告里都要写一行「因无字幕跳过 N 条」**（N=0 也写）—— 别让它悄悄少几条。`
-      + `判重表 = ${join(stateDir, 'seen.md')}（**就是这个绝对路径**，别写到家目录 ~、也别写到别处）；`
+      + `🔒 本轮没有通用文件/命令行工具。判重请调用 bili_ledger_read / bili_ledger_mark；写日报调用 bili_report_append；归档调用 bili_digest_append；读日报调用 bili_report_read。不可自行读取任意路径、运行脚本或访问 DSH 会话。`
+      + `判重表只能经由 bili_ledger_read / bili_ledger_mark 读写；工具并不接受任何路径参数。`
       + `⚠️ 它读不出来或写不进去，**必须在报告里明说** —— 那一轮宁可不发评论，也别当成"没有记录"重发一遍。`
-      + `⭐ 另外把这一轮**看过的每一条视频（挑中的和跳过的都算）**追加进归档：${join(digestDir, `${dayKey().slice(0, 7)}.md`)}`
+      + `⭐ 另外把这一轮**看过的每一条视频（挑中的和跳过的都算）**通过 bili_digest_append 追加进固定归档`
       + ` —— 一行一条：日期 · BV 号 · 标题 · UP · 一句话结论 · 链接（跳过的那条在后面注明理由）；`
       + `这是**给以后检索用**的（报告是给人看的，归档是给"回头翻"用的），别省略、也别只写挑中的。`
+      + `公开评论工具层的每日最大发送次数：${cfg.commentDailyLimit}（含回复，超限工具会拒绝）。`
+      + `公开动态同步：${cfg.commentSyncDynamic ? '开启（仅顶层评论成功后，额外发布一条包含评论与视频链接的动态；默认关闭）' : '关闭'}。此功能属于对外公开发表，不能向模型提供任何私人文件内容。`
       + `公开评论是${commentOn
         ? `开启的（每轮最多 ${cfg.commentPerRound} 条，150 字内）。评论像普通 B站用户自然吐槽，绝不能做摘要或推广。`
           + `@ 策略为 ${cfg.mentionMode || 'ai'}（off=不@；ai=判断后@全部好友；ai_select=只@觉得值得邀请的部分好友；always=每条@全部好友）。`
@@ -1183,11 +1168,13 @@ function reportMeta() {
    *    要读全就手工改这个列表（或者直接跑 mcp_server.py，不设这个变量 = 全放）。
    */
   const mcpWhitelist = () => {
-    const list = ['bili_search', 'bili_subtitle', 'bili_comments', 'bili_video_info']
+    const list = ['bili_search', 'bili_subtitle', 'bili_comments', 'bili_video_info',
+      'bili_ledger_read', 'bili_ledger_mark', 'bili_report_append', 'bili_digest_append', 'bili_report_read']
+    if (cfg.transcribe) list.push('bili_transcribe_safe')
     // ⭐⭐ 2.0.4（第三方体检第 3 条）：**"只发私信"时评论通道必须硬关** —— 以前只看 autoComment，
     //    用户以前开过自动评论、后来切到"只私信"，那个 true 还在 config 里 ⇒ 评论工具照样下发 ✗
     const dmOnly = String(cfg.dmMode || '').trim() === 'only'
-    if (!dmOnly && (cfg.autoComment || (cfg.replyToComments && !cfg.commentWatchReplies))) list.push('bili_reply')
+    if (!dmOnly && cfg.autoComment && Number(cfg.commentDailyLimit) > 0) list.push('bili_reply')
     // ⭐ 2026-10-19（issue #25 / #16 的实证，做法参考社区 PR #37）：私信开着却忘了给 bili_send_message ⇒
     //   模型手里压根没有这只工具 ⇒ 表现成"开关也开了、这一轮也跑了，但从来没发出去过" ✗
     //   ⇒ dmMode 不是 off、且填了收件人 UID 才放进去（关着就不给，白名单别松）
@@ -1195,14 +1182,24 @@ function reportMeta() {
     return list
   }
 
+  // 不依赖模型自觉，不由外部网页/评论决定工具权限。
+  const HEADLESS_DENY_TOOLS = Object.freeze(["tool-bash", "tool-pwsh", "tool-terminal", "tool-bash-persistent", "tool-pwsh-persistent", "tool-jobs", "tool-fs", "tool-fs-search", "tool-working-directory", "tool-str-replace-editor", "tool-web", "web-fetch-http", "tool-subagent", "tool-subagent-fork", "tool-subagent-control", "tool-subagent-list-agents", "tool-workflow", "workflow-ptc", "tool-skill", "skill", "skill-filesystem", "tool-plugin-manager", "plugin-manager", "goal", "goal-round-driver", "tool-goal", "tool-session-query", "tool-cordis", "tool-ralph", "tool-ask-user", "tool-browser", "tool-present", "tool-todo", "tool-lsp", "tool-workspace-dependencies", "agent-instructions", "session-reference", "file-reference-local", "file-reference", "tool-ptc", "tool-cua", "cua", "tool-execute", "tool-process", "tool-web-search", "tool-python", "tool-code", "tool-ripgrep"])
+
   const ensureOverlay = (dmSafe = false) => {
     const file = join(stateDir, dmSafe ? 'headless-dm-overlay.yml' : 'headless-overlay.yml')
     const script = join(stateDir, 'mcp_server.py')
+    if (!dmSafe && !assertSecureMcp()) return null
     const posix = (p) => String(p).replace(/\\/g, '/')
   // ⭐ 2026-10-23 安全加固（审计点名）：**路径要按 YAML 单引号规则转义** ——
   //    以前直接把路径塞进单引号里，路径带单引号就会把 overlay 拼坏（甚至多出键）✗
   const yq = (v) => "'" + String(v).replace(/'/g, "''") + "'"
     const yml = []
+    // 🔒 v2.4.0：两个 Agent 路径都撤掉 DSH 自带的宽权限工具。
+    // 不能只限制 B站 MCP；`headless` 本身仍可能带着 shell/fs/session query 等工具。
+    // 这些 id 是否真的被目标 DSH 识别，必须使用 --dump-config 在用户机器验证。
+    for (const id of HEADLESS_DENY_TOOLS) {
+      yml.push('- id: ' + id, '  disabled: true', '')
+    }
     // ⭐⭐ 2026-10-18（用户 `Elec-Tron-lc` 递来完整报告，逐条核过）：
     //    DSH **0.2.1-rc.2** 的 `@deepseek-ai/dsh-headless` 自带 patch 把三个服务 `disabled: true` 了 ——
     //    `credentials` / `authorization` / `deepseek-account` ⇒ 那一轮既用不了账号模型、也读不到凭证库里的 key
@@ -1231,7 +1228,7 @@ function reportMeta() {
       log('⚠️ '+(dmSafe?'后台互动':'视频')+'模型配置无效：'+String(e?.message||e))
       // 不降级到另一个未经确认的模型。让 DSH 自身选用其 profile 配置。
     }
-    if (cfg.overlayMcp && !dmSafe) {
+    if (!dmSafe) {
       yml.push(
         '- insert:',
         '    - id: mcp-bili-duty',
@@ -1244,6 +1241,11 @@ function reportMeta() {
         '          - ' + yq(posix(script)),
         '        env:',
         '          BILI_MCP_TOOLS: ' + yq(mcpWhitelist().join(',')),
+        '          BILI_SYNC_DYNAMIC: ' + yq(cfg.commentSyncDynamic && cfg.autoComment && cfg.dmMode !== 'only' ? '1' : '0'),
+        '          BILI_ASR_ENABLED: ' + yq(cfg.transcribe ? '1' : '0'),
+        '          BILI_DM_TARGET_UID: ' + yq(Number(cfg.dmUid) || dmUidCache || 0),
+        '          BILI_COMMENT_DAILY_LIMIT: ' + yq(cfg.commentDailyLimit),
+        '          BILI_DUTY_HOME: ' + yq(posix(stateDir)),
         '          BILI_MENTION_MODE: ' + yq(cfg.mentionMode || 'ai'),
         '          BILI_MENTION_TARGETS: ' + yq(JSON.stringify(parseMentionTargets(cfg.mentionTargets, cfg.mentionName))),
         '',
@@ -1333,7 +1335,8 @@ function reportMeta() {
     }
     const overlay = ensureOverlay()
     const args = [...dsh.args, '--profile', cfg.headlessProfile || 'headless']
-    if (overlay) args.push('--patch', overlay)
+    if (!overlay) return { started:false, why, error:'安全隔离 overlay 创建失败，已拒绝启动刷视频 Agent' }
+    args.push('--patch', overlay)
     const pickedBeforeRun = countPickedToday()
     const roundLimitAtStart = picksThisRound(cfg.perDay, cfg.pickPerRound, pickedBeforeRun)
     args.push(promptFor())
@@ -1495,14 +1498,8 @@ function reportMeta() {
   }
 
   function dmChatPrompt({ uid, text, messages, history }) {
-    const persona = (() => {
-      try {
-        if (String(cfg.personaPrompt || '').trim()) return String(cfg.personaPrompt).slice(0, 3000)
-        const ws = String(cfg.workspace || '').trim()
-        const f = ws ? join(ws, 'AGENTS.md') : ''
-        return f && existsSync(f) ? readFileSync(f, 'utf8').slice(0, 3000) : ''
-      } catch { return '' }
-    })()
+    // 聊天只使用用户在本插件设置里手动填写的人设，不能隐式读取工作区文件。
+    const persona = String(cfg.personaPrompt || '').trim().slice(0, 3000)
     const historyText = history.slice(-16).map((m) => (m.role === 'assistant' ? '助手' : '用户') + '：' + String(m.text).slice(0, 500)).join('\n')
     const recentText = messages.slice(-8).map((m) => String(m).slice(0, 500)).join('\n')
     return `你是 B站 账号的私信聊天助手。仅为用户 UID=${uid} 草拟一条自然、简短、友好的中文回复。
@@ -2254,7 +2251,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const body = await readBody(req)
       const patch = {}
       for (const k of ['perDay', 'pickPerRound', 'peakValley', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
-        'commentPerRound', 'mentionName', 'mentionTargets', 'mentionMode', 'dmMode', 'dmUid',
+        'commentPerRound', 'mentionName', 'mentionTargets', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'replyToComments', 'replyPerRound', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'favFolderId']) {

@@ -23,6 +23,11 @@ import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from datetime import datetime
+import re
+import subprocess
+import sqlite3
+import uuid
 from mcp.server.fastmcp import FastMCP
 
 from bilibili_api import video, search, comment, Credential, dynamic, opus
@@ -521,6 +526,196 @@ async def bili_video_info(bvid: str) -> str:
     }, ensure_ascii=False)
 
 
+
+
+# ========== v2.4.0: 最小文件能力（只能访问插件自己的固定文件） ==========
+# 注意：Agent 不再加载任何通用 FS/Shell 工具。这里的输入都不能提供文件名或路径。
+_DUTY_HOME = Path(os.environ.get("BILI_DUTY_HOME") or Path(__file__).resolve().parent).resolve()
+_BV_PATTERN = re.compile(r"^BV[0-9A-Za-z]{10}$")
+
+
+def _valid_bv(bvid):
+    bvid = str(bvid or "")
+    if not _BV_PATTERN.fullmatch(bvid):
+        raise ValueError("BV号格式错误")
+    return bvid
+
+
+def _safe_line(value, limit=150):
+    return str(value or "").replace("|", "／").replace("\r", " ").replace("\n", " ").strip()[:limit]
+
+
+def _read_home(rel, cap=22000):
+    # rel 参数只允许由代码里的常量提供，绝不暴露给 MCP 调用方。
+    path = (_DUTY_HOME / rel).resolve()
+    if not path.is_relative_to(_DUTY_HOME) or not path.is_file():
+        return ""
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        return f.read(cap + 1)[-cap:]
+
+
+def _append_home(rel, text):
+    path = (_DUTY_HOME / rel).resolve()
+    if not path.is_relative_to(_DUTY_HOME):
+        raise ValueError("禁止访问家目录以外的文件")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(text)
+
+
+@tool()
+async def bili_ledger_read() -> str:
+    """读取刷B站最近判重表（只读 seen.md，不能指定其他文件）。"""
+    if (e := _guard("bili_ledger_read")): return e
+    return _read_home("seen.md", 30000) or "（判重表为空；可通过 bili_ledger_mark 初始化）"
+
+
+@tool()
+async def bili_ledger_mark(bvid: str, title: str, up: str = "", status: str = "看过") -> str:
+    """将一个视频标记为挑中或跳过，写入固定 seen.md 表格。"""
+    if (e := _guard("bili_ledger_mark")): return e
+    try:
+        bv = _valid_bv(bvid)
+        now = datetime.now().strftime("%Y-%m-%d")
+        src = _read_home("seen.md", 2_000_000)
+        if re.search(r"\|\s*"+re.escape(bv)+r"\s*\|", src):
+            return json.dumps({"ok": True, "already_seen": True}, ensure_ascii=False)
+        st = _safe_line(status, 80)
+        if not st: st = "看过"
+        _append_home("seen.md", "| " + " | ".join([now,bv,_safe_line(title),_safe_line(up),st]) + " |\n")
+        return json.dumps({"ok": True, "already_seen": False}, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+@tool()
+async def bili_report_read() -> str:
+    """只读取插件自己当天的日报，不可指定文件名。"""
+    if (e := _guard("bili_report_read")): return e
+    return _read_home("out/"+datetime.now().strftime("%Y-%m-%d")+".md", 14000) or "（今天还没有日报）"
+
+
+@tool()
+async def bili_report_append(text: str) -> str:
+    """只追加当天 Markdown 日报；不能读写其他路径。内容由 Agent 组织。"""
+    if (e := _guard("bili_report_append")): return e
+    data = str(text or "").strip()[:18000]
+    if not data: return json.dumps({"ok": False, "error": "报告不能为空"}, ensure_ascii=False)
+    try:
+        _append_home("out/"+datetime.now().strftime("%Y-%m-%d")+".md", data+"\n\n")
+        return json.dumps({"ok": True}, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+@tool()
+async def bili_digest_append(bvid: str, title: str, up: str, summary: str) -> str:
+    """固定写入本月视频摘要，只接受 BV/标题/UP/结论，不接受任何路径。"""
+    if (e := _guard("bili_digest_append")): return e
+    try:
+        bv = _valid_bv(bvid)
+        day = datetime.now().strftime("%Y-%m-%d")
+        month = day[:7]
+        text = " · ".join([day, bv, _safe_line(title), _safe_line(up,60), _safe_line(summary,350), "https://www.bilibili.com/video/"+bv])
+        _append_home("digest/"+month+".md", text+"\n")
+        return json.dumps({"ok": True}, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+@tool()
+async def bili_transcribe_safe(bvid: str) -> str:
+    """可选字幕转写：只执行插件家里固定的 asr.py，不允许自定义命令/路径。"""
+    if (e := _guard("bili_transcribe_safe")): return e
+    if os.environ.get("BILI_ASR_ENABLED") != "1":
+        return "本轮未授权本地转写"
+    try:
+        bv = _valid_bv(bvid)
+        asr = (_DUTY_HOME / "asr.py").resolve()
+        python = (_DUTY_HOME / ".venv-asr" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")).resolve()
+        if not asr.is_relative_to(_DUTY_HOME) or not python.is_relative_to(_DUTY_HOME):
+            return "转写路径不安全"
+        if not asr.is_file() or not python.is_file(): return "本地转写依赖未安装"
+        res = await asyncio.to_thread(subprocess.run, [str(python), str(asr), bv], capture_output=True, text=True, errors="replace", timeout=160, cwd=str(_DUTY_HOME))
+        return res.stdout[:12000] if res.returncode == 0 else "转写失败（已跳过）：" + res.stderr[-350:]
+    except Exception as exc:
+        return "本地转写失败（已跳过）：" + str(exc)[:160]
+
+
+
+
+def _reserve_comment_quota() -> tuple[bool, str]:
+    """所有 MCP 进程/发送路径共享同一份 SQLite 日额度，原子占用名额。
+
+    限制基于尝试次数；网络异常也不自动返还额度，以防超时导致重复发布。
+    """
+    try:
+        limit = max(0, min(100, int(os.environ.get("BILI_COMMENT_DAILY_LIMIT", "10"))))
+    except (ValueError, TypeError):
+        limit = 10
+    if limit == 0:
+        return False, "公开评论已被每日硬上限禁用"
+    db = _DUTY_HOME / "public-comment-quota.sqlite3"
+    try:
+        with sqlite3.connect(str(db), timeout=8) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS public_comment_attempt(day TEXT NOT NULL, nonce TEXT PRIMARY KEY)")
+            conn.execute("BEGIN IMMEDIATE")
+            day = datetime.now().strftime("%Y-%m-%d")
+            count = conn.execute("SELECT COUNT(*) FROM public_comment_attempt WHERE day=?", (day,)).fetchone()[0]
+            if count >= limit:
+                conn.rollback()
+                return False, f"本日公开评论/回复已达到硬上限 {limit}"
+            conn.execute("INSERT INTO public_comment_attempt(day, nonce) VALUES(?,?)", (day, uuid.uuid4().hex))
+            conn.commit()
+            return True, ""
+    except sqlite3.Error as error:
+        return False, "评论配额记录不可用，安全起见拒绝发送：" + str(error)[:150]
+
+# ========== 顶层评论可选同步动态（独立公开动态，而非客户端原生勾选链路） ==========
+def _dynamic_enabled(arg):
+    # 在 headless 中用户的设置从宿主环境变量来：不能被模型强行打开。
+    if "BILI_SYNC_DYNAMIC" in os.environ:
+        return os.environ["BILI_SYNC_DYNAMIC"] == "1"
+    return arg is True  # 宿主直接调用由 index.js 根据用户设置传参；默认 False
+
+
+async def _dynamic_after_comment(bvid, text, credential, requested=False):
+    if not _dynamic_enabled(requested):
+        return {"status": "disabled"}
+    # 动态最多每天 3 条，按 BV/日期幂等。尝试发送后即锁定，不因超时重复公开发言。
+    now = datetime.now().strftime("%Y-%m-%d")
+    log_dir = _DUTY_HOME / "dynamic-sync"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    today = list(log_dir.glob(now+"-*.lock"))
+    if len(today) >= 3:
+        return {"status": "daily_limit"}
+    lock = log_dir / (now+"-"+_valid_bv(bvid)+".lock")
+    try:
+        fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+    except FileExistsError:
+        return {"status": "already_attempted"}
+    # 固定结构：仅包含刚刚公开评论的内容和视频链接；不允许独立模型自由指定发布内容。
+    message = str(text or "").strip()[:250] + "\nhttps://www.bilibili.com/video/" + bvid
+    payload = {
+        "dyn_req": {"content": {"contents": [{"raw_text": message, "type": 1, "biz_id": ""}]}, "scene": 1}
+    }
+    def post():
+        api = "https://api.bilibili.com/x/dynamic/feed/create/dyn?csrf=" + urllib.parse.quote(str(credential.bili_jct))
+        cookie = "SESSDATA=" + str(credential.sessdata) + "; bili_jct=" + str(credential.bili_jct)
+        req = urllib.request.Request(api, data=json.dumps(payload,ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type":"application/json", "Cookie":cookie, "User-Agent":"Mozilla/5.0",
+                     "Referer":"https://t.bilibili.com/"}, method="POST")
+        with urllib.request.urlopen(req,timeout=12) as response:
+            return json.loads(response.read().decode("utf-8"))
+    try:
+        result = await asyncio.to_thread(post)
+        if result.get("code") != 0:
+            return {"status": "failed", "reason": str(result.get("message") or result.get("code"))[:160]}
+        return {"status": "api_accepted_unverified", "dynamic_id": (result.get("data") or {}).get("dyn_id_str")}
+    except Exception as exc:
+        return {"status": "uncertain_no_retry", "reason": str(exc)[:160]}
+
 # ========== 评论 @：由 AI 显式做情境决定，发送层维护最终策略 ==========
 
 def _mention_settings(request_mode=None, request_targets=None):
@@ -596,7 +791,7 @@ async def _send_video_comment_with_mentions(bvid, aid, text, credential, mention
 async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: int = 0,
                      should_mention: bool = False, mention_position: str = "end",
                      mention_mode: str = "ai", mention_targets: list[dict] | None = None,
-                     mention_names: list[str] | None = None) -> str:
+                     mention_names: list[str] | None = None, sync_to_dynamic: bool = False) -> str:
     """
     在B站视频下发表评论或回复某条评论
 
@@ -636,6 +831,9 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         text, mentioned = _decorate_comment(clean_text, selected, use_mentions, mention_position)
         if not text:
             return json.dumps({"success": False, "error": "评论内容不能为空"}, ensure_ascii=False)
+        quota_ok, quota_error = _reserve_comment_quota()
+        if not quota_ok:
+            return json.dumps({"success": False, "blocked": True, "error": quota_error}, ensure_ascii=False)
         # 全部 UID 都由用户显式提供时，才尝试带映射的评论接口。
         # 没有 UID 时会正常发送文字 @，但不会将它称为“真实通知成功”。
         if rpid == 0 and mentioned and all(item["uid"] for item in mentioned):
@@ -652,6 +850,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             if isinstance(data, dict):
                 for key in ("rpid", "rpid_str", "root", "parent"):
                     if data.get(key): out[key] = data[key]
+            out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic)
             return json.dumps(out, ensure_ascii=False)
         if rpid == 0:
             # 发表新评论
@@ -678,13 +877,20 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         # ⭐ 把回执里的 rpid 带回去：判重表要靠它记「我们发过哪条」，宿主的评论复核
         #    （lib/verify.mjs）也要拿它去 B站 查公开可见性。只回 success 的话那条链是断的。
         #（2026-10-16 审查修：原实现把上面的 result 丢掉了）
+        if isinstance(result,dict) and result.get("code", 0) != 0:
+            return json.dumps({"success": False, "error": str(result.get("message") or result.get("code"))}, ensure_ascii=False)
         out = {"success": True, "message": "评论发送成功",
                "mention_delivery": "text_only_unverified" if mentioned else "none"}
         if isinstance(result, dict):
+            receipt = result.get("data") if isinstance(result.get("data"), dict) else result
             for key in ("rpid", "rpid_str", "root", "parent"):
-                val = result.get(key)
+                val = receipt.get(key)
                 if isinstance(val, (int, str)) and str(val).strip() and str(val) != "0":
                     out[key] = val
+        if rpid == 0 and (out.get("rpid") or out.get("rpid_str")):
+            out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic)
+        elif rpid == 0 and _dynamic_enabled(sync_to_dynamic):
+            out["dynamic_sync"] = {"status": "comment_receipt_unverified_no_publish"}
         return json.dumps(out, ensure_ascii=False)
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
@@ -764,6 +970,8 @@ async def bili_crawl(keyword: str, max_videos: int = 5, comments_per_video: int 
 # ========== 辅助：封面处理 ==========
 
 import subprocess
+import sqlite3
+import uuid
 
 
 def _extract_cover_from_video(video_path: str) -> Picture:
@@ -1146,6 +1354,11 @@ async def bili_send_message(receiver_uid: int, text: str) -> str:
         发送结果
     """
     _deny = _guard("bili_send_message")
+    # 带 BILI_MCP_TOOLS 的无人值守子进程，收件人必须匹配用户设置；拒绝模型改 UID。
+    if os.environ.get("BILI_MCP_TOOLS"):
+        authorized_uid = int(os.environ.get("BILI_DM_TARGET_UID") or "0")
+        if authorized_uid <= 0 or int(receiver_uid) != authorized_uid:
+            return json.dumps({"success": False, "error": "无权私信此 UID"}, ensure_ascii=False)
     if _deny: return _deny
     cred = get_cred()
 

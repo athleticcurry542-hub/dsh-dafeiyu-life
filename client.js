@@ -258,6 +258,7 @@ function WatchTab() {
       const [commentTopVideoCount, setCommentTopVideoCount] = React.useState(null)
       const [commentReplyPerPoll, setCommentReplyPerPoll] = React.useState(null)
       const [commentReplyPerDay, setCommentReplyPerDay] = React.useState(null)
+      const [dailyPublicCommentLimit, setDailyPublicCommentLimit] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
@@ -302,6 +303,7 @@ function WatchTab() {
         if (cfg && perDay === null) setPerDay(String(cfg.perDay ?? 50))
         if (cfg && pickPerRound === null) setPickPerRound(String(cfg.pickPerRound ?? 5))
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
+        if (cfg && dailyPublicCommentLimit === null) setDailyPublicCommentLimit(String(cfg.commentDailyLimit ?? 10))
         if (cfg && replyPer === null) setReplyPer(String(cfg.replyPerRound ?? 1))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
@@ -691,6 +693,21 @@ function WatchTab() {
             note: '大肥鱼可根据视频内容决定是否 @；不需要每条 @',
             on: sw('autoComment'),
             onChange: (v) => patch({ autoComment: v }, '自动评论'),
+          }) : null,
+          (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h('div', { 'data-bd-row': '' },
+            h('div', { 'data-bd-grow': '' },
+              h('div', { 'data-bd-label': '' }, '公开评论每天最多发几条（工具层硬限制）'),
+              h('div', { 'data-bd-note': '' }, '含顶层评论及回复，0 表示禁发；默认 10。防止无人值守时刷屏。')),
+            h('input', { 'data-bd-input': '', 'data-bd-num': '', type:'number', min:0, max:100,
+              value: dailyPublicCommentLimit ?? '10',
+              onChange: e => setDailyPublicCommentLimit(e.target.value),
+              onBlur: () => { const n=Math.max(0,Math.min(100,Math.floor(Number(dailyPublicCommentLimit)||0)));setDailyPublicCommentLimit(String(n));patch({commentDailyLimit:n}, '评论每日硬上限') }
+            })) : null,
+          (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h(ToggleRow, {
+            label: '评论成功后同步到动态',
+            note: '默认关闭。仅顶层评论同步；会另外公开发布“评论正文 + 视频链接”的文字动态（不是B站客户端内置勾选接口）。有独立限额、去重保护，可能因接口风控失败。',
+            on: sw('commentSyncDynamic'),
+            onChange: (v) => patch({ commentSyncDynamic: v }, '评论同步动态'),
           }) : null,
           (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h('div', { 'data-bd-sub': '' },
             h('div', { 'data-bd-row': '' },
