@@ -262,6 +262,7 @@ function WatchTab() {
       const [dynamicDailyLimitDraft, setDynamicDailyLimitDraft] = React.useState(null)
       const [commentQuota, setCommentQuota] = React.useState(null)
       const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
+      const [mentionHistoryExpanded, setMentionHistoryExpanded] = React.useState(false)
       const [memeMemory, setMemeMemory] = React.useState(null)
       const [memeKeyword, setMemeKeyword] = React.useState('')
       const [memeBusy, setMemeBusy] = React.useState(false)
@@ -775,7 +776,12 @@ function WatchTab() {
               mentionDiagnostics?.ok && mentionDiagnostics.failed ? h('div', { 'data-bd-note': '' }, `另有 ${mentionDiagnostics.failed} 次发送未成功（不计入已发表评论）`) : null)),
           mentionDiagnostics?.ok && (mentionDiagnostics.recent || []).length
             ? h('div', { 'data-bd-sub': '' },
-                ...(mentionDiagnostics.recent || []).map((x, i) => {
+                h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
+                  h('span',{'data-bd-note':''},mentionHistoryExpanded ? '最近最多 12 条诊断（列表内滚动）' : '默认只显示最近 3 条'),
+                  (mentionDiagnostics.recent || []).length > 3
+                    ? h('button',{type:'button','data-bd-btn':'',onClick:()=>setMentionHistoryExpanded(v=>!v)},mentionHistoryExpanded?'收起':'展开最近 12 条') : null),
+                h('div',{style:{maxHeight:mentionHistoryExpanded?'220px':'none',overflowY:mentionHistoryExpanded?'auto':'visible',overflowWrap:'anywhere'}},
+                ...(mentionHistoryExpanded ? mentionDiagnostics.recent : mentionDiagnostics.recent.slice(0,3)).map((x, i) => {
                   const reasonText = ({
                     ai_declined:'AI 决定不 @', ai_selected_no_names:'AI 想 @，但没有选中名单内好友',
                     no_mention_targets:'没有配置 @ 名单', mention_disabled:'@ 策略已关闭',
@@ -787,7 +793,7 @@ function WatchTab() {
                     ? ` · AI说明：${x.ai_reason || '未填写具体原因'}` : ''
                   return h('div', { key: (x.time || '') + ':' + i, 'data-bd-note': '' },
                     `${x.bvid} · ${x.kind === 'reply' ? '楼中楼' : '顶层'} · ${x.success ? (x.mention_attempted ? '尝试 @' : '未 @') : '发送未成功'} · ${reasonText}${aiExplanation}`)
-                }))
+                })))
             : h('div', { 'data-bd-note': '' }, mentionDiagnostics?.ok ? '今天还没有新版诊断记录。' : ''),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信内容 = 本轮每条的「标题 + 链接 + 一句话」，一轮合并成一条发。⚠️ 建议先让这个号和收件人互关：B站 对「陌生人私信」会限流，还可能不弹提醒。') : null,
 
@@ -1028,7 +1034,7 @@ function WatchTab() {
         /* ── 关注什么 / 在哪儿刷 ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
           h('div', { 'data-bd-h': '' }, '👀 视频预览快照识图（试验功能）'),
-          h(ToggleRow, {label:'开启低清预览识图', note:'默认关闭；刷视频时按需调用独立视觉模型分析少量播放器预览图。仅描述实际图片，不等于看完视频。',
+          h(ToggleRow, {label:'开启低清预览识图', note:'默认关闭；由视频 Agent 综合播放量、评论、弹幕及视觉梗价值自行决定要不要识图。冷门但有明确画面梗也可识图，绝不默认每条都分析；每轮最多 2 条。',
             on:sw('visionEnabled'),onChange:v=>patch({visionEnabled:v},'预览识图总开关')}),
           h(ToggleRow, {label:'Debug：保存实际预览图', note:'默认关闭；开启后把送去识图的 JPEG 保存到插件数据目录 vision-debug/BV号/，方便自己查看。',
             on:sw('visionDebug'),onChange:v=>patch({visionDebug:v},'预览图调试保存')}),
@@ -1062,7 +1068,10 @@ function WatchTab() {
             h('div',{'data-bd-note':''},'Windows 默认目录：C:\\Users\\你的账号\\.dsh\\bili-duty\\vision-debug\\BV号。关闭 Debug 后不会自动删除旧图片。')):null,
           h('div',{'data-bd-sep':''})),
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
-          h('div', { 'data-bd-h': '' }, '关注什么'),
+          h('div', { 'data-bd-h': '' }, '选片来源'),
+          h(ToggleRow, {label:'加入首页推荐视频', note:'默认开启；与关键词搜索混合选片。每轮首页推荐最多读取一次、最多12个候选，过滤直播与广告。是否挑中仍由大肥鱼判断，共用原有额度。',
+            on:sw('homeRecommendationsEnabled'),onChange:v=>patch({homeRecommendationsEnabled:v},'首页推荐选片来源')}),
+          h('div', { 'data-bd-h': '' }, '关注什么（关键词搜索）'),
           h('textarea', {
             'data-bd-input': '', rows: 5, placeholder: '一行一个关键词；留空用内置那几组',
             value: kws ?? '', onChange: (e) => setKws(e.target.value),

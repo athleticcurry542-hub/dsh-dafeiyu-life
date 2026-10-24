@@ -328,6 +328,32 @@ async def bili_search(keyword: str, num: int = 10, order: str = "totalrank") -> 
     return json.dumps({"keyword": keyword, "count": len(videos), "videos": videos}, ensure_ascii=False)
 
 
+# ========== v2.4.11: 首页推荐（安全受限，只读、单轮一次） ==========
+_HOME_RECOMMEND_REQUESTED = False
+
+@tool()
+async def bili_home_recommendations() -> str:
+    """获取登录账号网页首页的普通视频推荐候选，与关键词搜索混合选片。
+
+    只访问固定 B站 API 域名，不跟随重定向，最多查询一次；失败不影响关键词搜索。
+    本工具只有读权限，且不写入已读/选片账本。
+    """
+    global _HOME_RECOMMEND_REQUESTED
+    if (e := _guard('bili_home_recommendations')): return e
+    if _HOME_RECOMMEND_REQUESTED:
+        return json.dumps({'ok': False, 'status': 'round_limit', 'error': '本轮首页推荐已抓过一次，不再重复请求；继续关键词搜索'}, ensure_ascii=False)
+    _HOME_RECOMMEND_REQUESTED = True
+    credential = load_credential()
+    if not credential or not getattr(credential, 'sessdata', None):
+        return json.dumps({'ok': False, 'status': 'login_required', 'error': '首页推荐需要先在设置页登录B站，继续关键词搜索即可'}, ensure_ascii=False)
+    try:
+        from home_recommendations import get_home_recommendations
+        return json.dumps(await asyncio.to_thread(get_home_recommendations, str(credential.sessdata)), ensure_ascii=False)
+    except Exception as exc:
+        # 不泄露认证信息、请求地址、响应正文或服务端堆栈
+        return json.dumps({'ok': False, 'status': 'unavailable', 'error': f'首页推荐暂时不可用（{type(exc).__name__}）；继续关键词搜索，不需重试'}, ensure_ascii=False)
+
+
 # ========== Tool 2: 获取评论 ==========
 
 @tool()
@@ -531,13 +557,25 @@ async def bili_video_info(bvid: str) -> str:
 
 
 
-# ========== v2.4.9: 受限 B站预览帧识图 ==========
+# ========== v2.4.10: 受限预览帧识图（Agent 自主选择，工具层每轮最多 2 个 BV） ==========
+# 每轮 headless 创建独立 MCP 进程；同一个 BV 重试不扩张上限。
+# 这道上限是实际后端闸，不只依赖 AI 遵守提示词。手动预览测试走单独的受限脚本。
+_VISION_BVS_PER_RUN = set()
+_VISION_PER_RUN_LIMIT = 2
+
 @tool()
 async def bili_preview_vision(bvid: str) -> str:
-    """看一条视频的低清预览图（非完整视频）。独立视觉模型/Debug 开关由用户设置，不能传 URL 或路径。"""
+    """仅在确有视觉梗/画面理解价值时调用。低互动且无视觉线索的普通视频应跳过。"""
     if (e := _guard("bili_preview_vision")): return e
     if os.environ.get('BILI_VISION_ENABLED') != '1':
         return json.dumps({'ok':False,'error':'视觉识图已关闭'}, ensure_ascii=False)
+    # 校验 BV 必须发生在占用名额之前，避免无效 ID 耗尽当轮预算。
+    if not re.fullmatch(r'BV[0-9A-Za-z]{10}', str(bvid or '')):
+        return json.dumps({'ok':False,'error':'BV号格式不正确'},ensure_ascii=False)
+    if bvid not in _VISION_BVS_PER_RUN:
+        if len(_VISION_BVS_PER_RUN) >= _VISION_PER_RUN_LIMIT:
+            return json.dumps({'ok':False,'status':'round_limit','error':'本轮预览识图最多2条视频；其他视频请根据字幕与已有梗记忆处理'},ensure_ascii=False)
+        _VISION_BVS_PER_RUN.add(bvid)
     try:
         from preview_vision import analyze_preview
         return json.dumps(await asyncio.to_thread(analyze_preview, bvid, _DUTY_HOME),ensure_ascii=False)
