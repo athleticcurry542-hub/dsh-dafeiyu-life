@@ -42,6 +42,7 @@ import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
 import { effectiveModelSelection } from './lib/model-routing.mjs'
+import { mergeWatchedRows } from './lib/watched.mjs'
 
 export const name = 'bili-scroll'
 export const inject = ['webServer', 'tools', 'settings']
@@ -1896,8 +1897,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const delivered = /评论|私信|已发|发给/.test(status) || deliveredBvs.has(bvid)
       out.push({ day, bvid, title, up, status, picked, commented, delivered, url: 'https://www.bilibili.com/video/' + bvid })
     }
-    out.sort((a, b) => (a.day === b.day ? (a.picked === b.picked ? 0 : a.picked ? -1 : 1) : (a.day < b.day ? 1 : -1)))
-    return out
+    // 兼容非表格判重记录，补齐 digest 视频归档及日报明确入选的 BV。
+    // 只读不写 seen.md；防止修复列表时污染判重原始数据。
+    return mergeWatchedRows(out, stateDir)
   }
 
   /** 封面代理：浏览器不能直连 i0.hdslb.com（防盗链 403 + 等于把用户 IP 交出去）⇒ 宿主取回来再转发 */

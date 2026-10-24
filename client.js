@@ -211,6 +211,7 @@ function WatchTab() {
       chip('挑了', () => pick('state', 'picked'), st === 'picked'),
       chip('跳过', () => pick('state', 'skipped'), st === 'skipped'),
       chip('发给你了', () => pick('state', 'commented'), st === 'commented'),
+      chip('刷新', () => { setOffset(0); load(st, tier, 0) }, false),
       h('div', { 'data-bd-note': '' }, rows === null ? '读取中…' : `共 ${total} 条`)),
     h('div', { 'data-bd-row': '' },
       chip('值得看', () => pick('tier', '值得看'), tier === '值得看'),
@@ -221,7 +222,7 @@ function WatchTab() {
         i < 30 ? h('img', { 'data-bd-cover': '', src: API + '/cover?bv=' + x.bvid, loading: 'lazy', alt: '' }) : null,
         h('div', { 'data-bd-item-body': '' },
           h('div', { 'data-bd-item-t': '' }, x.title),
-          h('div', { 'data-bd-item-n': '' }, `${x.day} · ${x.up} · `, x.picked ? '挑中了' : '跳过', (x.delivered || x.commented) ? ' · 已发给你' : '',
+          h('div', { 'data-bd-item-n': '' }, `${x.day} · ${x.up} · `, x.picked ? '挑中了' : (x.status && /跳过/.test(x.status) ? '跳过' : '看过'), (x.delivered || x.commented) ? ' · 已发给你' : '',
             x.tier ? h('span', { 'data-bd-tier': x.tier }, ' · ' + x.tier) : null),
           x.why ? h('div', { 'data-bd-item-why': '' }, x.why) : null))))
       : h('div', { 'data-bd-note': '' }, rows === null ? '' : '这一类还没有记录 —— 跑一轮之后就有了'),
@@ -927,8 +928,9 @@ function WatchTab() {
           h('div', { 'data-bd-row': '' },
             h('button', { 'data-bd-btn': '', disabled: busy === 'watched', onClick: () => (watchedRows !== null ? setWatchedRows(null) : onLoadWatched(watchedState, watchedTier, watchedOffset)) },
               watchedRows !== null ? '收起' : '看它刷过什么'),
+            watchedRows !== null ? h('button', { 'data-bd-btn': '', disabled: busy === 'watched', onClick: () => onLoadWatched(watchedState, watchedTier, 0) }, '刷新') : null,
             h('div', { 'data-bd-note': '' },
-              watchedRows === null ? '（点一下读出来；数据来自判重表 seen.md + 报告里的档位）'
+              watchedRows === null ? '（点一下读出来；数据来自 seen.md + 日报 + 视频归档）'
                 : (watchedTotal ? `共 ${watchedTotal} 条` : '这一类还没有记录 —— 跑一轮之后就有了'))),
           watchedRows !== null ? h('div', { 'data-bd-row': '' },
             [['', '全部'], ['picked', '挑了'], ['skipped', '跳过'], ['commented', '发给你了']].map(([v, label]) =>
@@ -943,7 +945,7 @@ function WatchTab() {
                 h('div', { 'data-bd-item-t': '' },
                   h('a', { href: x.url, target: '_blank', rel: 'noreferrer' }, x.title)),
                 h('div', { 'data-bd-item-n': '' },
-                  `${x.day} · ${x.up} · `, x.picked ? '挑中了' : '跳过', (x.delivered || x.commented) ? ' · 已发给你' : '',
+                  `${x.day} · ${x.up} · `, x.picked ? '挑中了' : (x.status && /跳过/.test(x.status) ? '跳过' : '看过'), (x.delivered || x.commented) ? ' · 已发给你' : '',
                   x.tier ? h('span', { 'data-bd-tier': x.tier }, ' · ' + x.tier) : null),
                 x.why ? h('div', { 'data-bd-item-why': '' }, x.why) : null))))
             : null,
