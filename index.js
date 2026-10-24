@@ -36,6 +36,7 @@ import { loadCred as dmCred, listSessions as dmList, fetchMsgs as dmFetch } from
 import { ensureUv } from './lib/uvfetch.mjs'
 import { createDmAutoReply } from './lib/dm-autoreply.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
+import { picksThisRound } from './lib/pick-quota.mjs'
 
 export const name = 'bili-scroll'
 export const inject = ['webServer', 'tools', 'settings']
@@ -51,6 +52,8 @@ export const inject = ['webServer', 'tools', 'settings']
 export const Config = !z ? undefined : z.object({
   /** 定量刷：每天最多挑几条 */
   perDay: z.natural().default(50).extra('volatile', true),
+  /** 每次跑一轮最多挑多少条；每日配额不足时以当日剩余额度为准 */
+  pickPerRound: z.natural().default(5).extra('volatile', true),
   /** 峰谷自动刷（总开关） */
   peakValley: z.boolean().default(false).extra('volatile', true),
   /** 峰谷子开关：中午 / 晚上 */
@@ -245,7 +248,7 @@ function reportMeta() {
     dmWhitelist: '', dmStrangerOnce: false,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: '',
-    perDay: 50, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
+    perDay: 50, pickPerRound: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0,
     keywords: [], commentPerRound: 5, mentionName: '', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
   }
@@ -277,6 +280,7 @@ function reportMeta() {
   const clampPatch = (patch) => {
     const p = { ...patch }
     if ('perDay' in p) p.perDay = Math.max(0, Math.floor(Number(p.perDay) || 0))
+    if ('pickPerRound' in p) p.pickPerRound = Math.max(1, Math.min(50, Math.floor(Number(p.pickPerRound) || 5)))
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
     if ('dmWatch' in p) p.dmWatch = Boolean(p.dmWatch)
@@ -630,6 +634,8 @@ function reportMeta() {
         ranToday: st.day === dayKey(now) ? Number(st.count || 0) : 0,
         pickedToday: countPickedToday(now),
         perDay: cfg.perDay,
+        pickPerRound: cfg.pickPerRound,
+        canPickThisRound: picksThisRound(cfg.perDay, cfg.pickPerRound, countPickedToday(now)),
         // ⭐ 2026-10-19：这一轮会用哪个 dsh（空 = 没找到 ⇒ 那一轮根本跑不起来）
         dshCli: dshCliCached(),
         windows: Object.fromEntries(Object.entries(WINDOWS).map(([k, w]) => [k, {
@@ -703,7 +709,7 @@ function reportMeta() {
   tool({
     name: 'bili_config',
     description: '读 / 改「刷B站」的设置。不给 `patch` 就是读；给了就改（只认 schema 里的字段）。\n'
-      + '例：`{"perDay":5,"peakValley":true,"noon":true,"night":true,"autoComment":false,"transcribe":false,"keywords":["DeepSeek Harness"]}`；'
+      + '例：`{"perDay":20,"pickPerRound":5,"peakValley":true,"noon":true,"night":true,"autoComment":false,"transcribe":false,"keywords":["DeepSeek Harness"]}`；'
       + '私信投递：`{"dmMode":"only","dmUid":12345678}`（dmMode = off / only / both）。',
     parameters: { patch: { type: 'object', additionalProperties: true, description: '要改的字段（可省）' } },
     async execute(args) {
@@ -1022,6 +1028,7 @@ function reportMeta() {
     const quota = Math.max(0, Number(cfg.perDay) || 0)
     const already = countPickedToday()
     const left = Math.max(0, quota - already)
+    const roundMax = picksThisRound(cfg.perDay, cfg.pickPerRound, already)
     // ⭐ 投递方式（2026-10-17 加）：dmMode = off（只评论）· only（只私信）· both（都发）
     //    commentOn 是"这一轮到底能不能发公开评论"的唯一判据（工具层的闸用的是同一套逻辑）
     const dmUidEff = Number(cfg.dmUid) || dmUidCache
@@ -1047,9 +1054,10 @@ function reportMeta() {
           : `把报告写到 ${join(outDir, `${dayKey()}.md`)}。`)
       + (cfg.reportLevel === 'off' ? '' : `⚠️ 今天那份报告里可能已经有上一轮写的东西 —— 有就**追加到末尾**，别覆盖（配额按全天算）。`)
       + (cfg.reportLevel === 'off' ? '' : '⭐ 报告里**每挑中一条**，第一行写成 `### BV号`（例：`### BV1xxxxxxx`）—— 宿主**就数这些标题行**算今天挑了几条：漏写当成没挑中，给只是提到 / 跳过的视频加上标题则当成挑中。')
-      + (already > 0
-        ? `今天已经挑过 ${already} 条了 ⇒ **这一轮最多再挑 ${left} 条**（「每天最多 ${quota} 条」是全天总量，不是每轮）；`
-        : `今天最多挑 ${quota} 条；`)
+      + `⭐ **本轮选片硬性数量要求**：每天最多 ${quota} 条，今天已挑 ${already} 条，今天还剩 ${left} 条；`
+      + `设置的每轮上限是 ${cfg.pickPerRound} 条 ⇒ **本轮最多新挑 ${roundMax} 条**（两项上限取较小值）。`
+      + `从这一轮开始，新的入选视频（包括写报告、记为挑中、发送评论或推荐私信）合计不得超过 ${roundMax} 条；`
+      + `每新增一条就计数，达到本轮上限立即停止继续挑选。若额度为 0，不得再挑新视频。`
       + `关键词${kws.length ? `用这些：${kws.join('、')}` : '用章程里的默认那几组'}。`
       + `本地转写：${cfg.transcribe
         ? (asrReadyNow()
@@ -1263,7 +1271,10 @@ function reportMeta() {
     const overlay = ensureOverlay()
     const args = [...dsh.args, '--profile', cfg.headlessProfile || 'headless']
     if (overlay) args.push('--patch', overlay)
+    const pickedBeforeRun = countPickedToday()
+    const roundLimitAtStart = picksThisRound(cfg.perDay, cfg.pickPerRound, pickedBeforeRun)
     args.push(promptFor())
+    log(`本轮选片额度：${roundLimitAtStart} 条（单轮设置 ${cfg.pickPerRound}，今日已选 ${pickedBeforeRun}/${cfg.perDay}）`)
     // ⭐ 这一轮的工作目录 = 使用者（或别的用户）的**工作区** —— 只有这样它的 `AGENTS.md` 才会自动加载。
     // ⭐ 工作目录 = **插件家**：那一轮**被沙箱关着**，只写得了自己工作目录里的东西 ✗
     //    （2026-10-14 教训：为了让它读工作区里的 AGENTS.md 把 cwd 改成工作区 ⇒
@@ -1316,6 +1327,10 @@ function reportMeta() {
         const prev = st.day === dayKey() ? Number(st.picked || 0) : 0
         const picked = countPickedToday()   // 报告是事实来源、state 只是兜底（跟闸门同一个算法）
         if (picked > prev) { bumpState({ picked }); log(`今天挑到 ${picked} 条（上限 ${Number(cfg.perDay) || 0} 条）`) }
+        // Agent 是自然语言执行；若它违背本轮数量要求，给出可定位的警告而不是假装严格阻断。
+        if (picked - pickedBeforeRun > roundLimitAtStart) {
+          log(`⚠️ 本轮实际新增 ${picked - pickedBeforeRun} 条，超过设置允许的 ${roundLimitAtStart} 条，请检查本轮 duty.log/报告`)
+        }
       } catch (e) { log(`数挑了几条时出错（不影响这一轮）：${e?.message ?? e}`) }
       // ⭐ 发完评论之后**过一会儿再核一次**（2026-10-16 加的「评论发出后复核」）：
       //    接口回"发送成功"≠ 公开可见（新号/风控会进审核）；而"不公开"时连 @ 通知都不会推 ⇒
@@ -2035,6 +2050,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       today,
       ranToday: st.day === today ? Number(st.count || 0) : 0,   // 今天跑了几轮
       pickedToday: countPickedToday(),                          // 今天挑到几条（从报告里数）
+      canPickThisRound: picksThisRound(cfg.perDay, cfg.pickPerRound, countPickedToday()),
       lastRunAt: st.lastRunAt || null,
       lastWhy: st.lastWhy || null,
       loggedIn: hasCredential(),
@@ -2126,7 +2142,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (req.method === 'POST' && path === '/api/bili-duty/config') {
       const body = await readBody(req)
       const patch = {}
-      for (const k of ['perDay', 'peakValley', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
+      for (const k of ['perDay', 'pickPerRound', 'peakValley', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
         'commentPerRound', 'mentionName', 'dmMode', 'dmUid',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'replyToComments', 'replyPerRound', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText']) {
         if (k in body) patch[k] = body[k]

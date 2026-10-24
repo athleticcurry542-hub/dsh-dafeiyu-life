@@ -245,6 +245,7 @@ function WatchTab() {
       // ⚠️ 输入框必须绑"本地草稿"：页面每 5 秒轮询 /status，服务端那份会把 config 盖掉
       //    ⇒ 直接绑 cfg 的话，用户打字打到一半就被冲没了 ✗（2026-10-14 陌生人验收时抓到）
       const [perDay, setPerDay] = React.useState(null)
+      const [pickPerRound, setPickPerRound] = React.useState(null)
       const [perRound, setPerRound] = React.useState(null)
       const [replyPer, setReplyPer] = React.useState(null)
       const [dmUid, setDmUid] = React.useState(null)        // 私信收件人 UID（本地草稿）
@@ -281,7 +282,8 @@ function WatchTab() {
         if (cfg && kws === null) setKws((cfg.keywords || []).join('\n'))
         if (cfg && persona === null) setPersona(cfg.personaPrompt || '')
         if (cfg && rl === null) setRl(cfg.reportLevel || 'full')
-        if (cfg && perDay === null) setPerDay(String(cfg.perDay ?? 5))
+        if (cfg && perDay === null) setPerDay(String(cfg.perDay ?? 50))
+        if (cfg && pickPerRound === null) setPickPerRound(String(cfg.pickPerRound ?? 5))
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && replyPer === null) setReplyPer(String(cfg.replyPerRound ?? 1))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
@@ -577,13 +579,28 @@ function WatchTab() {
           h('div', { 'data-bd-row': '' },
             h('div', { 'data-bd-grow': '' },
               h('div', { 'data-bd-label': '' }, '每天最多挑几条'),
-              h('div', { 'data-bd-note': '' }, '填 0 = 不自动刷（还是能手动跑）')),
+              h('div', { 'data-bd-note': '' }, '填 0 = 今天不再挑选视频（即使手动启动也不会挑新视频）')),
             h('input', {
               'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0,
               value: perDay ?? '',
               onChange: (e) => setPerDay(e.target.value),
               onBlur: () => { const n = Math.max(0, Math.floor(Number(perDay) || 0)); setPerDay(String(n)); patch({ perDay: n }, '每天挑几条') },
             })),
+          h('div', { 'data-bd-row': '' },
+            h('div', { 'data-bd-grow': '' },
+              h('div', { 'data-bd-label': '' }, '每轮最多挑几条'),
+              h('div', { 'data-bd-note': '' }, '每次点「现在跑一轮」或自动执行时的上限（1～50）；实际不能超过今日剩余额度')),
+            h('input', {
+              'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 50, step: 1,
+              value: pickPerRound ?? '',
+              onChange: (e) => setPickPerRound(e.target.value),
+              onBlur: () => {
+                const n = Math.max(1, Math.min(50, Math.floor(Number(pickPerRound) || 5)))
+                setPickPerRound(String(n))
+                patch({ pickPerRound: n }, '每轮最多挑几条')
+              },
+            })),
+          h('div', { 'data-bd-note': '' }, `按当前配置，这一轮最多还能挑 ${st.canPickThisRound ?? Math.max(0, Math.min(Number(cfg.pickPerRound) || 5, (Number(cfg.perDay) || 0) - (Number(st.pickedToday) || 0)))} 条`),
           st.lastRunAt ? h('div', { 'data-bd-note': '' }, `上次跑：${new Date(st.lastRunAt).toLocaleString('zh-CN')}`) : null),
 
         /* ── 发言与转写 ── */
