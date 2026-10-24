@@ -280,7 +280,7 @@ function WatchTab() {
         if (cfg && persona === null) setPersona(cfg.personaPrompt || '')
         if (cfg && rl === null) setRl(cfg.reportLevel || 'full')
         if (cfg && perDay === null) setPerDay(String(cfg.perDay ?? 5))
-        if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 1))
+        if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && replyPer === null) setReplyPer(String(cfg.replyPerRound ?? 1))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && dmUid === null) setDmUid(cfg.dmUid ? String(cfg.dmUid) : '')
@@ -575,10 +575,10 @@ function WatchTab() {
               h('div', { 'data-bd-label': '' }, '每天最多挑几条'),
               h('div', { 'data-bd-note': '' }, '填 0 = 不自动刷（还是能手动跑）')),
             h('input', {
-              'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0, max: 50,
+              'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0,
               value: perDay ?? '',
               onChange: (e) => setPerDay(e.target.value),
-              onBlur: () => { const n = Math.max(0, Math.min(Number(perDay) || 0, 50)); setPerDay(String(n)); patch({ perDay: n }, '每天挑几条') },
+              onBlur: () => { const n = Math.max(0, Math.floor(Number(perDay) || 0)); setPerDay(String(n)); patch({ perDay: n }, '每天挑几条') },
             })),
           st.lastRunAt ? h('div', { 'data-bd-note': '' }, `上次跑：${new Date(st.lastRunAt).toLocaleString('zh-CN')}`) : null),
 
@@ -616,10 +616,10 @@ function WatchTab() {
                 h('div', { 'data-bd-label': '' }, '每轮最多发几条评论'),
                 h('div', { 'data-bd-note': '' }, '每条评论里 @ 一次上面那个人；填 0 = 这一轮不发评论')),
               h('input', {
-                'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0, max: 20,
+                'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0,
                 value: perRound ?? '',
                 onChange: (e) => setPerRound(e.target.value),
-                onBlur: () => { const n = Math.max(0, Math.min(Number(perRound) || 0, 20)); setPerRound(String(n)); patch({ commentPerRound: n }, '每轮发几条评论') },
+                onBlur: () => { const n = Math.max(0, Math.floor(Number(perRound) || 0)); setPerRound(String(n)); patch({ commentPerRound: n }, '每轮发几条评论') },
               }))) : null,
           (dmMode === 'off' || dmMode === 'both') ? h(ToggleRow, {
             label: '回复评论（只回楼中楼）',

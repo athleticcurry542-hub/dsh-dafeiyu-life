@@ -48,7 +48,7 @@ export const inject = ['webServer', 'tools', 'settings']
 //    （宁可少一个设置页，也不能因为一个 import 让整条插件不激活 ✗）
 export const Config = !z ? undefined : z.object({
   /** 定量刷：每天最多挑几条 */
-  perDay: z.natural().default(5).extra('volatile', true),
+  perDay: z.natural().default(50).extra('volatile', true),
   /** 峰谷自动刷（总开关） */
   peakValley: z.boolean().default(false).extra('volatile', true),
   /** 峰谷子开关：中午 / 晚上 */
@@ -67,7 +67,7 @@ export const Config = !z ? undefined : z.object({
   /** ⭐ 每轮最多发几条评论（每条里 @ 一次下面那个人）；**有效范围 0–20，口径见 clampPatch**（0 = 不发评论）
    *  ⚠️ 这里故意**不加 `.max(20)`**：schema 校验不过 ⇒ cordis 拒收这条 entry ⇒ **整条插件不激活** ✗
    *     （跟 schemastery 拿不到时的降级同一个道理）—— 范围一律由 clampPatch 在**写**和**读**两头钳。 */
-  commentPerRound: z.natural().default(1).extra('volatile', true),
+  commentPerRound: z.natural().default(5).extra('volatile', true),
   /** ⭐ 要 @ 谁（B站 昵称）；**留空 = 不发评论** —— 评论存在的意义就是 @ 那一下 */
   mentionName: z.string().default('').extra('volatile', true),
   /** 关注关键词（空了用章程里默认那几组） */
@@ -236,9 +236,9 @@ function reportMeta() {
   const DEFAULTS = {
     dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0,
     personaPrompt: '',
-    perDay: 5, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
+    perDay: 50, peakValley: false, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0,
-    keywords: [], commentPerRound: 1, mentionName: '', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
+    keywords: [], commentPerRound: 5, mentionName: '', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', replyToComments: false, replyPerRound: 1, favFolderId: 0,
   }
   const normalize = (src, base) => {
     const out = { ...base }
@@ -267,7 +267,7 @@ function reportMeta() {
    *      loadCfg 读回来也过一遍，写进去和读出来一个口径） */
   const clampPatch = (patch) => {
     const p = { ...patch }
-    if ('perDay' in p) p.perDay = Math.max(0, Math.min(Number(p.perDay) || 0, 50))
+    if ('perDay' in p) p.perDay = Math.max(0, Math.floor(Number(p.perDay) || 0))
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
     if ('dmWatch' in p) p.dmWatch = Boolean(p.dmWatch)
@@ -277,7 +277,7 @@ function reportMeta() {
     if ('replyToComments' in p) p.replyToComments = Boolean(p.replyToComments)
     if ('replyPerRound' in p) p.replyPerRound = Math.max(1, Math.min(Number(p.replyPerRound) || 1, 10))
     if ('favFolderId' in p) p.favFolderId = Math.max(0, Math.floor(Number(p.favFolderId) || 0))
-    if ('commentPerRound' in p) p.commentPerRound = Math.max(0, Math.min(Number(p.commentPerRound) || 0, 20))
+    if ('commentPerRound' in p) p.commentPerRound = Math.max(0, Math.floor(Number(p.commentPerRound) || 0))
     return p
   }
 
