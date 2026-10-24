@@ -261,6 +261,11 @@ function WatchTab() {
       const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
       const [mentionMode, setMentionMode] = React.useState(null)
+      const [modelDraft,setModelDraft] = React.useState(null)
+      const [approvals,setApprovals] = React.useState([])
+      const [approvalPhrase,setApprovalPhrase] = React.useState(null)
+      const [approvedTotal,setApprovedTotal] = React.useState(null)
+      const [approvedDaily,setApprovedDaily] = React.useState(null)
       const [login, setLogin] = React.useState(null)
       const [runNote, setRunNote] = React.useState(null)
       const [report, setReport] = React.useState(null)        // 非 null = 报告已展开   // 顶部那行状态（跑一轮/装依赖的反馈原来在最底下，看不见）
@@ -285,6 +290,10 @@ function WatchTab() {
       }, [])
 
       const cfg = st?.config
+      React.useEffect(()=>{
+        if(tab!=='social' || !cfg?.dmApprovalEnabled)return
+        jget('/dm-approvals').then(x=>{if(alive.current)setApprovals(x.approvals||[])}).catch(()=>{})
+      },[tab,cfg?.dmApprovalEnabled])
       React.useEffect(() => {
         if (cfg && kws === null) setKws((cfg.keywords || []).join('\n'))
         if (cfg && persona === null) setPersona(cfg.personaPrompt || '')
@@ -302,6 +311,10 @@ function WatchTab() {
         if (cfg && dmWhitelist === null) setDmWhitelist(cfg.dmWhitelist || '')
         if (cfg && dmStrangerText === null) setDmStrangerText(cfg.dmStrangerText || '')
         if (cfg && dmStrangerMax === null) setDmStrangerMax(String(cfg.dmStrangerMaxReplies ?? 1))
+        if(cfg && modelDraft===null) setModelDraft(Object.fromEntries(['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort'].map(k=>[k,cfg[k]||''])))
+        if(cfg && approvalPhrase===null) setApprovalPhrase(cfg.dmApprovalPhrase || '白饭🍚')
+        if(cfg && approvedTotal===null) setApprovedTotal(String(cfg.dmApprovedTotalLimit ?? 50))
+        if(cfg && approvedDaily===null) setApprovedDaily(String(cfg.dmApprovedDailyLimit ?? 10))
         if (cfg && commentTopCount === null) setCommentTopCount(String(cfg.commentTopCount ?? 5))
         if (cfg && commentTopVideoCount === null) setCommentTopVideoCount(String(cfg.commentTopVideoCount ?? 3))
         if (cfg && commentReplyPerPoll === null) setCommentReplyPerPoll(String(cfg.commentReplyPerPoll ?? 1))
@@ -654,10 +667,11 @@ function WatchTab() {
           h('div', { 'data-bd-note': '' }, '名单为空会继承旧 mentionName。填写正确的 UID 能尝试 B站原生 @；真实提醒是否推送仍由平台决定。'),
           h('div', { 'data-bd-label': '' }, '公开评论 @ 策略'),
           h('select', { 'data-bd-input': '', value: mentionMode ?? 'ai', onChange:(e)=>{setMentionMode(e.target.value);patch({mentionMode:e.target.value}, '@ 策略')} },
-            h('option', {value:'ai'}, '大肥鱼视情况自主决定（推荐）'),
+            h('option', {value:'ai'}, '视情况 @ 所有好友（旧版兼容）'),
+            h('option', {value:'ai_select'}, '视情况只 @ 想邀请的某些好友（推荐）'),
             h('option', {value:'off'}, '永远不 @（只评论）'),
             h('option', {value:'always'}, '每条评论 @ 所有好友')),
-          h('div', { 'data-bd-note': '' }, 'AI 模式不随机按概率：大肥鱼觉得值得分享才 @；触发时会带上全部名单，位置可在句首、句中或句尾。'),
+          h('div', { 'data-bd-note': '' }, 'AI 按视频与情境决定，不使用固定概率。ai_select 可 @ 0、1、2 或多个名单内好友；ai 模式仍一次 @ 所有人。位置可在句首、句中或句尾。'),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信内容 = 本轮每条的「标题 + 链接 + 一句话」，一轮合并成一条发。⚠️ 建议先让这个号和收件人互关：B站 对「陌生人私信」会限流，还可能不弹提醒。') : null,
 
           (dmMode === 'off' || dmMode === 'both') ? h('div', { 'data-bd-sep': '' }) : null,
@@ -741,6 +755,43 @@ function WatchTab() {
               h('button', { 'data-bd-btn': '',
                 onClick: () => patch({ dmStrangerText: dmStrangerText ?? '' }, '陌生人欢迎语'),
               }, '保存欢迎语')) : null) : null,
+            h('div', { 'data-bd-sep': '' }),
+            h('div', { 'data-bd-label': '' }, '限额聊天申请（原始可信白名单永不限额）'),
+            h(ToggleRow,{label:'允许陌生人达到回复次数后申请继续聊天',
+              note:'先开启陌生人自动回复；大肥鱼在最后一次自动回复里提示对方发送暗号；收到暗号后只登记待审批，不会擅自通过。',
+              on:cfg?.dmApprovalEnabled===true,onChange:v=>patch({dmApprovalEnabled:v},'申请审批开关')}),
+            cfg?.dmApprovalEnabled ? h('div',{'data-bd-sub':''},
+              h('div',{'data-bd-label':''},'申请暗号（默认：白饭🍚）'),
+              h('input',{'data-bd-input':'',value:approvalPhrase??'',onChange:e=>setApprovalPhrase(e.target.value),
+                onBlur:()=>patch({dmApprovalPhrase:approvalPhrase||'白饭🍚'},'申请暗号')}),
+              h('div',{'data-bd-row':''},
+                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'审批白名单：总回复限额'),
+                  h('div',{'data-bd-note':''},'每个获批 UID 累计上限；旧可信白名单不受影响')),
+                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,value:approvedTotal??'',
+                  onChange:e=>setApprovedTotal(e.target.value),onBlur:()=>patch({dmApprovedTotalLimit:Math.max(1,Number(approvedTotal)||50)},'审批用户总限额')})),
+              h('div',{'data-bd-row':''},
+                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'审批白名单：每日回复限额')),
+                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,value:approvedDaily??'',
+                  onChange:e=>setApprovedDaily(e.target.value),onBlur:()=>patch({dmApprovedDailyLimit:Math.max(1,Number(approvedDaily)||10)},'审批用户每日限额')})),
+              h('button',{'data-bd-btn':'',onClick:async()=>{
+                try{const x=await jget('/dm-approvals');setApprovals(x.approvals||[])}catch(e){say('加载审批名单失败：'+e.message,'warn')}
+              }},'刷新审批名单'),
+              h('div',{'data-bd-note':''},'每个 UID 独立计数；“最信任白名单”继续保留原来的无限额规则。'),
+              ...approvals.map(a=>h('div',{key:a.uid,'data-bd-item':''},
+                h('div',{'data-bd-item-t':''},'UID '+a.uid+' · '+(a.status==='pending'?'待审批':a.status==='approved'?'已通过':'已拒绝')+' · 已回复 '+a.total+' 条'),
+                h('div',{'data-bd-note':''},a.lastText||''),
+                a.status==='pending' ? h('div',{'data-bd-row':''},
+                  ...['approve','reject'].map(act=>h('button',{'data-bd-btn':'',onClick:async()=>{
+                    try { const result=await jpost('/dm-approvals',{uid:a.uid,action:act});
+                      if(!result.ok)throw Error(result.error||'操作失败');
+                      const next=await jget('/dm-approvals');setApprovals(next.approvals||[]);
+                      say('审批操作已保存','good') }catch(e){say('审批失败：'+e.message,'warn')}
+                  }},act==='approve'?'通过并加入限额白名单':'拒绝'))) : null,
+                a.status==='approved' ? h('button',{'data-bd-btn':'',onClick:async()=>{
+                  try{const result=await jpost('/dm-approvals',{uid:a.uid,action:'revoke'});
+                    if(!result.ok)throw Error(result.error||'操作失败');
+                    const next=await jget('/dm-approvals');setApprovals(next.approvals||[])}catch(e){say('撤销失败：'+e.message,'warn')}
+                }},'撤销限额聊天权限') : null))) : null,
             h('div', { 'data-bd-row': '' },
               h('div', { 'data-bd-label': '' }, '检查间隔（分钟）'),
               h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 120,
@@ -902,6 +953,23 @@ function WatchTab() {
               h('div', { 'data-bd-item-n': '' }, x.detail || ''),
               x.ok ? null : h('div', { 'data-bd-item-why': '' }, '怎么办：' + (x.fix || '把诊断信息发给作者'))))) : null,
           diag ? h('pre', { 'data-bd-pre': '' }, diag) : null,
+          h('div',{'data-bd-h':''},'模型路由：刷视频与后台互动独立配置'),
+          h('div',{'data-bd-note':''},'提供方(provider)、模型 ID 为空时继承 DSH 当前配置；思考深度为自由文本，按模型支持的原始格式填写。保存后下次启动 Agent 生效。'),
+          ...[
+            ['video','刷视频 / 视频分析'],['interaction','后台私信 / 评论互动']
+          ].map(([prefix,title])=>h('div',{'data-bd-sub':'',key:prefix},
+            h('div',{'data-bd-label':''},title),
+            ...[
+              [prefix+'ModelProvider','模型提供方 Provider（可留空）','如 deepseek-account'],
+              [prefix+'ModelId','模型 ID（可留空）','如 deepseek-chat'],
+              [prefix+'ReasoningEffort','思考深度（自由输入，可留空）','填写该模型支持的原始值']
+            ].map(([key,label,placeholder])=>h('div',{key},
+              h('div',{'data-bd-note':''},label),
+              h('input',{'data-bd-input':'',value:(modelDraft||{})[key]??'',placeholder,
+                onChange:e=>setModelDraft(old=>({...old,[key]:e.target.value})),
+                onBlur:()=>patch({[key]:(modelDraft||{})[key]||'',clear:[key]},'模型参数 '+key)}))))),
+          h('div',{'data-bd-note':''},'后台互动沿用原有统一批量生成队列：私信与评论共享一个互动模型，节省重复人设提示词。'),
+          h('div', { 'data-bd-sep': '' }),
           h('div', { 'data-bd-h': '' }, '环境与账号'),
           h('div', { 'data-bd-row': '' },
             h('button', { 'data-bd-btn': '', disabled: busy === 'install', onClick: onInstall },

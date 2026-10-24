@@ -91,8 +91,8 @@ test('rate limit defers whitelist without consuming incoming message',async()=>{
   assert.deepEqual(m.sent.map(x=>x.uid),['200','201']);
 });
 
-test('legacy daily limit is respected, without consuming deferred messages', async()=>{
-  const m=await mk({config:{maxPerDay:1,whitelist:['200','201']}})
+test('stranger daily cap is respected without consuming deferred messages', async()=>{
+  const m=await mk({config:{maxPerDay:1,whitelist:[],strangerMaxReplies:2}})
   await m.make().poll()
   m.inbox.push(msg('200','1','A'),msg('201','1','B'))
   assert.equal((await m.make().poll()).sent,1)

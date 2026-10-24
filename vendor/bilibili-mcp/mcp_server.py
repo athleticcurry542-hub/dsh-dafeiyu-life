@@ -526,7 +526,7 @@ async def bili_video_info(bvid: str) -> str:
 def _mention_settings(request_mode=None, request_targets=None):
     """overlay 的环境变量优先，防止模型自行指定通知其他人；宿主工具使用请求参数。"""
     mode = os.environ.get("BILI_MENTION_MODE", request_mode or "ai")
-    if mode not in ("off", "ai", "always"):
+    if mode not in ("off", "ai", "ai_select", "always"):
         mode = "ai"
     if "BILI_MENTION_TARGETS" in os.environ:
         try: targets = json.loads(os.environ["BILI_MENTION_TARGETS"])
@@ -595,7 +595,8 @@ async def _send_video_comment_with_mentions(bvid, aid, text, credential, mention
 @tool()
 async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: int = 0,
                      should_mention: bool = False, mention_position: str = "end",
-                     mention_mode: str = "ai", mention_targets: list[dict] | None = None) -> str:
+                     mention_mode: str = "ai", mention_targets: list[dict] | None = None,
+                     mention_names: list[str] | None = None) -> str:
     """
     在B站视频下发表评论或回复某条评论
 
@@ -608,6 +609,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         mention_position: 自然的 @ 位置，可选 start/middle/end
         mention_mode: 宿主调用时的策略；headless 通过 BILI_MENTION_MODE 环境变量限制
         mention_targets: 宿主调用传配置名单；headless 从环境变量读取可信名单
+        mention_names: ai_select 模式下 AI 选择的名单内昵称；空列表表示不 @
     
     Returns:
         发表结果
@@ -623,9 +625,15 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
     try:
         mode, targets = _mention_settings(mention_mode, mention_targets)
         # 只有一级评论可对配置中好友群发 @，回复具体评论不会把整个好友名单拖进来。
-        use_mentions = (rpid == 0 and targets and
-                        (mode == "always" or (mode == "ai" and should_mention is True)))
-        text, mentioned = _decorate_comment(text, targets, use_mentions, mention_position)
+        selected = targets
+        if mode == "ai_select":
+            wanted = {str(x).strip().lstrip("@") for x in (mention_names or []) if isinstance(x, str)}
+            selected = [x for x in targets if x["name"] in wanted]
+        use_mentions = (rpid == 0 and selected and
+                        (mode == "always" or (mode in ("ai", "ai_select") and should_mention is True)))
+        # 即使不@也必须移除模型偷加的名单昵称。
+        clean_text, _ = _decorate_comment(text, targets, False, mention_position)
+        text, mentioned = _decorate_comment(clean_text, selected, use_mentions, mention_position)
         if not text:
             return json.dumps({"success": False, "error": "评论内容不能为空"}, ensure_ascii=False)
         # 全部 UID 都由用户显式提供时，才尝试带映射的评论接口。

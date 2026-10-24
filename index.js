@@ -41,6 +41,7 @@ import { createCommentInteract } from './lib/comment-interact.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
+import { effectiveModelSelection } from './lib/model-routing.mjs'
 
 export const name = 'bili-scroll'
 export const inject = ['webServer', 'tools', 'settings']
@@ -83,6 +84,13 @@ export const Config = !z ? undefined : z.object({
   mentionTargets: z.string().default('').extra('volatile', true),
   /** 评论 @ 策略：ai=大肥鱼视情况决定，off=从不@，always=每条@ */
   mentionMode: z.string().default('ai').extra('volatile', true),
+  /** AI 可选择 @ 部分好友（0/1/2/...人），与旧 ai=全体兼容 */
+  videoModelProvider: z.string().default('').extra('volatile',true),
+  videoModelId: z.string().default('').extra('volatile',true),
+  videoReasoningEffort: z.string().default('').extra('volatile',true),
+  interactionModelProvider: z.string().default('').extra('volatile',true),
+  interactionModelId: z.string().default('').extra('volatile',true),
+  interactionReasoningEffort: z.string().default('').extra('volatile',true),
   /** 关注关键词（空了用章程里默认那几组） */
   keywords: z.array(z.string()).default([]).extra('volatile', true),
   /** Python：指向 venv 里的那个最好 */
@@ -111,6 +119,10 @@ export const Config = !z ? undefined : z.object({
   dmStrangerText: z.string().default('你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。').extra('volatile', true),
   dmStrangerMaxReplies: z.natural().default(1).extra('volatile', true),
   dmStrangerFirstFixed: z.boolean().default(true).extra('volatile', true),
+  dmApprovalEnabled: z.boolean().default(false).extra('volatile',true),
+  dmApprovalPhrase: z.string().default('白饭🍚').extra('volatile',true),
+  dmApprovedTotalLimit: z.natural().default(50).extra('volatile',true),
+  dmApprovedDailyLimit: z.natural().default(10).extra('volatile',true),
   commentWatchReplies: z.boolean().default(false).extra('volatile', true),
   commentWatchTop: z.boolean().default(false).extra('volatile', true),
   commentTopCount: z.natural().default(5).extra('volatile', true),
@@ -263,6 +275,8 @@ function reportMeta() {
   const DEFAULTS = {
     dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0,
     dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
+    dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10,
+    videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '',
     commentWatchReplies: false, commentWatchTop: false, commentTopCount: 5, commentTopVideoCount: 3,
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
@@ -299,10 +313,11 @@ function reportMeta() {
   const clampPatch = (patch) => {
     const p = { ...patch }
     if ('mentionTargets' in p) p.mentionTargets = String(p.mentionTargets || '').slice(0, 1200)
-    if ('mentionMode' in p) p.mentionMode = ['off', 'ai', 'always'].includes(String(p.mentionMode)) ? String(p.mentionMode) : 'ai'
+    if ('mentionMode' in p) p.mentionMode = ['off', 'ai', 'ai_select', 'always'].includes(String(p.mentionMode)) ? String(p.mentionMode) : 'ai'
     if ('perDay' in p) p.perDay = Math.max(0, Math.floor(Number(p.perDay) || 0))
     if ('pickPerRound' in p) p.pickPerRound = Math.max(1, Math.min(50, Math.floor(Number(p.pickPerRound) || 5)))
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
+    for (const k of ['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort']) if(k in p) p[k]=String(p[k]||'').trim().slice(0,160).replace(/[\r\n\0]/g,'')
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
     if ('dmWatch' in p) p.dmWatch = Boolean(p.dmWatch)
     if ('dmWatchMinutes' in p) p.dmWatchMinutes = Math.max(1, Math.min(120, Number(p.dmWatchMinutes) || 1))
@@ -313,6 +328,10 @@ function reportMeta() {
     if ('dmStrangerText' in p) p.dmStrangerText = String(p.dmStrangerText || '').slice(0, 450)
     if ('dmStrangerMaxReplies' in p) p.dmStrangerMaxReplies = Math.max(1, Math.min(20, Math.floor(Number(p.dmStrangerMaxReplies) || 1)))
     if ('dmStrangerFirstFixed' in p) p.dmStrangerFirstFixed = p.dmStrangerFirstFixed === true
+    if ('dmApprovalEnabled' in p) p.dmApprovalEnabled = p.dmApprovalEnabled === true
+    if ('dmApprovalPhrase' in p) p.dmApprovalPhrase = String(p.dmApprovalPhrase||'白饭🍚').trim().slice(0,60)
+    if ('dmApprovedTotalLimit' in p) p.dmApprovedTotalLimit = Math.max(1,Math.min(10000,Math.floor(Number(p.dmApprovedTotalLimit)||50)))
+    if ('dmApprovedDailyLimit' in p) p.dmApprovedDailyLimit = Math.max(1,Math.min(1000,Math.floor(Number(p.dmApprovedDailyLimit)||10)))
     for (const k of ['commentWatchReplies', 'commentWatchTop', 'commentAllowGeneralTop']) if(k in p) p[k] = p[k] === true
     for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,30,5]]) {
       if(k in p) p[k] = Math.max(min, Math.min(max, Math.floor(Number(p[k]) || def)))
@@ -624,7 +643,8 @@ function reportMeta() {
     parameters: {
       bvid: { type: 'string', description: 'BV号' },
       text: { type: 'string', description: '自然评论正文（通常一两句话）。不要自己添加配置名单里的 @，由工具负责。' },
-      should_mention: { type: 'boolean', description: 'AI情境决定：这条评论是否真的值得邀请名单中的朋友一起看；通常为 false，不要随机决定' },
+      should_mention: { type: 'boolean', description: 'AI情境决定：这条评论是否值得邀请好友；通常 false' },
+      mention_names: {type:'array',items:{type:'string'}, description:'仅在 ai_select 模式下：选择想@的一个或多个名单昵称；留空代表不@，不得编造名单外昵称'},
       mention_position: { type: 'string', description: 'AI判断要@时，选择自然的插入位置 start/middle/end；默认 end' },
       rpid: { type: 'number', description: '要回复的评论 id（0/不填 = 发新评论）' },
       force: { type: 'boolean', description: '本人当场让你发的，传 true 越过"自动评论关着"的闸' },
@@ -644,7 +664,7 @@ function reportMeta() {
       }
       const targets = parseMentionTargets(cfg.mentionTargets, cfg.mentionName)
       const choice = decideMentions({mode:cfg.mentionMode, isReply:Number(args.rpid)>0,
-        shouldMention:args.should_mention, targets, position:args.mention_position})
+        shouldMention:args.should_mention, selectedNames:args.mention_names, targets, position:args.mention_position})
       return call('bili_reply', {
         bvid: String(args.bvid ?? ''),
         text: String(args.text ?? ''),
@@ -652,6 +672,7 @@ function reportMeta() {
         mention_mode: cfg.mentionMode,
         mention_targets: targets,
         should_mention: choice.shouldMention,
+        mention_names: choice.targets.map(t=>t.name),
         mention_position: choice.position,
       })
     },
@@ -1109,10 +1130,10 @@ function reportMeta() {
       + `这是**给以后检索用**的（报告是给人看的，归档是给"回头翻"用的），别省略、也别只写挑中的。`
       + `公开评论是${commentOn
         ? `开启的（每轮最多 ${cfg.commentPerRound} 条，150 字内）。评论像普通 B站用户自然吐槽，绝不能做摘要或推广。`
-          + `@ 策略为 ${cfg.mentionMode || 'ai'}（off=不@；ai=你根据视频和评论情境自主判断；always=每条@全部好友）。`
+          + `@ 策略为 ${cfg.mentionMode || 'ai'}（off=不@；ai=判断后@全部好友；ai_select=只@觉得值得邀请的部分好友；always=每条@全部好友）。`
           + `名单：${parseMentionTargets(cfg.mentionTargets,cfg.mentionName).map(t=>t.name).join('、') || '空'}。`
-          + `在 ai 模式，每次调用 bili_reply 时显式填写 should_mention: true/false，只有真的想邀请好友来看才选 true；`
-          + `大部分普通吐槽选 false。触发时自动 @ 名单中的全部人，并可用 mention_position 选择 start/middle/end（别永远放开头）。`
+          + `在 ai 或 ai_select 模式，每次调用 bili_reply 时显式填写 should_mention: true/false；在 ai_select 模式还要填写 mention_names（只填真正想邀请的名单内昵称，可为空/一个/几个），`
+          + `大部分普通吐槽选 false。ai 模式触发时@名单全部好友；ai_select 仅@选中的好友；mention_position 可选 start/middle/end。`
           + `text 只写自然评论，不要手工附加 @ 昵称；发送工具负责插入。`
         : (dmModeEff === 'only'
           ? '关闭 —— 当前只私信，禁止公开评论'
@@ -1199,19 +1220,16 @@ function reportMeta() {
     //    ⇒ overlay 里补一条 agent-default-model，**优先跟随用户当前选的模型**；拿不到就不写（保持原行为）✓
     try {
       const sel = ctx.get('agentDefaultModel')?.currentSelection?.() ?? null
-      const selProvider = sel?.provider ?? sel?.providerId
-      const selModel = sel?.model ?? sel?.modelId
-      if (selProvider && selModel) {
-        yml.push(
-          '- id: agent-default-model',
-          '  config:',
-          '    provider: ' + String(selProvider),
-          '    model: ' + String(selModel),
-          ...(sel.reasoningEffort ? ['    reasoningEffort: ' + String(sel.reasoningEffort)] : []),
-          '',
-        )
+      const prefix = dmSafe ? 'interaction' : 'video'
+      const custom = {
+        provider: cfg[prefix+'ModelProvider'], model: cfg[prefix+'ModelId'],
+        reasoningEffort: cfg[prefix+'ReasoningEffort'],
       }
-    } catch { /* 老版本没有这个服务 —— 不写就退回原行为 */ }
+      yml.push(...effectiveModelSelection(sel,custom,yq))
+    } catch (e) {
+      log('⚠️ '+(dmSafe?'后台互动':'视频')+'模型配置无效：'+String(e?.message||e))
+      // 不降级到另一个未经确认的模型。让 DSH 自身选用其 profile 配置。
+    }
     if (cfg.overlayMcp && !dmSafe) {
       yml.push(
         '- insert:',
@@ -1444,12 +1462,14 @@ function reportMeta() {
       enabled: cfg.dmWatch === true,
       strangerEnabled: cfg.dmStrangerOnce === true,
       strangerMaxReplies: cfg.dmStrangerMaxReplies, strangerFirstFixed: cfg.dmStrangerFirstFixed,
+      approvalEnabled:cfg.dmApprovalEnabled, approvalPhrase:cfg.dmApprovalPhrase,
+      approvedTotalLimit:cfg.dmApprovedTotalLimit, approvedDailyLimit:cfg.dmApprovedDailyLimit,
       whitelist: [...allow], strangerText: cfg.dmStrangerText,
       intervalMinutes: cfg.dmWatchMinutes,
       maxPerPoll: 3, maxPerHour: 40,
       maxPerDay: cfg.dmReplyPerDay,
       whitelistCooldownSeconds: 15,
-      historyLimit: 16,
+      historyLimit: 40,
     }
   }
   const ownerInfo = () => {
@@ -2233,7 +2253,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const patch = {}
       for (const k of ['perDay', 'pickPerRound', 'peakValley', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
         'commentPerRound', 'mentionName', 'mentionTargets', 'mentionMode', 'dmMode', 'dmUid',
-        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'replyToComments', 'replyPerRound', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed',
+        'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
+        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'replyToComments', 'replyPerRound', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay']) {
         if (k in body) patch[k] = body[k]
       }
@@ -2260,6 +2281,15 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const { clean, host } = await persistCfg(patch)
       log(`设置已更新：${JSON.stringify(clean)}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
       return sendJson(res, 200, { ok: true, config: cfg, host })
+    }
+
+    if (req.method === 'GET' && path === '/api/bili-duty/dm-approvals') {
+      return sendJson(res,200,{ok:true, approvals:await dmAutoreply.listApprovals()})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/dm-approvals') {
+      const body=await readBody(req)
+      const result=await dmAutoreply.reviewApproval(String(body.uid||''),String(body.action||''))
+      return sendJson(res,result.ok?200:400,result)
     }
 
     if (req.method === 'POST' && path === '/api/bili-duty/run') {
@@ -2444,7 +2474,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       // ⭐⭐ 2.0.4（第三方体检第 5 条）：脱敏改成**按字段白名单遮** ——
       //    以前只遮 dmUid，人设全文 / 昵称 / 工作区路径全在，而"复制诊断"是会被贴到群里的 ✗
       const masked = (() => {
-        const SENSITIVE = ['personaPrompt', 'mentionName', 'mentionTargets', 'workspace', 'dshBin', 'dmUid', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerText', 'keywords']
+        const SENSITIVE = ['personaPrompt', 'mentionName', 'mentionTargets', 'workspace', 'dshBin', 'dmUid', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerText', 'dmApprovalPhrase', 'keywords']
         const c = { ...cfg }
         for (const k of SENSITIVE) {
           const v = c[k]
