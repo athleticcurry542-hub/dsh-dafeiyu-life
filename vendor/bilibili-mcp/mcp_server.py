@@ -674,6 +674,59 @@ def _reserve_comment_quota() -> tuple[bool, str]:
     except sqlite3.Error as error:
         return False, "评论配额记录不可用，安全起见拒绝发送：" + str(error)[:150]
 
+
+def _record_mention_event(payload, bvid, target_rpid, diagnostic):
+    """由发送工具本地记录 @ 结果，不依赖 Agent 在日报里复述；不保存评论正文或好友 UID。"""
+    if diagnostic is None:
+        return
+    try:
+        now = datetime.now().astimezone()
+        day = now.strftime("%Y-%m-%d")
+        delivery = str(payload.get("mention_delivery") or "none")
+        success = payload.get("success") is True
+        attempted = success and delivery in ("uid_mapping_submitted_unverified", "text_only_unverified")
+        raw_id = payload.get("rpid_str") or payload.get("rpid")
+        event = {
+            "time": now.isoformat(timespec="seconds"),
+            "day": day,
+            "bvid": _valid_bv(bvid),
+            "rpid": str(raw_id or "")[:30],
+            "kind": "top" if int(target_rpid or 0) == 0 else "reply",
+            "success": success,
+            "mention_attempted": bool(attempted),
+            "notice_confirmed": False,
+            "reason": str(diagnostic.get("reason") or "")[:60],
+            "mode": str(diagnostic.get("mode") or "")[:20],
+            "selected_count": max(0, min(8, int(diagnostic.get("selected_count") or 0))),
+            "configured_count": max(0, min(8, int(diagnostic.get("configured_count") or 0))),
+            "mention_delivery": delivery[:60],
+        }
+        if not success:
+            # 不写原始异常：网络错误有时夹带 URL/query，可能泄露凭证。
+            error = str(payload.get("error") or "")
+            if "频繁" in error or "-509" in error or "-412" in error:
+                event["error"] = "B站请求频繁或风控"
+            elif "验证码" in error or "captcha" in error.lower():
+                event["error"] = "可能需要验证码"
+            elif "上限" in error or "额度" in error:
+                event["error"] = "已达到评论配额"
+            else:
+                event["error"] = "评论未成功（详细原因见工具回执）"
+        # 固定路径，日期来自本地时钟；Agent 无权指定日志文件。
+        _append_home("mention-diagnostics/" + day + ".jsonl", json.dumps(event, ensure_ascii=False) + "\n")
+        label = "已发送" if success else "发送未成功"
+        notice = "已尝试@（未验证通知）" if attempted else "未@"
+        _append_home("duty.log", f"{now.isoformat(timespec='milliseconds')}  @诊断：{event['bvid']} {label} {notice} 原因={event['reason']} 方式={delivery}\n")
+    except Exception as exc:
+        # 诊断写盘失败不能让已经发出的公开评论在 Agent 眼里变成失败，造成重复发布。
+        print("@诊断写入失败：" + str(exc)[:160], file=sys.stderr)
+
+
+def _comment_result(payload, bvid, target_rpid, diagnostic=None):
+    """评论工具仍给 AI 必要的成功状态/rpid/动态回执；具体 @ 原因只供用户查看。"""
+    _record_mention_event(payload, bvid, target_rpid, diagnostic)
+    return json.dumps(payload, ensure_ascii=False)
+
 # ========== 顶层评论可选同步动态（独立公开动态，而非客户端原生勾选链路） ==========
 def _dynamic_enabled(arg):
     # 在 headless 中用户的设置从宿主环境变量来：不能被模型强行打开。
@@ -837,14 +890,14 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             selected = [x for x in targets if x["name"] in wanted]
         use_mentions = (rpid == 0 and selected and
                         (mode == "always" or (mode in ("ai", "ai_select") and should_mention is True)))
-        # 结构化诊断写在工具回执中，Agent 可记到日报；绝不声称通知已送达。
+        # @ 原因将由本地日志和设置页记录，不把整份诊断返回给 AI。
         if rpid != 0:
             mention_reason = "reply_no_group_mentions"
         elif mode == "off":
             mention_reason = "mention_disabled"
         elif not targets:
             mention_reason = "no_mention_targets"
-        elif mode == "ai_select" and not selected:
+        elif mode == "ai_select" and not selected and should_mention is True:
             mention_reason = "ai_selected_no_names"
         elif mode in ("ai", "ai_select") and should_mention is not True:
             mention_reason = "ai_declined"
@@ -860,30 +913,30 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         clean_text, _ = _decorate_comment(text, targets, False, mention_position)
         text, mentioned = _decorate_comment(clean_text, selected, use_mentions, mention_position)
         if not text:
-            return json.dumps({"success": False, "error": "评论内容不能为空"}, ensure_ascii=False)
+            return _comment_result({"success": False, "error": "评论内容不能为空"}, bvid, rpid, mention_diagnostic)
         pause_deny = _guard("bili_reply")
         if pause_deny: return pause_deny
         quota_ok, quota_error = _reserve_comment_quota()
         if not quota_ok:
-            return json.dumps({"success": False, "blocked": True, "error": quota_error}, ensure_ascii=False)
+            return _comment_result({"success": False, "blocked": True, "error": quota_error}, bvid, rpid, mention_diagnostic)
         # 全部 UID 都由用户显式提供时，才尝试带映射的评论接口。
         # 没有 UID 时会正常发送文字 @，但不会将它称为“真实通知成功”。
         if rpid == 0 and mentioned and all(item["uid"] for item in mentioned):
             raw = await _send_video_comment_with_mentions(bvid, aid, text, cred, mentioned)
             if raw.get("code") != 0:
-                return json.dumps({"success": False, "error": str(raw.get("message") or raw.get("code")),
-                                   "mention_delivery": "not_sent", "mention_diagnostic": mention_diagnostic}, ensure_ascii=False)
+                return _comment_result({"success": False, "error": str(raw.get("message") or raw.get("code")),
+                                        "mention_delivery": "not_sent"}, bvid, rpid, mention_diagnostic)
             data = raw.get("data") or {}
             if not isinstance(data, dict) or data.get("need_captcha") or not (data.get("rpid") or data.get("rpid_str")):
-                return json.dumps({"success": False, "error": "评论回执未包含评论ID，可能需要验证码/审核；请先人工核实，不自动重试",
-                                   "mention_delivery": "unverified", "mention_diagnostic": mention_diagnostic}, ensure_ascii=False)
+                return _comment_result({"success": False, "error": "评论回执未包含评论ID，可能需要验证码/审核；请先人工核实，不自动重试",
+                                        "mention_delivery": "unverified"}, bvid, rpid, mention_diagnostic)
             out = {"success": True, "message": "评论接口已接受（@提醒是否送达未确认）",
-                   "mention_delivery": "uid_mapping_submitted_unverified", "mention_diagnostic": mention_diagnostic}
+                   "mention_delivery": "uid_mapping_submitted_unverified"}
             if isinstance(data, dict):
                 for key in ("rpid", "rpid_str", "root", "parent"):
                     if data.get(key): out[key] = data[key]
             out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic)
-            return json.dumps(out, ensure_ascii=False)
+            return _comment_result(out, bvid, rpid, mention_diagnostic)
         if rpid == 0:
             # 发表新评论
             result = await comment.send_comment(
@@ -910,10 +963,9 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         #    （lib/verify.mjs）也要拿它去 B站 查公开可见性。只回 success 的话那条链是断的。
         #（2026-10-16 审查修：原实现把上面的 result 丢掉了）
         if isinstance(result,dict) and result.get("code", 0) != 0:
-            return json.dumps({"success": False, "error": str(result.get("message") or result.get("code"))}, ensure_ascii=False)
+            return _comment_result({"success": False, "error": str(result.get("message") or result.get("code"))}, bvid, rpid, mention_diagnostic)
         out = {"success": True, "message": "评论发送成功",
-               "mention_delivery": "text_only_unverified" if mentioned else "none",
-               "mention_diagnostic": mention_diagnostic}
+               "mention_delivery": "text_only_unverified" if mentioned else "none"}
         if isinstance(result, dict):
             receipt = result.get("data") if isinstance(result.get("data"), dict) else result
             for key in ("rpid", "rpid_str", "root", "parent"):
@@ -924,9 +976,9 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic)
         elif rpid == 0 and _dynamic_enabled(sync_to_dynamic):
             out["dynamic_sync"] = {"status": "comment_receipt_unverified_no_publish"}
-        return json.dumps(out, ensure_ascii=False)
+        return _comment_result(out, bvid, rpid, mention_diagnostic)
     except Exception as e:
-        return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+        return _comment_result({"success": False, "error": str(e)}, bvid, rpid, locals().get("mention_diagnostic"))
 
 
 # ========== Tool 7: 批量采集 ==========

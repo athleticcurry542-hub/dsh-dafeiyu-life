@@ -260,6 +260,7 @@ function WatchTab() {
       const [commentReplyPerDay, setCommentReplyPerDay] = React.useState(null)
       const [dailyPublicCommentLimit, setDailyPublicCommentLimit] = React.useState(null)
       const [commentQuota, setCommentQuota] = React.useState(null)
+      const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
@@ -340,6 +341,15 @@ function WatchTab() {
         fetchQuota()
         const timer = setInterval(fetchQuota, 10000)
         return () => {alive = false; clearInterval(timer)}
+      }, [])
+
+      // 与评论每日配额一样每 10 秒更新。读取 Python 工具本地落盘的数据，无 LLM 调用。
+      React.useEffect(() => {
+        let alive = true
+        const tick = () => jget('/mention-diagnostics').then(r => { if (alive) setMentionDiagnostics(r) }).catch(() => { if (alive) setMentionDiagnostics({ok:false}) })
+        tick()
+        const timer = setInterval(tick, 10000)
+        return () => { alive = false; clearInterval(timer) }
       }, [])
 
       const win = { ...DEFAULT_WINDOWS, ...(st?.windows || {}) }
@@ -726,6 +736,29 @@ function WatchTab() {
             h('option', {value:'off'}, '永远不 @（只评论）'),
             h('option', {value:'always'}, '每条评论 @ 所有好友')),
           h('div', { 'data-bd-note': '' }, 'AI 按视频与情境决定，不使用固定概率。ai_select 可 @ 0、1、2 或多个名单内好友；ai 模式仍一次 @ 所有人。位置可在句首、句中或句尾。'),
+          h('div', { 'data-bd-sep': '' }),
+          h('div', { 'data-bd-h': '' }, '今日 @ 诊断'),
+          h('div', { 'data-bd-note': '' }, '由评论发送接口记录，含后台回复。只统计升级后接口返回成功的评论，不等于公开可见；尝试 @ 不保证通知送达。'),
+          h('div', { 'data-bd-row': '' },
+            h('div', { 'data-bd-grow': '' },
+              h('div', { 'data-bd-label': '' }, mentionDiagnostics?.ok
+                ? `已发表评论 ${mentionDiagnostics.total} 条 · 尝试 @ ${mentionDiagnostics.attempted} 条 · 未 @ ${mentionDiagnostics.notMentioned} 条`
+                : '今日 @ 数据：暂不可读取'),
+              mentionDiagnostics?.ok && mentionDiagnostics.failed ? h('div', { 'data-bd-note': '' }, `另有 ${mentionDiagnostics.failed} 次发送未成功（不计入已发表评论）`) : null)),
+          mentionDiagnostics?.ok && (mentionDiagnostics.recent || []).length
+            ? h('div', { 'data-bd-sub': '' },
+                ...(mentionDiagnostics.recent || []).map((x, i) => {
+                  const reasonText = ({
+                    ai_declined:'AI 决定不 @', ai_selected_no_names:'AI 想 @，但没有选中名单内好友',
+                    no_mention_targets:'没有配置 @ 名单', mention_disabled:'@ 策略已关闭',
+                    mentioned_text_only_missing_uid:'已插入 @ 文字，但缺少有效 UID',
+                    mention_requested:'已按设置尝试 @，不保证通知送达',
+                    reply_no_group_mentions:'后台楼中楼回复不群发 @'
+                  })[x.reason] || '未识别的 @ 决策'
+                  return h('div', { key: (x.time || '') + ':' + i, 'data-bd-note': '' },
+                    `${x.bvid} · ${x.kind === 'reply' ? '楼中楼' : '顶层'} · ${x.success ? (x.mention_attempted ? '尝试 @' : '未 @') : '发送未成功'} · ${reasonText}`)
+                }))
+            : h('div', { 'data-bd-note': '' }, mentionDiagnostics?.ok ? '今天还没有新版诊断记录。' : ''),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信内容 = 本轮每条的「标题 + 链接 + 一句话」，一轮合并成一条发。⚠️ 建议先让这个号和收件人互关：B站 对「陌生人私信」会限流，还可能不弹提醒。') : null,
 
           (dmMode === 'off' || dmMode === 'both') ? h('div', { 'data-bd-sep': '' }) : null,

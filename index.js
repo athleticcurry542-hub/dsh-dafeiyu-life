@@ -716,7 +716,9 @@ function reportMeta() {
         root: 0,
         mention_mode: cfg.mentionMode,
         mention_targets: targets,
-        should_mention: choice.shouldMention,
+        // 保留 AI 的原始意愿做诊断；真正能 @ 谁仍由 Python 的名单白名单和模式强制限制。
+        // 否则 AI 想 @ 但没选到名单里的人，会被宿主提前改写为 false，误报 ai_declined。
+        should_mention: args.should_mention === true,
         mention_names: choice.targets.map(t=>t.name),
         mention_position: choice.position,
         sync_to_dynamic: cfg.commentSyncDynamic === true,
@@ -2304,6 +2306,27 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       try { rollSeen() } catch (e) { /* 归档失败不影响状态接口 */ }
       try { syncNotes() } catch (e) { /* 笔记失败不影响状态接口 */ }
       return sendJson(res, 200, status())
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/mention-diagnostics') {
+      // 只读取当天固定路径的本地日志（不能传文件名）。不含评论正文、Cookie、目标 UID。
+      const day = dayKey()
+      const file = join(stateDir, 'mention-diagnostics', `${day}.jsonl`)
+      let events = []
+      try {
+        if (existsSync(file)) {
+          const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
+          events = lines.slice(-1000).map(line => {
+            try { return JSON.parse(line) } catch { return null }
+          }).filter(x => x && x.day === day && /^BV[0-9a-zA-Z]{10}$/.test(x.bvid))
+        }
+      } catch (e) {
+        return sendJson(res, 200, {ok:false, error:'本地@诊断读取失败'})
+      }
+      const sent = events.filter(x => x.success === true)
+      const attempted = sent.filter(x => x.mention_attempted === true)
+      return sendJson(res, 200, {ok:true, day,
+        total: sent.length, attempted: attempted.length, notMentioned: sent.length - attempted.length,
+        failed: events.length - sent.length, recent: events.slice(-12).reverse()})
     }
     if (req.method === 'GET' && path === '/api/bili-duty/comment-quota') {
       // 今日硬配额由 Python MCP 写入 SQLite；统计直接读相同表，不让前端猜测。
