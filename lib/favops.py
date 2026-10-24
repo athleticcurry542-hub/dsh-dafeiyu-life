@@ -48,6 +48,8 @@ async def folders():
 
 
 async def add(bvid, fid):
+    if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bili-duty-paused")):
+        out({"ok": False, "error": "大肥鱼总开关已关闭，拒绝收藏"})
     """使用 bilibili-api-python 17.x 的 Video.set_favorite 接口。
 
     不再调用不存在的 favorite_list.FavoriteListResource；发送结果不等于最终页面可见。

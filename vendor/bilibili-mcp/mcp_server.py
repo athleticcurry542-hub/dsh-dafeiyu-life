@@ -64,7 +64,10 @@ def tool():
 #    agent 手里有 python/shell，可以自己写脚本 import 这个文件再调函数 ⇒ 闸门形同虚设。
 #    ⇒ 每个"会往 B站 写东西"的函数入口都过一遍 _guard()；没开就直接返回、什么都不做 ✓
 def _guard(name: str) -> str:
-    """没开这个工具就返回一句提示；开着返回空串。"""
+    """写入工具还受共享的暂停标记约束；即便是已启动的 MCP 进程也能立即观察。"""
+    pause_home = Path(os.environ.get("BILI_DUTY_HOME") or Path(__file__).resolve().parent)
+    if (pause_home / ".bili-duty-paused").exists():
+        return json.dumps({"success": False, "blocked": True, "error": "大肥鱼总开关已关闭，拒绝对外操作"}, ensure_ascii=False)
     if _ALLOWED and name not in _ALLOWED:
         print(f"[bili-mcp] 拒绝调用 {name}（不在 BILI_MCP_TOOLS 白名单里）", file=sys.stderr)
         return f"这个工具没开：{name}"
@@ -680,6 +683,8 @@ def _dynamic_enabled(arg):
 
 
 async def _dynamic_after_comment(bvid, text, credential, requested=False):
+    if (_DUTY_HOME / ".bili-duty-paused").exists():
+        return {"status": "paused"}
     if not _dynamic_enabled(requested):
         return {"status": "disabled"}
     # 动态最多每天 3 条，按 BV/日期幂等。尝试发送后即锁定，不因超时重复公开发言。
@@ -809,6 +814,12 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
     Returns:
         发表结果
     """
+    # v2.4.3: 刷视频 Agent 的 MCP 只允许顶层原创评论。后台监听走宿主 MCP，
+    # 不带 BILI_DUTY_TOP_LEVEL_ONLY，仍可用 rpid/root 回复通知与热评。
+    # 必须在读凭证/查视频之前拦截，不能仅靠 prompt 约束。
+    if os.environ.get("BILI_DUTY_TOP_LEVEL_ONLY") == "1" and (rpid != 0 or root != 0):
+        return json.dumps({"success": False, "blocked": True,
+                           "error": "刷视频任务只能发布顶层评论；回复评论请使用后台互动"}, ensure_ascii=False)
     _deny = _guard("bili_reply")
     if _deny: return _deny
     cred = get_cred()
@@ -831,6 +842,8 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         text, mentioned = _decorate_comment(clean_text, selected, use_mentions, mention_position)
         if not text:
             return json.dumps({"success": False, "error": "评论内容不能为空"}, ensure_ascii=False)
+        pause_deny = _guard("bili_reply")
+        if pause_deny: return pause_deny
         quota_ok, quota_error = _reserve_comment_quota()
         if not quota_ok:
             return json.dumps({"success": False, "blocked": True, "error": quota_error}, ensure_ascii=False)
@@ -1366,6 +1379,8 @@ async def bili_send_message(receiver_uid: int, text: str) -> str:
         return json.dumps({"success": False, "error": "text 不能为空"}, ensure_ascii=False)
 
     try:
+        pause_deny = _guard("bili_send_message")
+        if pause_deny: return pause_deny
         result = await session.send_msg(
             credential=cred,
             receiver_id=receiver_uid,

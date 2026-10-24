@@ -1,0 +1,47 @@
+"""暂停文件保护和真实评论配额计数（不碰真实账号）。"""
+import ast
+import json
+import os
+from pathlib import Path
+import sqlite3
+import subprocess
+import sys
+import tempfile
+
+ROOT=Path(__file__).resolve().parents[1]
+
+
+def test_python_write_guard_blocks_while_paused():
+    src=ast.parse((ROOT/'vendor/bilibili-mcp/mcp_server.py').read_text(encoding='utf-8'))
+    fn=next(n for n in src.body if isinstance(n,ast.FunctionDef) and n.name=='_guard')
+    module=ast.Module(body=[fn],type_ignores=[])
+    scope={'Path':Path,'os':os,'json':json,'sys':sys,'_ALLOWED':set()}
+    exec(compile(ast.fix_missing_locations(module),'<guard>','exec'),scope)
+    with tempfile.TemporaryDirectory() as td:
+        env=os.environ.get('BILI_DUTY_HOME')
+        os.environ['BILI_DUTY_HOME']=td
+        try:
+            assert scope['_guard']('bili_reply')==''
+            Path(td,'.bili-duty-paused').write_text('paused')
+            result=json.loads(scope['_guard']('bili_reply'))
+            assert result['blocked'] and not result['success']
+            assert json.loads(scope['_guard']('bili_send_message'))['blocked']
+        finally:
+            if env is None:os.environ.pop('BILI_DUTY_HOME',None)
+            else:os.environ['BILI_DUTY_HOME']=env
+
+
+def test_quota_reader_reads_actual_attempts_and_does_not_create_db():
+    reader=ROOT/'lib/comment-quota-count.py'
+    with tempfile.TemporaryDirectory() as td:
+        db=Path(td,'public-comment-quota.sqlite3')
+        def read():return json.loads(subprocess.check_output([sys.executable,str(reader),td],text=True))
+        assert read()['used']==0
+        assert not db.exists()
+        from datetime import datetime
+        with sqlite3.connect(db) as conn:
+            conn.execute('CREATE TABLE public_comment_attempt(day TEXT NOT NULL, nonce TEXT PRIMARY KEY)')
+            conn.execute('INSERT INTO public_comment_attempt VALUES(?,?)',(datetime.now().strftime('%Y-%m-%d'),'a'))
+            conn.execute('INSERT INTO public_comment_attempt VALUES(?,?)',(datetime.now().strftime('%Y-%m-%d'),'b'))
+            conn.execute('INSERT INTO public_comment_attempt VALUES(?,?)',('2000-01-01','c'))
+        assert read()['used']==2

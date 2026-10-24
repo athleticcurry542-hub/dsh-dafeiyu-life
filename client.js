@@ -248,7 +248,6 @@ function WatchTab() {
       const [perDay, setPerDay] = React.useState(null)
       const [pickPerRound, setPickPerRound] = React.useState(null)
       const [perRound, setPerRound] = React.useState(null)
-      const [replyPer, setReplyPer] = React.useState(null)
       const [dmUid, setDmUid] = React.useState(null)        // 私信收件人 UID（本地草稿）
       const [dmWatch, setDmWatch] = React.useState(null)          // 后台私信总开关
       const [dmWhitelist, setDmWhitelist] = React.useState(null)
@@ -259,6 +258,7 @@ function WatchTab() {
       const [commentReplyPerPoll, setCommentReplyPerPoll] = React.useState(null)
       const [commentReplyPerDay, setCommentReplyPerDay] = React.useState(null)
       const [dailyPublicCommentLimit, setDailyPublicCommentLimit] = React.useState(null)
+      const [commentQuota, setCommentQuota] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
       const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
@@ -304,7 +304,6 @@ function WatchTab() {
         if (cfg && pickPerRound === null) setPickPerRound(String(cfg.pickPerRound ?? 5))
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && dailyPublicCommentLimit === null) setDailyPublicCommentLimit(String(cfg.commentDailyLimit ?? 10))
-        if (cfg && replyPer === null) setReplyPer(String(cfg.replyPerRound ?? 1))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
         if (cfg && mentionMode === null) setMentionMode(cfg.mentionMode || 'ai')
@@ -331,6 +330,15 @@ function WatchTab() {
         jget('/fav-folders').then((r) => { if (alive.current) setFavFolders(r && r.ok ? (r.folders || []) : []) })
           .catch(() => { if (alive.current) setFavFolders([]) })
       }, [favFolders])
+
+      // 10 秒刷新一次真实 SQLite 评论配额，0/每日上限来自 Python MCP 共用账本。
+      React.useEffect(() => {
+        let alive = true
+        const fetchQuota = () => jget('/comment-quota').then(r => {if(alive) setCommentQuota(r)}).catch(() => {if(alive) setCommentQuota({ok:false})})
+        fetchQuota()
+        const timer = setInterval(fetchQuota, 10000)
+        return () => {alive = false; clearInterval(timer)}
+      }, [])
 
       const win = { ...DEFAULT_WINDOWS, ...(st?.windows || {}) }
 
@@ -579,6 +587,23 @@ function WatchTab() {
 
       return h('div', { 'data-bd-page': '' },
 
+        /* ── 大肥鱼总开关：永久展示，不隐藏设置，不清除历史 ── */
+        h('div', { 'data-bd-sec': '', style: {padding:'12px',border:'1px solid var(--dsw-alias-bg-layer-3,rgba(127,127,127,.24))',borderRadius:'12px'} },
+          h(ToggleRow, {
+            label: '🐳 大肥鱼总开关',
+            note: cfg.masterEnabled === false
+              ? '已暂停：不再刷视频、发私信、发评论、同步动态或收藏。设置和历史保留。'
+              : '运行中：下面各项功能仍分别受自己的开关控制；关闭总开关可一键暂停全部自动行为。',
+            on: cfg.masterEnabled !== false,
+            onChange: async (v) => {
+              const previous = cfg.masterEnabled !== false
+              setSt(old => old ? {...old, config:{...old.config,masterEnabled:v}} : old)
+              try {await patch({masterEnabled:v}, '大肥鱼总开关')}
+              catch {setSt(old => old ? {...old,config:{...old.config,masterEnabled:previous}} : old)}
+            },
+          })
+        ),
+
         /* ── 今天 ── */
         h('div', { 'data-bd-row': '' },
           h('span', { 'data-bd-badge': '' }, `今天已挑 ${st.pickedToday ?? st.ranToday ?? 0} / ${cfg.perDay} 条`),
@@ -586,7 +611,7 @@ function WatchTab() {
           h('span', { 'data-bd-badge': '' }, st.loggedIn ? 'B站已登录' : 'B站未登录'),
             h('span', { 'data-bd-badge': '' }, 'v' + (st.version || '?')),
           h('div', { 'data-bd-grow': '' }),
-          h('button', { 'data-bd-btn': '', disabled: busy === 'run', onClick: onRun }, '现在跑一轮')),
+          h('button', { 'data-bd-btn': '', disabled: busy === 'run' || cfg.masterEnabled === false, onClick: onRun }, '现在跑一轮')),
           runNote ? h('div', { 'data-bd-msg': '', 'data-good': runNote.tone === 'good' ? '' : undefined,
             'data-warn': runNote.tone === 'warn' ? '' : undefined }, runNote.t) : null,
 
@@ -698,20 +723,21 @@ function WatchTab() {
             on: sw('autoComment'),
             onChange: (v) => patch({ autoComment: v }, '自动评论'),
           }) : null,
-          (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h('div', { 'data-bd-row': '' },
+          h('div', { 'data-bd-row': '' },
             h('div', { 'data-bd-grow': '' },
-              h('div', { 'data-bd-label': '' }, '每天最多发送几次公开评论（全入口硬上限）'),
-              h('div', { 'data-bd-note': '' }, '含跑一轮主动评论、楼中楼及后台评论回复，按发送尝试计数；0 = 完全禁发。默认 10。')),
+              h('div', { 'data-bd-label': '' }, '公开评论全局每日上限（跑一轮＋后台互动共用）'),
+              h('div', { 'data-bd-note': '' }, '含刷视频原创评论和后台评论回复，按发送尝试计数；0 = 完全禁发。默认 10。'),
+              h('div', { 'data-bd-note': '' }, commentQuota?.ok ? `今日已用 ${commentQuota.used} / ${commentQuota.limit} 次` : '今日已用：暂不可读取')),
             h('input', { 'data-bd-input': '', 'data-bd-num': '', type:'number', min:0, max:100,
               value: dailyPublicCommentLimit ?? '10',
               onChange: e => setDailyPublicCommentLimit(e.target.value),
               onBlur: () => { const n=Math.max(0,Math.min(100,Math.floor(Number(dailyPublicCommentLimit)||0)));setDailyPublicCommentLimit(String(n));patch({commentDailyLimit:n}, '评论每日硬上限') }
-            })) : null,
+            })),
           (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h('div', {},
             h('div', { 'data-bd-row': '' },
               h('div', { 'data-bd-grow': '' },
                 h('div', { 'data-bd-label': '' }, '每轮最多主动发几条评论（跑一轮）'),
-                h('div', { 'data-bd-note': '' }, '只限制刷视频这一轮主动评论；填 0 = 本轮不主动评论。仍受下方每日公开评论上限约束。')),
+                h('div', { 'data-bd-note': '' }, '只限制刷视频这一轮主动评论；填 0 = 本轮不主动评论。仍受上方每日公开评论上限约束。')),
               h('input', {
                 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0,
                 value: perRound ?? '',
@@ -724,23 +750,7 @@ function WatchTab() {
             on: sw('commentSyncDynamic'),
             onChange: (v) => patch({ commentSyncDynamic: v }, '评论同步动态'),
           }) : null,
-          (dmMode === 'off' || dmMode === 'both') ? h(ToggleRow, {
-            label: '回复评论（只回楼中楼）',
-            note: '开了之后它只回「直接回复到你那条评论下面的人」，不参与讨论',
-            on: sw('replyToComments'),
-            onChange: (v) => patch({ replyToComments: v }, '回复评论'),
-          }) : null,
-          (dmMode === 'off' || dmMode === 'both') && sw('replyToComments') ? h('div', { 'data-bd-sub': '' },
-            h('div', { 'data-bd-row': '' },
-              h('div', { 'data-bd-grow': '' },
-                h('div', { 'data-bd-label': '' }, '每轮最多回几条'),
-                h('div', { 'data-bd-note': '' }, '只回直接回在你那条评论下面的人')),
-              h('input', {
-                'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 10,
-                value: replyPer ?? '',
-                onChange: (e) => setReplyPer(e.target.value),
-                onBlur: () => { const n = Math.max(1, Math.min(Number(replyPer) || 1, 10)); setReplyPer(String(n)); patch({ replyPerRound: n }, '每轮回几条') },
-              }))) : null,
+          h('div', { 'data-bd-note': '' }, '「跑一轮」只负责挑视频和发布原创顶层评论；回复观众评论与热门评论互动统一由下方「后台评论互动」控制。'),
 
           h('div', { 'data-bd-sep': '' }),
           h(ToggleRow, {
@@ -840,7 +850,7 @@ function WatchTab() {
           h('div', { 'data-bd-label': '' }, '后台评论互动（独立于「跑一轮」）'),
           h(ToggleRow, {
             label: '后台回复别人对我的评论',
-            note: '每3分钟读取最近回复通知；首次开启只记录旧通知，不追发。与旧版跑一轮楼中楼回复建议不要同时开启。',
+            note: '每3分钟读取评论回复通知；首次开启只记录旧通知，不追发。独立后台执行，不依赖「跑一轮」。',
             on: Boolean(cfg?.commentWatchReplies),
             onChange: v => patch({commentWatchReplies:v}, '后台回复评论通知'),
           }),
@@ -867,7 +877,7 @@ function WatchTab() {
                 on:Boolean(cfg?.commentAllowGeneralTop),
                 onChange:v=>patch({commentAllowGeneralTop:v},'热门评论拓展互动')})) : null,
             h('div',{'data-bd-row':''},
-              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每轮最多回复评论')),
+              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每次后台检查最多回复几条评论')),
               h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:5,
                 value:commentReplyPerPoll ?? '',onChange:e=>setCommentReplyPerPoll(e.target.value),
                 onBlur:()=>{const n=Math.max(1,Math.min(5,Number(commentReplyPerPoll)||1));setCommentReplyPerPoll(String(n));patch({commentReplyPerPoll:n},'每轮评论回复限制')}})),
