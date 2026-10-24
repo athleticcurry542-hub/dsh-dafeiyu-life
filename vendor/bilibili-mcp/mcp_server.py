@@ -729,30 +729,62 @@ def _comment_result(payload, bvid, target_rpid, diagnostic=None):
 
 # ========== 顶层评论可选同步动态（独立公开动态，而非客户端原生勾选链路） ==========
 def _dynamic_enabled(arg):
-    # 在 headless 中用户的设置从宿主环境变量来：不能被模型强行打开。
-    if "BILI_SYNC_DYNAMIC" in os.environ:
-        return os.environ["BILI_SYNC_DYNAMIC"] == "1"
-    return arg is True  # 宿主直接调用由 index.js 根据用户设置传参；默认 False
+    # 两个条件必须同时成立：用户在插件里开启 + AI 在该评论中明确选择同步。
+    # 老版本只判断环境变量，导致 AI 传 false 仍可能把评论发成动态。
+    return (arg is True and
+            ("BILI_SYNC_DYNAMIC" not in os.environ or os.environ["BILI_SYNC_DYNAMIC"] == "1"))
 
 
-async def _dynamic_after_comment(bvid, text, credential, requested=False):
-    if (_DUTY_HOME / ".bili-duty-paused").exists():
-        return {"status": "paused"}
-    if not _dynamic_enabled(requested):
-        return {"status": "disabled"}
-    # 动态最多每天 3 条，按 BV/日期幂等。尝试发送后即锁定，不因超时重复公开发言。
-    now = datetime.now().strftime("%Y-%m-%d")
-    log_dir = _DUTY_HOME / "dynamic-sync"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    today = list(log_dir.glob(now+"-*.lock"))
-    if len(today) >= 3:
-        return {"status": "daily_limit"}
-    lock = log_dir / (now+"-"+_valid_bv(bvid)+".lock")
+def _dynamic_daily_limit(argument=3):
+    # headless 的用户设置总是从 overlay 获取，AI 不能靠请求工具参数提高限额。
+    value = os.environ.get("BILI_DYNAMIC_DAILY_LIMIT", argument)
     try:
+        return max(0, min(30, int(value)))
+    except (TypeError, ValueError, OverflowError):
+        return 0  # 无法安全判断额度时，禁止额外的公开动态。
+
+
+def _reserve_dynamic_attempt(bvid, limit):
+    """跨 MCP 子进程原子保留一次同步尝试；兼容旧版已经创建的 .lock 文件。"""
+    day = datetime.now().strftime("%Y-%m-%d")
+    folder = _DUTY_HOME / "dynamic-sync"
+    folder.mkdir(parents=True, exist_ok=True)
+    lock = folder / (day + "-" + _valid_bv(bvid) + ".lock")
+    # 锁数据库仅用于串行化，实际使用量沿用老 .lock，升级当日不重置额度。
+    with sqlite3.connect(folder / "dynamic-limit.sqlite3", timeout=10) as db:
+        db.execute("BEGIN IMMEDIATE")
+        if lock.exists():
+            db.commit()
+            return "already_attempted"
+        used = sum(1 for _ in folder.glob(day + "-*.lock"))
+        if used >= limit:
+            db.commit()
+            return "daily_limit"
         fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(fd)
-    except FileExistsError:
-        return {"status": "already_attempted"}
+        db.commit()
+        return "reserved"
+
+
+async def _dynamic_after_comment(bvid, text, credential, requested=False, daily_limit=3):
+    if (_DUTY_HOME / ".bili-duty-paused").exists():
+        return {"status": "paused"}
+    # 未授权时不占额度也不发；用户总开关优先于模型选择。
+    if not _dynamic_enabled(requested):
+        if requested is False and os.environ.get("BILI_SYNC_DYNAMIC") == "1":
+            return {"status": "ai_skipped"}
+        return {"status": "disabled"}
+    limit = _dynamic_daily_limit(daily_limit)
+    if limit == 0:
+        return {"status": "daily_limit", "limit": limit}
+    bvid = _valid_bv(bvid)
+    try:
+        reserved = _reserve_dynamic_attempt(bvid, limit)
+    except Exception:
+        # 额度锁失败时拒绝公开发帖；绝不在不确定的情况下绕过安全限制。
+        return {"status": "reservation_failed_no_publish"}
+    if reserved != "reserved":
+        return {"status": reserved}
     # 固定结构：仅包含刚刚公开评论的内容和视频链接；不允许独立模型自由指定发布内容。
     message = str(text or "").strip()[:250] + "\nhttps://www.bilibili.com/video/" + bvid
     payload = {
@@ -849,7 +881,8 @@ async def _send_video_comment_with_mentions(bvid, aid, text, credential, mention
 async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: int = 0,
                      should_mention: bool = False, mention_position: str = "end",
                      mention_mode: str = "ai", mention_targets: list[dict] | None = None,
-                     mention_names: list[str] | None = None, sync_to_dynamic: bool = False) -> str:
+                     mention_names: list[str] | None = None, sync_to_dynamic: bool = False,
+                     dynamic_daily_limit: int = 3) -> str:
     """
     在B站视频下发表评论或回复某条评论
 
@@ -863,6 +896,8 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         mention_mode: 宿主调用时的策略；headless 通过 BILI_MENTION_MODE 环境变量限制
         mention_targets: 宿主调用传配置名单；headless 从环境变量读取可信名单
         mention_names: ai_select 模式下 AI 选择的名单内昵称；空列表表示不 @
+        sync_to_dynamic: AI 生成评论时同步判断，是否值得额外公开一条动态（默认 false）
+        dynamic_daily_limit: 宿主设置的每日最多尝试次数；headless 会被环境变量中的用户设置覆盖
     
     Returns:
         发表结果
@@ -935,7 +970,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             if isinstance(data, dict):
                 for key in ("rpid", "rpid_str", "root", "parent"):
                     if data.get(key): out[key] = data[key]
-            out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic)
+            out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic, daily_limit=dynamic_daily_limit)
             return _comment_result(out, bvid, rpid, mention_diagnostic)
         if rpid == 0:
             # 发表新评论
@@ -973,7 +1008,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
                 if isinstance(val, (int, str)) and str(val).strip() and str(val) != "0":
                     out[key] = val
         if rpid == 0 and (out.get("rpid") or out.get("rpid_str")):
-            out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic)
+            out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic, daily_limit=dynamic_daily_limit)
         elif rpid == 0 and _dynamic_enabled(sync_to_dynamic):
             out["dynamic_sync"] = {"status": "comment_receipt_unverified_no_publish"}
         return _comment_result(out, bvid, rpid, mention_diagnostic)

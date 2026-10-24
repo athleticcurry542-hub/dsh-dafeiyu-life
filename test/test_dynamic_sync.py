@@ -12,10 +12,10 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 SRC=(ROOT/'vendor/bilibili-mcp/mcp_server.py').read_text(encoding='utf-8')
 _ast=ast.parse(SRC)
-FUNCS={'_dynamic_after_comment','_dynamic_enabled','_valid_bv'}
+FUNCS={'_dynamic_after_comment','_dynamic_enabled','_dynamic_daily_limit','_reserve_dynamic_attempt','_valid_bv'}
 _subset=ast.Module(body=[n for n in _ast.body if isinstance(n,(ast.AsyncFunctionDef,ast.FunctionDef)) and n.name in FUNCS],type_ignores=[])
 ns={'asyncio':asyncio,'os':os,'datetime':__import__('datetime').datetime,'json':json,
-    'urllib':__import__('urllib'),'re':__import__('re'),'Path':Path,'_BV_PATTERN':__import__('re').compile(r'^BV[0-9A-Za-z]{10}$')}
+    'urllib':__import__('urllib'),'re':__import__('re'),'Path':Path, 'sqlite3':__import__('sqlite3'), '_BV_PATTERN':__import__('re').compile(r'^BV[0-9A-Za-z]{10}$')}
 exec(compile(ast.fix_missing_locations(_subset),'<extracted-bili-dynamic>','exec'),ns)
 
 class FakeResponse:
@@ -44,8 +44,8 @@ def test_dynamic_success_single_http_no_model_and_dedupe():
         return FakeResponse()
     with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'BILI_SYNC_DYNAMIC':'1'}),patch.object(urllib.request,'urlopen',side_effect=fake_urlopen):
         ns['_DUTY_HOME']=Path(td)
-        first=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','有大米饭！',CRED))
-        second=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','有大米饭！',CRED))
+        first=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','有大米饭！',CRED,requested=True))
+        second=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','有大米饭！',CRED,requested=True))
     assert first['status']=='api_accepted_unverified'
     assert second['status']=='already_attempted'
     assert len(calls)==1
@@ -57,8 +57,8 @@ def test_dynamic_api_failure_keeps_locked_no_retry():
         return FakeResponse(json.dumps({"code":-412,"message":"风控"},ensure_ascii=False).encode("utf-8"))
     with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'BILI_SYNC_DYNAMIC':'1'}),patch.object(urllib.request,'urlopen',side_effect=fail):
         ns['_DUTY_HOME']=Path(td)
-        first=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','你好',CRED))
-        second=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','你好',CRED))
+        first=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','你好',CRED,requested=True))
+        second=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','你好',CRED,requested=True))
     assert first['status']=='failed'
     assert second['status']=='already_attempted'
     assert len(calls)==1
@@ -70,7 +70,7 @@ def test_dynamic_cap_three_posts():
         ns['_DUTY_HOME']=Path(td)
         for i in range(4):
             bv=f'BV1TBHp6AEA{i}'
-            ret=asyncio.run(ns['_dynamic_after_comment'](bv,'内容',CRED))
+            ret=asyncio.run(ns['_dynamic_after_comment'](bv,'内容',CRED,requested=True))
             assert ret['status']==('daily_limit' if i==3 else 'api_accepted_unverified')
     assert len(called)==3
 
@@ -91,3 +91,45 @@ def test_public_comment_quota_is_shared_atomic_file():
     with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'BILI_COMMENT_DAILY_LIMIT':'0'}):
         scope['_DUTY_HOME']=Path(td)
         assert scope['_reserve_comment_quota']()[0] is False
+
+
+def test_ai_explicit_false_does_not_sync_even_when_user_enabled():
+    with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'BILI_SYNC_DYNAMIC':'1'}), patch.object(urllib.request,'urlopen',side_effect=AssertionError('must not send')):
+        ns['_DUTY_HOME']=Path(td)
+        reply=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEAC','随便一条',CRED,requested=False))
+        assert reply['status']=='ai_skipped'
+        assert not (Path(td)/'dynamic-sync').exists()  # 不创建锁、不占额度
+
+
+def test_configurable_limit_1_and_zero_and_env_override():
+    calls=[]
+    def fake_urlopen(req,timeout=None):
+        calls.append(1)
+        return FakeResponse()
+    with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'BILI_SYNC_DYNAMIC':'1','BILI_DYNAMIC_DAILY_LIMIT':'1'}),patch.object(urllib.request,'urlopen',side_effect=fake_urlopen):
+        ns['_DUTY_HOME']=Path(td)
+        first=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEA1','值得分享',CRED,requested=True,daily_limit=30))
+        second=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEA2','值得分享',CRED,requested=True,daily_limit=30))
+        assert first['status']=='api_accepted_unverified'
+        assert second['status']=='daily_limit'
+        assert len(calls)==1
+    with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'BILI_SYNC_DYNAMIC':'1','BILI_DYNAMIC_DAILY_LIMIT':'0'}),patch.object(urllib.request,'urlopen',side_effect=AssertionError('must not send')):
+        ns['_DUTY_HOME']=Path(td)
+        result=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEA1','值得分享',CRED,requested=True))
+        assert result['status']=='daily_limit'
+
+
+def test_upgrade_day_keeps_old_lock_usage():
+    with tempfile.TemporaryDirectory() as td, patch.dict(os.environ,{'BILI_SYNC_DYNAMIC':'1','BILI_DYNAMIC_DAILY_LIMIT':'1'}),patch.object(urllib.request,'urlopen',side_effect=AssertionError('must not send')):
+        ns['_DUTY_HOME']=Path(td)
+        folder=Path(td,'dynamic-sync')
+        folder.mkdir()
+        (folder/(ns['datetime'].now().strftime('%Y-%m-%d')+'-BV1TBHp6AEA3.lock')).write_text('')
+        result=asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEA1','分享',CRED,requested=True))
+        assert result['status']=='daily_limit'
+
+
+def test_no_model_decision_no_attempt_by_default():
+    with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'BILI_SYNC_DYNAMIC':'1'}),patch.object(urllib.request,'urlopen',side_effect=AssertionError('must not send')):
+        ns['_DUTY_HOME']=Path(td)
+        assert asyncio.run(ns['_dynamic_after_comment']('BV1TBHp6AEA1','随口一说',CRED))['status']=='ai_skipped'

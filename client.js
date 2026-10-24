@@ -259,6 +259,7 @@ function WatchTab() {
       const [commentReplyPerPoll, setCommentReplyPerPoll] = React.useState(null)
       const [commentReplyPerDay, setCommentReplyPerDay] = React.useState(null)
       const [dailyPublicCommentLimit, setDailyPublicCommentLimit] = React.useState(null)
+      const [dynamicDailyLimitDraft, setDynamicDailyLimitDraft] = React.useState(null)
       const [commentQuota, setCommentQuota] = React.useState(null)
       const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
@@ -307,6 +308,7 @@ function WatchTab() {
         if (cfg && peakIntervalDraft === null) setPeakIntervalDraft(String(cfg.peakIntervalMinutes ?? 0))
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && dailyPublicCommentLimit === null) setDailyPublicCommentLimit(String(cfg.commentDailyLimit ?? 10))
+        if (cfg && dynamicDailyLimitDraft === null) setDynamicDailyLimitDraft(String(cfg.dynamicDailyLimit ?? 3))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
         if (cfg && mentionMode === null) setMentionMode(cfg.mentionMode || 'ai')
@@ -790,11 +792,24 @@ function WatchTab() {
                 onBlur: () => { const n = Math.max(0, Math.floor(Number(perRound) || 0)); setPerRound(String(n)); patch({ commentPerRound: n }, '每轮发几条评论') },
               }))) : null,
           (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h(ToggleRow, {
-            label: '评论成功后同步到动态',
-            note: '默认关闭。仅顶层评论同步；会另外公开发布“评论正文 + 视频链接”的文字动态（不是B站客户端内置勾选接口）。有独立限额、去重保护，可能因接口风控失败。',
+            label: 'AI 决定是否将评论同步到动态',
+            note: '默认关闭。由 AI 在写顶层评论时同步决定是否额外发布动态；不是每条评论必发，也不会增加一次模型调用。动态正文=评论原文+视频链接，非B站客户端内置勾选。',
             on: sw('commentSyncDynamic'),
             onChange: (v) => patch({ commentSyncDynamic: v }, '评论同步动态'),
           }) : null,
+          (dmMode === 'off' || dmMode === 'both') && sw('autoComment') && sw('commentSyncDynamic') ? h('div', { 'data-bd-sub': '' },
+            h('div', { 'data-bd-row': '' },
+              h('div', { 'data-bd-grow': '' },
+                h('div', { 'data-bd-label': '' }, '每日最多同步几条动态'),
+                h('div', { 'data-bd-note': '' }, '由 AI 自主决定是否同步；0 = 禁止发送，范围 0–30。计数按实际发送尝试，失败也占额度。'),
+                h('div', { 'data-bd-note': '' }, `今日已尝试 ${st?.dynamicSyncUsage?.used ?? 0} / ${st?.dynamicSyncUsage?.limit ?? cfg.dynamicDailyLimit ?? 3} 次`)),
+              h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0, max: 30,
+                value: dynamicDailyLimitDraft ?? '3',
+                onChange: e => setDynamicDailyLimitDraft(e.target.value),
+                onBlur: () => { const n = Math.max(0, Math.min(30, Math.floor(Number(dynamicDailyLimitDraft) || 0))); setDynamicDailyLimitDraft(String(n)); patch({ dynamicDailyLimit: n }, '动态每日上限') },
+              })),
+            h('div', { 'data-bd-note': '' }, 'AI 没选中：不会发布、不占额度；同 BV 同日最多尝试一次，接口接受不保证动态公开可见。')
+          ) : null,
           h('div', { 'data-bd-note': '' }, '「跑一轮」只负责挑视频和发布原创顶层评论；回复观众评论与热门评论互动统一由下方「后台评论互动」控制。'),
 
           h('div', { 'data-bd-sep': '' }),
