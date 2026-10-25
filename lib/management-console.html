@@ -41,7 +41,11 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <p id="report-meta" class="muted">报告只从本机 out 目录读取，不会重新调用模型。</p><pre id="report-content" class="output">选择日期后读取。</pre>
 </section>
 <section id="panel-comments" hidden>
-<div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><h3>后台评论互动设置</h3><button id="comments-refresh">刷新状态与记录</button></div><p id="comments-status" class="muted">正在读取状态…</p><p id="comments-usage" class="muted">近24小时回复计数读取中…</p>
+<div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><h3>后台评论互动设置</h3><button id="comments-refresh">刷新状态与记录</button></div><p id="comments-status" class="muted">正在读取状态…</p>
+<div class="grid" style="margin:12px 0">
+<div class="settings-section"><h4>后台互动回复额度（滚动24小时）</h4><p id="comments-usage" class="muted">近24小时回复计数读取中…</p><p id="comments-send-stats" class="muted">正在读取发送结果分类…</p><p id="comments-history-note" class="muted"></p></div>
+<div class="settings-section"><h4>公开评论全局硬上限（自然日）</h4><p id="global-comment-quota" class="muted">正在读取今日全局额度…</p><p id="global-comment-quota-note" class="muted">该上限由「设置 → 刷B站 → 互动」中的公开评论每日上限配置。</p></div>
+</div><p class="muted">重要区别：接口返回成功、本地评论账本有记录，都不等于评论当前一定对其他用户公开可见。此处不会把未向 B 站核验的记录标成“平台可见”。</p>
 <div class="settings-stack">
 <div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
 <div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>

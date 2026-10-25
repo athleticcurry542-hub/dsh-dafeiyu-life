@@ -93,6 +93,42 @@ def test_public_comment_quota_is_shared_atomic_file():
         assert scope['_reserve_comment_quota']()[0] is False
 
 
+def test_public_comment_quota_is_reserved_only_immediately_before_publish_paths():
+    # 结构级回归测试：图片配置/本地校验不能提前占用公开评论额度。
+    start=SRC.index('async def bili_reply(')
+    end=SRC.index('# ========== Tool 7:',start)
+    body=SRC[start:end]
+    assert body.count('_reserve_comment_quota()')==3
+    assert body.index('uploaded = await asyncio.to_thread(upload_image') < body.index('_reserve_comment_quota()',body.index('uploaded = await asyncio.to_thread(upload_image'))
+    image_reserve=body.index('_reserve_comment_quota()',body.index('uploaded = await asyncio.to_thread(upload_image'))
+    assert image_reserve < body.index('send_with_image,bvid,aid,text,cred,uploaded',image_reserve)
+    mention_branch=body.index('if rpid == 0 and mentioned and all(item["uid"] for item in mentioned):')
+    mention_reserve=body.index('_reserve_comment_quota()',mention_branch)
+    assert mention_reserve < body.index('_send_video_comment_with_mentions(bvid, aid, text, cred, mentioned)',mention_reserve)
+    regular_branch=body.index('quota_ok, quota_error = _reserve_comment_quota()',mention_reserve+1)
+    assert regular_branch < body.index('result = await comment.send_comment(',regular_branch)
+
+
+def test_public_comment_quota_preflight_is_read_only_and_blocks_when_full():
+    import sqlite3
+    import uuid
+    from datetime import datetime
+    names={'_reserve_comment_quota','_comment_quota_preflight'}
+    subset=ast.Module(body=[n for n in _ast.body if isinstance(n,ast.FunctionDef) and n.name in names],type_ignores=[])
+    scope={'os':os,'sqlite3':sqlite3,'datetime':datetime,'uuid':uuid,'Path':Path,'_DUTY_HOME':None}
+    exec(compile(ast.fix_missing_locations(subset),'<quota-preflight>','exec'),scope)
+    with tempfile.TemporaryDirectory() as td,patch.dict(os.environ,{'BILI_COMMENT_DAILY_LIMIT':'2'}):
+        scope['_DUTY_HOME']=Path(td)
+        assert scope['_comment_quota_preflight']()[0] is True
+        assert scope['_reserve_comment_quota']()[0] is True
+        assert scope['_reserve_comment_quota']()[0] is True
+        ok,reason=scope['_comment_quota_preflight']()
+        assert ok is False and '2' in reason
+        with sqlite3.connect(Path(td,'public-comment-quota.sqlite3')) as conn:
+            count=conn.execute('SELECT COUNT(*) FROM public_comment_attempt').fetchone()[0]
+        assert count==2  # 只读预检不占用额外名额
+
+
 def test_ai_explicit_false_does_not_sync_even_when_user_enabled():
     with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {'BILI_SYNC_DYNAMIC':'1'}), patch.object(urllib.request,'urlopen',side_effect=AssertionError('must not send')):
         ns['_DUTY_HOME']=Path(td)

@@ -1890,6 +1890,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         watchTop: cfg.masterEnabled === true && cfg.commentWatchTop === true,
         topCount: cfg.commentTopCount, topVideoCount: cfg.commentTopVideoCount,
         replyPerPoll: cfg.commentReplyPerPoll, replyPerDay: cfg.commentReplyPerDay,
+        globalDailyLimit: cfg.commentDailyLimit,
         ownTopPerUser:cfg.commentOwnTopPerUser, ownNestedPerUser:cfg.commentOwnNestedPerUser,
         allowGeneralTop: cfg.commentAllowGeneralTop === true,
       }

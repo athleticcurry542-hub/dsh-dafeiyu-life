@@ -957,6 +957,31 @@ def _reserve_comment_quota() -> tuple[bool, str]:
         return False, "评论配额记录不可用，安全起见拒绝发送：" + str(error)[:150]
 
 
+def _comment_quota_preflight() -> tuple[bool, str]:
+    """只读预检全局额度；不占位。最终仍须在真实发布 API 前调用原子 reserve。"""
+    try:
+        limit = max(0, min(1000, int(os.environ.get("BILI_COMMENT_DAILY_LIMIT", "10"))))
+    except (ValueError, TypeError):
+        limit = 10
+    if limit == 0:
+        return False, "公开评论已被每日硬上限禁用"
+    db = _DUTY_HOME / "public-comment-quota.sqlite3"
+    if not db.is_file():
+        return True, ""
+    try:
+        with sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=3) as conn:
+            exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='public_comment_attempt'").fetchone()
+            if not exists:
+                return True, ""
+            day = datetime.now().strftime("%Y-%m-%d")
+            count = conn.execute("SELECT COUNT(*) FROM public_comment_attempt WHERE day=?", (day,)).fetchone()[0]
+            if count >= limit:
+                return False, f"本日公开评论/回复已达到硬上限 {limit}；本次未发起发布，请勿重试直到额度重置或设置变更"
+            return True, ""
+    except sqlite3.Error as error:
+        return False, "评论配额记录不可用，安全起见拒绝发送：" + str(error)[:150]
+
+
 def _public_no_mention_reason(value):
     """AI 给用户看的简短自述；不落私密文本、URL、UID、控制字符或日志换行。"""
     if not isinstance(value, str):
@@ -1418,9 +1443,13 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             return _result({"success": False, "error": "评论内容不能为空"}, bvid, rpid, mention_diagnostic)
         pause_deny = _guard("bili_reply")
         if pause_deny: return pause_deny
-        quota_ok, quota_error = _reserve_comment_quota()
-        if not quota_ok:
+        # 只读预检先挡住已满额度，避免继续上传梗图或占用梗图配额。
+        # 这不是名额预留；真正的原子占位仍在每条发布 API 调用前执行。
+        quota_ready, quota_error = _comment_quota_preflight()
+        if not quota_ready:
             return _result({"success": False, "blocked": True, "error": quota_error}, bvid, rpid, mention_diagnostic)
+        # 全局公开评论额度在每条真实发布 API 调用前原子占位。
+        # 不在本地图片/配置校验之前占位，避免“根本没发起发布”也消耗名额。
         if temporary_target and wish_candidate and use_mentions:
             try:
                 from video_wishes import claim_wish
@@ -1455,6 +1484,11 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             try:
                 from comment_memes import upload_image, send_with_image
                 uploaded = await asyncio.to_thread(upload_image, meme_img, cred)
+                # 上传图片只是准备动作，不是公开评论发布；到真正发布前才占用全局额度。
+                quota_ok, quota_error = _reserve_comment_quota()
+                if not quota_ok:
+                    return _result({'success':False,'blocked':True,'error':quota_error,
+                                    'meme_image':{'status':'not_posted_quota_blocked'}},bvid,rpid,mention_diagnostic)
                 # 有 UID 的 @ 和图同时带上；缺 UID 时仍可能只有文字 @，不保证通知。
                 use_uid_mapping = mentioned and all(item.get('uid') for item in mentioned)
                 raw = await asyncio.to_thread(send_with_image,bvid,aid,text,cred,uploaded,
@@ -1484,6 +1518,9 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         # 全部 UID 都由用户显式提供时，才尝试带映射的评论接口。
         # 没有 UID 时会正常发送文字 @，但不会将它称为“真实通知成功”。
         if rpid == 0 and mentioned and all(item["uid"] for item in mentioned):
+            quota_ok, quota_error = _reserve_comment_quota()
+            if not quota_ok:
+                return _result({"success": False, "blocked": True, "error": quota_error}, bvid, rpid, mention_diagnostic)
             raw = await _send_video_comment_with_mentions(bvid, aid, text, cred, mentioned)
             if raw.get("code") != 0:
                 return _result({"success": False, "error": str(raw.get("message") or raw.get("code")),
@@ -1499,6 +1536,9 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
                     if data.get(key): out[key] = data[key]
             out["dynamic_sync"] = await _dynamic_after_comment(bvid, text, cred, requested=sync_to_dynamic, daily_limit=dynamic_daily_limit)
             return _result(out, bvid, rpid, mention_diagnostic)
+        quota_ok, quota_error = _reserve_comment_quota()
+        if not quota_ok:
+            return _result({"success": False, "blocked": True, "error": quota_error}, bvid, rpid, mention_diagnostic)
         if rpid == 0:
             # 发表新评论
             result = await comment.send_comment(
