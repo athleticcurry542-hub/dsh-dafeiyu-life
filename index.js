@@ -39,7 +39,7 @@ import { createDmAutoReply } from './lib/dm-autoreply.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
 import { createCommentInteract } from './lib/comment-interact.mjs'
-import { recentComments } from './lib/recent-comments.mjs'
+import { recentComments, migrateCommentReceipts } from './lib/recent-comments.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { listCommentMemes } from './lib/comment-meme-library.mjs'
@@ -1978,6 +1978,10 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       ].join('\n'), 'utf8')
     }
   } catch { /* 建不了也别拦着插件加载 */ }
+  try {
+    const recovered = migrateCommentReceipts(stateDir)
+    if (recovered.added) log('评论主账本补全：从旧发送回执恢复 ' + recovered.added + ' 条记录（没有正文的会注明）')
+  } catch (e) { log('评论旧回执迁移失败（不影响插件运行）：' + String(e?.message || e).slice(0,120)) }
 
   // ⭐ 归档目录：那一轮**被沙箱关着**，只写得了"启动前就已存在"的目录 ⇒ 宿主预建 ✓
   //    （2026-10-16 主人要的"它看过什么"清单：报告是给人看的，归档是给检索用的 ✓）
@@ -2095,7 +2099,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         if (t.startsWith('|')) {
           const cells = t.split('|').map((x) => x.trim()).slice(1, -1)
           const bvIdx = cells.findIndex((x) => /^BV[0-9A-Za-z]{10}$/.test(x))
-          const dayRaw = bvIdx > 0 ? cells[bvIdx - 1] : cells[0]
+          const dayRaw = bvIdx > 0 ? cells[bvIdx - 1] : cells[3] // 评论行以 BV 开头，时间在第 4 列
           const dm = /^(\d{4}-\d{2}-\d{2})/.exec(dayRaw || '')
           if (bvIdx >= 0 && dm && dm[1] < cutKey) {
             const month = dm[1].slice(0, 7)

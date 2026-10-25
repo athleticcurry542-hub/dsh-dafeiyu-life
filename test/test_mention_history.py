@@ -12,7 +12,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / 'vendor/bilibili-mcp/mcp_server.py').read_text(encoding='utf8')
 parsed = ast.parse(source)
-names = {'_record_mention_event', '_comment_result', '_append_home', '_valid_bv', '_safe_line', '_public_no_mention_reason'}
+names = {'_record_mention_event', '_record_comment_in_ledger', '_comment_result', '_append_home', '_read_home', '_valid_bv', '_safe_line', '_public_no_mention_reason'}
 code = compile(ast.Module(body=[node for node in parsed.body if isinstance(node, ast.FunctionDef) and node.name in names],type_ignores=[]), '<mention_history>', 'exec')
 
 class MentionHistoryTests(unittest.TestCase):

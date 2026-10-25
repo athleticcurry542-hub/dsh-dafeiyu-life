@@ -1047,8 +1047,47 @@ def _record_meme_event(payload, bvid, target_rpid, chosen_name, chosen_reason, d
     except Exception as exc:
         print('梗图诊断写入失败：'+str(exc)[:100], file=sys.stderr)
 
-def _comment_result(payload, bvid, target_rpid, diagnostic=None):
-    """评论工具仍给 AI 必要的成功状态/rpid/动态回执；具体 @ 原因只供用户查看。"""
+def _record_comment_in_ledger(payload, bvid, target_rpid, comment_text="", root=0):
+    """由实际发送回执直接记入 seen.md，禁止把记账职责交给 Agent 自觉执行。
+
+    B站 接受提交 != 评论公开可见；这里只记已获 success 回执的事实。
+    失败或结果不确定的请求绝不写入，避免假判重。无 rpid 的成功回执明确标问号。
+    """
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        return
+    try:
+        bv = _valid_bv(bvid)
+        rid = str(payload.get("rpid_str") or payload.get("rpid") or "").strip()
+        if not re.fullmatch(r"\d{6,30}", rid):
+            rid = "?"  # 不编造 ID；后续只能作为未核实的成功提交回执显示
+        is_reply = bool(int(target_rpid or 0))
+        raw_root = payload.get("root") or root or target_rpid if is_reply else 0
+        root_id = str(raw_root or "").strip()
+        if is_reply:
+            root_id = root_id if re.fullmatch(r"\d{6,30}", root_id) else "?"
+        else:
+            root_id = "0"
+        stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        summary = _safe_line(comment_text, 20) or "（未保存正文摘要）"
+        if rid == "?":
+            summary = "[成功回执·无评论ID] " + summary
+        existing = _read_home("seen.md", 2_000_000)
+        if rid != "?" and re.search(r"\|\s*" + re.escape(bv) + r"\s*\|\s*" + re.escape(rid) + r"\s*\|", existing):
+            return
+        # 表头用固定文本；主视频表与评论表不互相覆盖。归档仍使用 seen/YYYY-MM.md。
+        head = "\n## 评论记录（发送工具自动写入；成功回执不代表公开可见）\n\n"
+        if "## 评论记录（发送工具自动写入" in existing:
+            head = ""  # 只有第一次落盘追加新分区
+        row = "| " + " | ".join([bv, rid, root_id, stamp, summary]) + " |\n"
+        _append_home("seen.md", head + row)
+    except Exception as exc:
+        # 不得把已经发出去的评论说成失败：可能引发 Agent 重复发送。
+        print("评论判重记录写入失败：" + str(exc)[:120], file=sys.stderr)
+
+
+def _comment_result(payload, bvid, target_rpid, diagnostic=None, comment_text="", root=0):
+    """发送成功统一自动写判重表，诊断文件仍只用于技术排错。"""
+    _record_comment_in_ledger(payload, bvid, target_rpid, comment_text, root)
     _record_mention_event(payload, bvid, target_rpid, diagnostic)
     return json.dumps(payload, ensure_ascii=False)
 
@@ -1278,7 +1317,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
     def _result(payload, posted_bvid, reply_to_rpid, mention_diag=None):
         _record_meme_event(payload, posted_bvid, reply_to_rpid, meme_image_name,
                            meme_image_reason, no_meme_image_reason)
-        return _comment_result(payload, posted_bvid, reply_to_rpid, mention_diag)
+        return _comment_result(payload, posted_bvid, reply_to_rpid, mention_diag, text, root)
     cred = get_cred()
     if not aid:
         v = video.Video(bvid=bvid, credential=cred)
