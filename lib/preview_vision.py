@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import struct
 import sys
 import urllib.parse
 import urllib.request
@@ -28,25 +29,33 @@ PROMPT = (
 )
 
 
-def _safe_api_get(url, max_bytes=3_000_000, image=False):
-    if image:
-        url = _image_url(url)
+def _safe_api_get(url, max_bytes=3_000_000, image=False, index_file=False):
+    """Read only fixed Bilibili API and CDN resources, validating each redirect."""
+    if image and index_file:
+        raise ValueError('下载类型冲突')
+    is_asset = image or index_file
+    if is_asset:
+        url = _asset_url(url, kind='index' if index_file else 'image')
     host = urllib.parse.urlsplit(url).hostname or ''
-    if image:
+    if is_asset:
         if not IMAGE_HOST_RE.fullmatch(host):
-            raise ValueError('拒绝非 B站预览图域名')
+            raise ValueError('拒绝非 B站预览资源域名')
     elif host not in ('api.bilibili.com', 'bvc.bilivideo.com'):
         raise ValueError('拒绝非 B站接口域名')
     if urllib.parse.urlsplit(url).scheme != 'https':
         raise ValueError('只允许 HTTPS')
+
     class SecureRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             nxt = urllib.parse.urlsplit(newurl)
-            if nxt.scheme != 'https' or (not IMAGE_HOST_RE.fullmatch(nxt.hostname or '') if image else nxt.hostname not in ('api.bilibili.com','bvc.bilivideo.com')):
+            if nxt.scheme != 'https':
+                raise ValueError('预览接口重定向到非 HTTPS 地址')
+            if is_asset:
+                _asset_url(newurl, kind='index' if index_file else 'image')
+            elif nxt.hostname not in ('api.bilibili.com', 'bvc.bilivideo.com'):
                 raise ValueError('预览接口重定向到非白名单地址')
-            if image:
-                _image_url(newurl)  # 重定向后的图片也必须留在官方 videoshot 目录
-            return super().redirect_request(req,fp,code,msg,headers,newurl)
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
     req = urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.bilibili.com/'})
     try:
         with urllib.request.build_opener(SecureRedirect()).open(req, timeout=10) as resp:
@@ -58,9 +67,8 @@ def _safe_api_get(url, max_bytes=3_000_000, image=False):
                 raise ValueError('预览响应超过大小限制')
             return data
     except HTTPError as exc:
-        # 区分 B站接口 / 图片 CDN 拒绝，别误报为 DSH“宿主拦截”。
-        # 不向 UI 回显完整 URL、响应体或 Cookie。
-        target = 'B站预览图片 CDN' if image else 'B站视频/快照接口'
+        # 绝不回显 URL、响应体或 Cookie，也不误报为 DSH 宿主限制。
+        target = 'B站预览图片 CDN' if image else 'B站预览时间索引 CDN' if index_file else 'B站视频/快照接口'
         message = f'{target} 返回 HTTP {exc.code}'
         if exc.code == 403:
             message += '（服务器拒绝访问，可能是防盗链、权限或风控）'
@@ -74,28 +82,51 @@ def _json_api(url):
     return obj.get('data') or {}
 
 
-def _image_url(s):
-    """规范化 B站官方 videoshot 图片：老接口可能返回 http:// 或 //。
+def _asset_url(s, *, kind):
+    """Allow exactly the known video preview sprite/index directories on known CDN hosts.
 
-    从不向 HTTP 下载图；只有固定域名+固定视频快照目录通过后才升级为 HTTPS。
+    Modern Bilibili can use bimp.hdslb.com/videoshotpvhdboss/… instead of
+    i*.hdslb.com/bfs/videoshot/…. Both are HTTPS-only at download time.
     """
-    if not isinstance(s, str) or len(s) > 2048:
-        raise ValueError('预览图地址格式错误')
+    if not isinstance(s, str) or len(s) > 2048 or kind not in ('image', 'index'):
+        raise ValueError('预览资源地址格式错误')
     if s.startswith('//'):
         s = 'https:' + s
     p = urllib.parse.urlsplit(s)
     host = (p.hostname or '').lower()
     if not IMAGE_HOST_RE.fullmatch(host):
         raise ValueError('非法的 B站预览图片地址：图片主机不在安全名单（主机：' + host[:80] + '）')
-    if p.scheme not in ('http', 'https') or p.username or p.password or p.port not in (None, 80, 443) or p.fragment:
-        raise ValueError('非法的 B站预览图片地址：协议或地址格式不安全')
-    # 仅允许 videoshot 拼图，不接受任意站内图片或携带脚本的路径。
-    if not re.fullmatch(r'/bfs/videoshot/[A-Za-z0-9_./-]+\.(?:jpe?g|png|webp)', p.path, re.I):
-        raise ValueError('非法的 B站预览图片地址：不是受支持的视频预览拼图')
-    # B站旧接口会返回 http://i0.hdslb.com/bfs/videoshot/....jpg；只把合法图片升级为 HTTPS。
+    if p.scheme not in ('http', 'https') or p.username or p.password or p.port is not None or p.fragment:
+        raise ValueError('非法的 B站预览资源地址：协议或地址格式不安全')
+    suffix = r'bin' if kind == 'index' else r'(?:jpe?g|png|webp)'
+    # Explicitly forbid percent escapes, traversal and arbitrary B站 asset paths.
+    segment = r'[A-Za-z0-9_-][A-Za-z0-9._-]*'
+    sprite_path = rf'(?:/bfs/videoshot/|/videoshotpvhdboss/)(?:{segment}/)*{segment}\.{suffix}'
+    if not re.fullmatch(sprite_path, p.path, re.I) or any(part in ('.', '..') for part in p.path.split('/')):
+        label = '视频预览时间索引' if kind == 'index' else '视频预览拼图'
+        raise ValueError('非法的 B站预览图片地址：不是受支持的' + label)
+    # Do not widen bimp to generic BFS pictures or arbitrary CDN hosts.
+    # Legitimate old http:// URLs are upgraded *after* complete validation.
     if p.scheme == 'http':
         p = p._replace(scheme='https', netloc=host)
     return urllib.parse.urlunsplit(p)
+
+
+def _image_url(s):
+    return _asset_url(s, kind='image')
+
+
+def _index_url(s):
+    return _asset_url(s, kind='index')
+
+
+def _decode_bin_index(contents, total):
+    """Bilibili pvdata uses network-endian unsigned 16-bit seconds, first slot reserved."""
+    if not contents or len(contents) % 2:
+        raise ValueError('B站预览时间索引 .bin 长度不合法')
+    n = min(len(contents) // 2, total + 1)
+    values = struct.unpack('>' + 'H' * n, contents[:n*2])
+    return list(values[1:] if len(values) > 1 and values[0] == 0 else values)
 
 
 def _pick_indices(times, count, scores=None, step=1):
@@ -231,13 +262,25 @@ def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, pr
         w=max(48,min(640,int(data.get('img_x_size') or 160)))
         h=max(32,min(480,int(data.get('img_y_size') or 90)))
         total=min(len(images)*xlen*ylen,3000)
+        if not isinstance(images,list) or not images:
+            raise ValueError('这个视频没有提供预览图')
         raw=data.get('index') or []
-        # index=1 时的首项是占位0，其后与每个缩略图一一对应。
-        values=raw[1:] if len(raw)>1 and raw[0]==0 and raw[1]==0 else raw
-        if not images:raise ValueError('这个视频没有提供预览图')
-        if not values:raise ValueError('没有取得预览帧时间索引')
-        times=[max(0,float(v)) for v in values[:total]]
-        if not times:raise ValueError('预览帧时间索引为空')
+        # index=1 JSON 索引的第一个零是占位符；没有 JSON 时使用 pvdata .bin。
+        if isinstance(raw,list) and len(raw)>1:
+            values=raw[1:] if raw[0]==0 else raw
+            index_source='json'
+        else:
+            pvdata=data.get('pvdata')
+            if not pvdata:
+                raise ValueError('没有取得预览帧时间索引（JSON 与 pvdata 均为空）')
+            values=_decode_bin_index(_safe_api_get(_index_url(pvdata),index_file=True,max_bytes=20_000),total)
+            index_source='pvdata_bin'
+        try:
+            times=[max(0.0,float(v)) for v in values[:total]]
+        except (ValueError,TypeError) as exc:
+            raise ValueError('预览帧时间索引包含无效数据') from exc
+        if not times:
+            raise ValueError('预览帧时间索引为空')
         scores=None; step=0
         try:
             trend=json.loads(_safe_api_get('https://bvc.bilivideo.com/pbp/data?'+urllib.parse.urlencode({'cid':cid,'bvid':bvid}),max_bytes=250_000))
@@ -251,8 +294,8 @@ def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, pr
             sheet=i//(xlen*ylen)
             if sheet>=len(images):continue
             if sheet not in images_by_sheet:
-                img=Image.open(BytesIO(_safe_api_get(_image_url(images[sheet]),image=True,max_bytes=3_000_000)))
-                if img.width*img.height>12_000_000:raise ValueError('预览拼图过大')
+                img=Image.open(BytesIO(_safe_api_get(_image_url(images[sheet]),image=True,max_bytes=6_000_000)))
+                if img.width*img.height>20_000_000:raise ValueError('预览拼图过大')
                 img.load()
                 images_by_sheet[sheet]=img.convert('RGB')
             local=i%(xlen*ylen)
@@ -271,8 +314,8 @@ def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, pr
                 if re.fullmatch(r'\d{2}_\d+s\.jpg',old.name):old.unlink()
             for i,f in enumerate(frames):
                 (folder/f'{i+1:02d}_{int(f["second"])}s.jpg').write_bytes(f['bytes'])
-            (folder/'metadata.json').write_text(json.dumps({'bvid':bvid,'times':[f['second'] for f in frames],'source':'B站 videoshot 低清预览','high_energy':bool(scores)},ensure_ascii=False,indent=2),encoding='utf8')
-        answer={'ok':True,'bvid':bvid,'status':'preview_only','times':[f['second'] for f in frames], 'high_energy':bool(scores),'image_source':'B站低清预览','notice':'预览图分辨率较低，不代表完整视频；画面没看清的内容不可编造'}
+            (folder/'metadata.json').write_text(json.dumps({'bvid':bvid,'times':[f['second'] for f in frames],'source':'B站 videoshot 低清预览','high_energy':bool(scores),'index_source':index_source},ensure_ascii=False,indent=2),encoding='utf8')
+        answer={'ok':True,'bvid':bvid,'status':'preview_only','times':[f['second'] for f in frames], 'high_energy':bool(scores),'index_source':index_source,'image_source':'B站低清预览','notice':'预览图分辨率较低，不代表完整视频；画面没看清的内容不可编造'}
         if folder:answer['debug_dir']=str(folder)
         if not enabled:return answer
         key=_credentials(provider)

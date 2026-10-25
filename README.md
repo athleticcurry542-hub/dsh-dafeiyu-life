@@ -309,3 +309,7 @@ MIT（内置的 `vendor/bilibili-mcp/` 另见该目录下的 LICENSE）
 ### v2.4.15：本地梗图可选附在顶层评论
 
 新增 `commentMemesEnabled`（默认关）、`commentMemesDebug`、`commentMemesPerDay`（默认2）、`commentMemesPerRound`（默认1）。图片存放在 `bili-duty/comment-memes/`，仅接受用户自己放入的 PNG/JPG/GIF 文件，AI 通过文件名选择，程序按限额尝试上传并提交单张图片到 B站视频顶层评论。Debug 结果位于 `bili-duty/comment-memes-debug/`；成功回执无法证明图片最终公开可见。本版修复 `bimp.hdslb.com` 视频预览图片白名单，未扩展为任意 B站图片域名。动态附梗图尚未实现。详见 `覆盖说明-v2.4.15.md`。
+
+
+## v2.4.16：新版 B站预览图兼容
+支持 `bimp.hdslb.com/videoshotpvhdboss/` 预览拼图及 `pvdata` 二进制时间索引，同时保留旧格式、安全校验与全部 v2.4.15 功能。详见 `覆盖说明-v2.4.16.md`。
