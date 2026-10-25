@@ -1,3 +1,4 @@
+import { buildGrowthContext, syncReportsToGrowth } from './lib/persona-growth.mjs'
 /**
  * dsh-bili-scroll-plus —— host 半端
  * ============================================================================
@@ -1176,7 +1177,19 @@ function reportMeta() {
     // 用户可以复制需要的文字到设置中的“人设提示词”框；避免宿主代 Agent 读入用户私人文件。
     const persona = String(cfg.personaPrompt || '').trim().slice(0, 6000)
     const ownerDoc = persona ? '\n\n===== 用户手动填写的人设（仅风格，不应原文公开）=====\n' + persona + '\n===== 人设结束 =====\n' : ''
-    const loreDoc = '\n【角色背景与模型拟人梗（仅作为虚构角色语境；用户人设优先）】\n' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE) + '\n'
+        /* dsh-persona-growth: begin */
+    // 只读取经主人批准的成长经验；不重写 personaPrompt / characterLore。
+    const growthDoc = (() => {
+      try {
+        syncReportsToGrowth(stateDir, { limit: 5 })
+        return buildGrowthContext(stateDir, { maxChars: 1300 })
+      } catch (e) {
+        try { log('成长记忆读取失败，继续按原人设运行：' + String(e?.message || e).slice(0, 100)) } catch {}
+        return ''
+      }
+    })()
+    /* dsh-persona-growth: end */
+const loreDoc = '\n【角色背景与模型拟人梗（仅作为虚构角色语境；用户人设优先）】\n' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE) + '\n'
     let memeInventory = null
     if (cfg.commentMemesEnabled) {
       try {
@@ -1202,6 +1215,7 @@ function reportMeta() {
     return `你是这个账号的 B站 助手。`
       + `下面是使用者的设定（如果有）—— **按它来**，别用你默认那套人格。`
       + ownerDoc
+      + growthDoc
       + loreDoc
       + (ownerDoc
         ? ''
