@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {Readable} from 'node:stream'
 import {apply} from '../index.js'
-import {buildGrowthContext, listGrowth} from '../lib/persona-growth.mjs'
+import {buildGrowthContext, listGrowth, updateGrowthSuggestion} from '../lib/persona-growth.mjs'
 
 const client=readFileSync(new URL('../client.js',import.meta.url),'utf8')
 const host=readFileSync(new URL('../index.js',import.meta.url),'utf8')
@@ -45,12 +45,18 @@ test('native settings CRUD, approvals affect injected context, delete and undo w
     assert.ok(existsSync(join(x.dir,'persona-growth','v1.json')))
     const before=buildGrowthContext(x.dir)
     assert.ok(!before.includes('嘴硬'))
+    const blocked=await x.request('POST','persona-growth',{action:'approve',id:add.body.result.id})
+    assert.equal(blocked.code,400,'没有提炼建议时，不能将原始反馈直接注入')
+    const prematureRevise=await x.request('POST','persona-growth',{action:'revise',id:add.body.result.id,
+      suggestion:'看到属于大肥鱼角色相关的视频时，尝试从自己的视角自然吐槽，不要机械地复述台词。'})
+    assert.equal(prematureRevise.code,400,'人工反馈不能绕开模型建议直接编辑并审批')
+    updateGrowthSuggestion(x.dir,add.body.result.id,{origin:'model',suggestion:'看到属于大肥鱼角色相关的视频时，尝试从自己的视角自然吐槽，不要机械地复述台词。'})
     const approved=await x.request('POST','persona-growth',{action:'approve',id:add.body.result.id})
     assert.equal(approved.code,200)
     assert.equal(approved.body.result.status,'approved')
     const after=await x.request('GET','persona-growth')
-    assert.match(after.body.context,/嘴硬/)
-    assert.match(buildGrowthContext(x.dir),/嘴硬/)
+    assert.match(after.body.context,/机械地复述台词/)
+    assert.match(buildGrowthContext(x.dir),/机械地复述台词/)
     const deleted=await x.request('POST','persona-growth',{action:'delete',id:add.body.result.id})
     assert.equal(deleted.code,200)
     assert.equal(listGrowth(x.dir).entries.length,0)
@@ -75,7 +81,7 @@ test('growth API rejects unexpected actions and remote origins without altering 
 })
 
 test('native DSH settings exposes a compact entry and management center owns growth operations',()=>{
-  for (const keyword of ['新增成长反馈','从日报提取兴趣','撤销最近修改','下一轮会注入的人设经验','/persona-growth']) {
+  for (const keyword of ['新增成长反馈','从日报提取兴趣','撤销最近修改','不同使用场景的成长记忆预览','/persona-growth','AI 提炼建议']) {
     assert.ok((managerHtml+managerJs).includes(keyword),keyword)
   }
   assert.ok(client.includes('成长经验审核、梗知识编辑／批准、限额聊天申请统一在宽屏页面管理'))
