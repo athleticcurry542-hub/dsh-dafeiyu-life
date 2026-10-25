@@ -277,6 +277,10 @@ function WatchTab() {
       const [commentMemeList,setCommentMemeList] = React.useState(null)
       const [memeImageDailyDraft,setMemeImageDailyDraft] = React.useState(null)
       const [memeImageRoundDraft,setMemeImageRoundDraft] = React.useState(null)
+      const [memePromptExpanded,setMemePromptExpanded] = React.useState(false)
+      const [memePromptDefault,setMemePromptDefault] = React.useState(null)
+      const [memePromptDraft,setMemePromptDraft] = React.useState(null)
+      const [memePromptLoading,setMemePromptLoading] = React.useState(false)
       const [visionBV,setVisionBV] = React.useState('')
       const [visionTest,setVisionTest] = React.useState(null)
       const [visionBusy,setVisionBusy] = React.useState(false)
@@ -873,6 +877,39 @@ function WatchTab() {
                 onChange:e=>setter(e.target.value),onBlur:()=>{const n=Math.max(0,Math.min(max,Math.floor(Number(draft)||0)));setter(String(n));patch({[key]:n},label)}}))),
             h('div',{'data-bd-note':''},'每日附图尝试次数可设 0–10000（0 表示不附图）；每轮最多 5 次仍单独限制。AI 只有选择合适梗图时才使用额度。'),
             h('div',{'data-bd-note':''},'梗图库支持分类子文件夹：comment-memes/奶娃/奶龙大笑.webp、comment-memes/其他/无语.png。AI 按视频桥段和评论情绪判断是否附图（默认不附），选图时使用「分类/图片名」，同一目录勿放同名不同格式。每张最大8MB；WebP 动图只取首帧。'),
+            h('div',{'data-bd-row':''},
+              h('div',{'data-bd-grow':''},
+                h('div',{'data-bd-label':''},'AI 选图提示词（可自定义）'),
+                h('div',{'data-bd-note':''},cfg.commentMemePrompt ? '当前：使用你保存的选图策略' : '当前：使用内置默认选图策略')),
+              h('button',{'data-bd-btn':'',disabled:memePromptLoading,onClick:async()=>{
+                if(memePromptExpanded){setMemePromptExpanded(false);return}
+                setMemePromptLoading(true)
+                try {
+                  let defaultText=memePromptDefault
+                  if(defaultText===null){const x=await jget('/comment-meme-prompt-default');if(!x?.ok)throw new Error('无法加载默认提示词');defaultText=x.prompt||'';setMemePromptDefault(defaultText)}
+                  setMemePromptDraft(String(cfg.commentMemePrompt||defaultText))
+                  setMemePromptExpanded(true)
+                }catch(e){say('读取选图提示词失败：'+String(e?.message||e),'warn')}
+                finally{setMemePromptLoading(false)}
+              }},memePromptExpanded?'收起编辑':'查看／编辑')),
+            memePromptExpanded ? h('div',{'data-bd-sub':''},
+              h('div',{'data-bd-note':''},'修改后点“保存选图提示词”才会生效，仅影响下一轮生成评论时的选图方式；不影响评论人设和视觉识图提示词。硬额度、路径校验和不重试规则不可修改。'),
+              h('textarea',{'data-bd-input':'',rows:9,maxLength:4000,style:{minHeight:'144px',resize:'vertical'},
+                value:memePromptDraft??'',onChange:e=>setMemePromptDraft(e.target.value)}),
+              h('div',{'data-bd-row':''},
+                h('span',{'data-bd-note':''},`${(memePromptDraft||'').length} / 4000 字符`),
+                h('button',{'data-bd-btn':'','data-primary':'',disabled:Boolean(busy)||!String(memePromptDraft||'').trim(),
+                  onClick:async()=>{
+                    const next=String(memePromptDraft||'').trim()
+                    if(next===memePromptDefault) await patch({commentMemePrompt:'',clear:['commentMemePrompt']},'AI 选图提示词（内置默认）')
+                    else await patch({commentMemePrompt:next},'AI 选图提示词')
+                  }},'保存选图提示词'),
+                h('button',{'data-bd-btn':'',disabled:Boolean(busy),onClick:async()=>{
+                  setMemePromptDraft(memePromptDefault||'')
+                  await patch({commentMemePrompt:'',clear:['commentMemePrompt']},'恢复默认选图提示词')
+                }},'恢复默认')),
+              h('div',{'data-bd-note':''},'“恢复默认”会清除自定义内容；默认规则仍然包含“不硬配图、只选图库已存在的名称”。不会删除本地图片或梗知识库。')) : null,
+
             h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'',onClick:()=>jget('/comment-memes').then(setCommentMemeList).catch(e=>setCommentMemeList({ok:false,error:String(e)}))},'刷新梗图库'),
               h('span',{'data-bd-note':''},commentMemeList?commentMemeList.ok?`已识别 ${commentMemeList.total??commentMemeList.names?.length??0} 张${commentMemeList.truncated?'（仅显示部分）':''}`:commentMemeList.error:'请放入图片后点击刷新')),
             commentMemeList?.ok ? h('div',{'data-bd-note':''},(commentMemeList.categories||[]).map(x=>`${x.label} ${x.count}张`).join(' · ')) : null,

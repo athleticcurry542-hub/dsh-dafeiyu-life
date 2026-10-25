@@ -51,11 +51,13 @@ test('符号链接目录与同目录同名不同后缀文件不提供给 AI',()=
 
 test('选图提示词强调完整分类名称、保守选图、不凭名字声称看过图',()=>{
  const index=readFileSync(new URL('../index.js',import.meta.url),'utf8')
- assert.match(index,/分类\/文件名/)
- assert.match(index,/默认只发文字/)
- assert.match(index,/没有亲眼看到图片/)
- assert.match(index,/不懂笑点就不附图/)
- assert.match(index,/meme_image_reason/)
+ const prompt=readFileSync(new URL('../lib/comment-meme-prompt.mjs',import.meta.url),'utf8')
+ assert.match(index,/buildCommentMemePrompt/)
+ assert.match(prompt,/分类\/图片名/)
+ assert.match(prompt,/默认只发文字/)
+ assert.match(prompt,/不能声称已亲眼看到画面/)
+ assert.match(prompt,/不懂笑点就不附图/)
+ assert.match(prompt,/meme_image_reason/)
  const client=readFileSync(new URL('../client.js',import.meta.url),'utf8')
  assert.match(client,/分类子文件夹/)
  assert.match(client,/maxHeight:'180px'/)
