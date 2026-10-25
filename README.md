@@ -6,7 +6,7 @@
 
 它还提供本地管理中心，用于统一管理诊断、日报、后台互动、成长记忆及梗知识库。
 
-> **当前版本：2.4.31** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：2.4.32** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > **独立维护的 Plus 衍生版**，不是原作者或 B 站、DeepSeek 的官方插件。项目来源与署名见[致谢与许可](#致谢与许可)。
 
