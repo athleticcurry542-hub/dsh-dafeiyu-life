@@ -20,7 +20,7 @@ import urllib.request
 from urllib.error import HTTPError
 
 BV_RE = re.compile(r'^BV[0-9A-Za-z]{10}$')
-IMAGE_HOST_RE = re.compile(r'^(?:i\d+\.hdslb\.com|i\d+\.bilivideo\.com|bimp\.hdslb\.com)$', re.I)
+IMAGE_HOST_RE = re.compile(r'^(?:i\d+\.hdslb\.com|i\d+\.bilivideo\.com|(?:bimp|boss)\.hdslb\.com)$', re.I)
 PROMPT = (
     '你正在看B站视频的低清播放器预览快照，不是完整视频。'
     '按时间顺序描述每张图能确认的画面、角色轮廓、可辨认的文字以及明显变化；'
@@ -86,8 +86,9 @@ def _json_api(url):
 def _asset_url(s, *, kind):
     """Allow exactly the known video preview sprite/index directories on known CDN hosts.
 
-    Modern Bilibili can use bimp.hdslb.com/videoshotpvhdboss/… instead of
-    i*.hdslb.com/bfs/videoshot/…. Both are HTTPS-only at download time.
+    Modern Bilibili may use bimp.hdslb.com or boss.hdslb.com for
+    /videoshotpvhdboss/…; old i* hosts may use /bfs/videoshot/….
+    Only the fixed player-preview directory is allowed on boss.hdslb.com.
     """
     if not isinstance(s, str) or len(s) > 2048 or kind not in ('image', 'index'):
         raise ValueError('预览资源地址格式错误')
@@ -106,7 +107,11 @@ def _asset_url(s, *, kind):
     if not re.fullmatch(sprite_path, p.path, re.I) or any(part in ('.', '..') for part in p.path.split('/')):
         label = '视频预览时间索引' if kind == 'index' else '视频预览拼图'
         raise ValueError('非法的 B站预览图片地址：不是受支持的' + label)
-    # Do not widen bimp to generic BFS pictures or arbitrary CDN hosts.
+    # boss.hdslb.com serves other types of files too; restrict this new host
+    # to player preview assets only, including in redirected requests.
+    if host == 'boss.hdslb.com' and not p.path.startswith('/videoshotpvhdboss/'):
+        raise ValueError('非法的 B站预览图片地址：boss 主机只允许视频预览资源')
+    # Do not widen any CDN to arbitrary BFS pictures or other paths.
     # Legitimate old http:// URLs are upgraded *after* complete validation.
     if p.scheme == 'http':
         p = p._replace(scheme='https', netloc=host)

@@ -273,7 +273,6 @@ function WatchTab() {
       const [visionBusy,setVisionBusy] = React.useState(false)
       const [visionDraft,setVisionDraft] = React.useState(null)
       const [dmMode, setDmMode] = React.useState(null)      // 投递方式：off / only / both
-      const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
       const [mentionMode, setMentionMode] = React.useState(null)
       const [friendProfiles,setFriendProfiles] = React.useState(null)
@@ -324,7 +323,6 @@ function WatchTab() {
         if (cfg && memeImageDailyDraft === null) setMemeImageDailyDraft(String(cfg.commentMemesPerDay ?? 2))
         if (cfg && memeImageRoundDraft === null) setMemeImageRoundDraft(String(cfg.commentMemesPerRound ?? 1))
         if (cfg && memeMaxEntriesDraft === null) setMemeMaxEntriesDraft(String(cfg.memeMemoryMaxEntries ?? 300))
-        if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
         if (cfg && mentionMode === null) setMentionMode(cfg.mentionMode || 'ai')
         if (cfg && friendProfiles === null) {try {setFriendProfiles(JSON.parse(cfg.mentionProfiles||'{}'))} catch {setFriendProfiles({})}}
@@ -701,17 +699,10 @@ function WatchTab() {
             h('option', { value: 'only' }, '只发私信 —— 一条公开评论都不发（默认，最不打扰别人）'),
             h('option', { value: 'off' }, '只发评论 —— @ 可选（公开，别人能看见）'),
             h('option', { value: 'both' }, '私信 + 评论 —— 两边都发')),
-          h('div', { 'data-bd-label': '' }, '旧版昵称（保留兼容，可不改）'),
-          h('input', {
-            'data-bd-input': '', value: mention ?? '',
-            placeholder: '老用户原有的 mentionName；新@名单为空时继承',
-            onChange: (e) => setMention(e.target.value),
-            onBlur: () => { const v = String(mention || '').trim(); setMention(v); patch(v ? {mentionName:v} : {mentionName:'',clear:['mentionName']}, '旧版昵称') },
-          }),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-label': '' }, '私信推荐收件人 UID（与评论 @ 名单独立）') : null,
           (dmMode && dmMode !== 'off') ? h('input', {
             'data-bd-input': '', value: dmUid ?? '', type: 'number', min: 0,
-            placeholder: '输入数字 UID；留空仍兼容旧版昵称查找',
+            placeholder: '输入用于接收刷视频报告的数字 UID',
             onChange: (e) => setDmUid(e.target.value),
             onBlur: () => patch({dmUid: Math.max(0, Math.floor(Number(dmUid)||0))}, '私信收件人 UID'),
           }) : null,
