@@ -1302,6 +1302,7 @@ function reportMeta() {
     }
     if (!dmSafe && cfg.visionEnabled) {
       try {
+        if (readFileSync(join(stateDir,'vision-secret.ps1'),'utf8') !== readFileSync(join(pluginDir,'lib','vision-secret.ps1'),'utf8')) {log('🔒 视觉密钥助手版本不一致');return null}
         if (readFileSync(join(stateDir,'preview_vision.py'),'utf8') !== readFileSync(join(pluginDir,'lib','preview_vision.py'),'utf8')) {log('🔒 预览识图脚本版本不一致，请检查 preview_vision.py.new');return null}
       } catch {log('🔒 预览识图脚本不存在或无法读取');return null}
     }
@@ -2453,6 +2454,38 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         child.on('close',()=>{try{finish(JSON.parse(out.trim()))}catch{finish({ok:false,error:'梗库管理脚本读取失败'})}})
       })
       return sendJson(res,result.ok ? 200 : 400,result)
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/vision-key') {
+      const file = join(stateDir,'.vision-api-key.dpapi')
+      const envPresent = Boolean(process.env.BILI_VISION_API_KEY || (cfg.visionModelProvider==='anthropic' ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY))
+      return sendJson(res, 200, {ok:true, saved:process.platform==='win32'&&existsSync(file), environment:envPresent, supported:process.platform==='win32'})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/vision-key') {
+      // 视觉 API Key 绝不进入 config.json、DSH 设置同步或 duty.log。
+      if (process.platform!=='win32') return sendJson(res, 400, {ok:false,error:'当前仅 Windows 支持设置页安全保存密钥；其他系统请使用 BILI_VISION_API_KEY 环境变量'})
+      const body = await readBody(req)
+      const action = String(body?.action||'')
+      const file = join(stateDir,'.vision-api-key.dpapi')
+      if (action==='delete') {
+        try {rmSync(file,{force:true});return sendJson(res,200,{ok:true,saved:false})}
+        catch {return sendJson(res,500,{ok:false,error:'删除本地视觉密钥失败'})}
+      }
+      if (action!=='store' || typeof body?.key!=='string' || body.key.length<8 || body.key.length>4096 || /[\r\n\0]/.test(body.key))
+        return sendJson(res,400,{ok:false,error:'请输入有效的视觉 API Key（8–4096 字符）'})
+      // 只通过 stdin 的 Base64 传给 Windows DPAPI；不将密钥放在命令参数中。
+      const result=await new Promise(resolve=>{
+        const script=join(pluginDir,'lib','vision-secret.ps1')
+        const child=spawn('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass', '-File',script,'-Action','store','-Path',file],{cwd:stateDir,windowsHide:true,shell:false,stdio:['pipe','pipe','pipe']})
+        let output='',done=false
+        const finish=(r)=>{if(done)return;done=true;clearTimeout(timer);resolve(r)}
+        const timer=setTimeout(()=>{try{child.kill()}catch{};finish({ok:false,error:'安全保存密钥超时'})},15000)
+        child.stdout?.on('data',b=>{output=(output+String(b)).slice(-64)})
+        child.on('error',()=>finish({ok:false,error:'无法启动 Windows PowerShell 加密密钥'}))
+        child.on('close',code=>finish(code===0&&output.trim()==='ok'?{ok:true,saved:true}:{ok:false,error:'Windows DPAPI 加密失败，请检查当前账户及 PowerShell 权限'}))
+        child.stdin?.on('error',()=>{})
+        child.stdin?.end(Buffer.from(body.key,'utf8').toString('base64'))
+      })
+      return sendJson(res,result.ok?200:400,result)
     }
     if (req.method === 'POST' && path === '/api/bili-duty/vision-preview-test') {
       // 本按钮由用户主动点击，只取 B站预览图；不启动自动刷片或评论。

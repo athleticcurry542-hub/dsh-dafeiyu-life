@@ -282,6 +282,9 @@ function WatchTab() {
       const [memePromptDraft,setMemePromptDraft] = React.useState(null)
       const [memePromptLoading,setMemePromptLoading] = React.useState(false)
       const [visionBV,setVisionBV] = React.useState('')
+      const [visionKeyDraft,setVisionKeyDraft] = React.useState('')
+      const [visionKeyStatus,setVisionKeyStatus] = React.useState(null)
+      const [visionKeyBusy,setVisionKeyBusy] = React.useState(false)
       const [visionTest,setVisionTest] = React.useState(null)
       const [visionBusy,setVisionBusy] = React.useState(false)
       const [visionDraft,setVisionDraft] = React.useState(null)
@@ -336,6 +339,21 @@ function WatchTab() {
       }
 
       const cfg = st?.config
+      React.useEffect(()=>{
+        if (tab!=='taste' || (!cfg?.visionEnabled && !cfg?.visionDebug)) return
+        jget('/vision-key').then(r=>{if(alive.current)setVisionKeyStatus(r)}).catch(()=>{})
+      },[tab,cfg?.visionEnabled,cfg?.visionDebug])
+      const manageVisionKey = async(action) => {
+        setVisionKeyBusy(true)
+        try {
+          const data = await jpost('/vision-key',action==='store'?{action,key:visionKeyDraft}:{action})
+          if(!data.ok) throw new Error(data.error||'保存失败')
+          setVisionKeyDraft('')
+          setVisionKeyStatus(await jget('/vision-key'))
+          say(action==='store'?'视觉 API Key 已加密保存，之后可测试识图':'已移除本地视觉 API Key','good')
+        } catch(e) {say(String(e?.message||e),'warn')}
+        finally {setVisionKeyBusy(false)}
+      }
       React.useEffect(()=>{
         if(tab!=='social' || !cfg?.dmApprovalEnabled)return
         jget('/dm-approvals').then(x=>{if(alive.current)setApprovals(x.approvals||[])}).catch(()=>{})
@@ -1142,7 +1160,15 @@ function WatchTab() {
               h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:3,value:(visionDraft||{}).visionFrames??2,
                 onChange:e=>setVisionDraft(old=>({...old,visionFrames:e.target.value})),
                 onBlur:()=>patch({visionFrames:Math.max(1,Math.min(3,Number((visionDraft||{}).visionFrames)||2))},'预览帧数量')})),
-            h('div',{'data-bd-note':''},'API Key 不保存在插件配置中。使用进程环境变量 BILI_VISION_API_KEY，或 ANTHROPIC_API_KEY / OPENAI_API_KEY；DSH 内保存的模型密钥不保证自动传给本功能。'),
+            h('div',{'data-bd-label':''},'视觉 API Key（独立配置）'),
+            h('div',{'data-bd-note':''},'DSH 视频模型的密钥不会自动传给本功能。Windows 下保存为当前用户 DPAPI 加密文件，不写入普通配置或日志。'),
+            h('div',{'data-bd-row':''},
+              h('input',{'data-bd-input':'',type:'password',autoComplete:'new-password',placeholder:'粘贴你的视觉 API Key（保存后不会回显）',style:{flex:1,minWidth:'170px'},value:visionKeyDraft,
+                onChange:e=>setVisionKeyDraft(e.target.value)}),
+              h('button',{'data-bd-btn':'','data-primary':'',disabled:visionKeyBusy||visionKeyDraft.length<8||visionKeyStatus?.supported===false,onClick:()=>manageVisionKey('store')},'加密保存'),
+              h('button',{'data-bd-btn':'',disabled:visionKeyBusy||!visionKeyStatus?.saved,onClick:()=>manageVisionKey('delete')},'删除密钥')),
+            h('div',{'data-bd-note':''},visionKeyStatus?.saved?'当前 Windows 用户已保存视觉 API Key（仅显示状态，不会回显）':visionKeyStatus?.environment?'已检测到环境变量中的视觉 API Key':visionKeyStatus?.supported===false?'本系统仅支持进程环境变量方式':'尚未保存视觉 API Key；可先只开 Debug 抓图。'),
+            h('div',{'data-bd-note':''},'API 地址可填写 https://4router.net/v1 这样的基础地址，程序自动补齐对应的 /messages 或 /chat/completions。模型 ID 必须是服务商真实支持的名称。'),
             h('div',{'data-bd-row':''},
               h('input',{'data-bd-input':'',placeholder:'输入一个 BV 号，测试预览图片',style:{flex:1,minWidth:'180px'},value:visionBV,
                 onChange:e=>setVisionBV(e.target.value)}),

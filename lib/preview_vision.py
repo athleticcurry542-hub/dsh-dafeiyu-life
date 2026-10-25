@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import subprocess
 import struct
 import sys
 import urllib.parse
@@ -155,8 +156,24 @@ def _pick_indices(times, count, scores=None, step=1):
     return sorted(candidates[:count])
 
 
-def _credentials(provider):
-    # 不从 DSH 历史/配置文件偷取凭证，只读取用户主动提供的进程环境变量。
+def _credentials(provider, home=None):
+    """Prefer user's locally saved DPAPI key; never read DSH model credentials."""
+    if home and os.name == 'nt':
+        secret = Path(home) / '.vision-api-key.dpapi'
+        helper = Path(__file__).with_name('vision-secret.ps1')
+        if secret.is_file() and helper.is_file():
+            try:
+                result = subprocess.run(
+                    ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                     '-File', str(helper), '-Action', 'load', '-Path', str(secret)],
+                    capture_output=True, timeout=8, check=True,
+                )
+                key = base64.b64decode(result.stdout.strip(), validate=True).decode('utf-8')
+                if key and len(key) <= 4096:
+                    return key
+            except (OSError, subprocess.SubprocessError, ValueError, UnicodeError):
+                # Fall back to explicitly supplied process env, not to DSH credential files.
+                pass
     if provider == 'anthropic':
         return os.environ.get('BILI_VISION_API_KEY') or os.environ.get('ANTHROPIC_API_KEY') or ''
     return os.environ.get('BILI_VISION_API_KEY') or os.environ.get('OPENAI_API_KEY') or ''
@@ -166,8 +183,17 @@ def _endpoint(provider, custom):
     default = 'https://api.anthropic.com/v1/messages' if provider=='anthropic' else 'https://api.openai.com/v1/chat/completions'
     url = str(custom or default).strip()
     parsed=urllib.parse.urlsplit(url)
-    if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password or parsed.fragment:
-        raise ValueError('视觉 API 地址必须是 HTTPS 完整地址，不允许账号/密码/片段')
+    if parsed.scheme != 'https' or not parsed.netloc or parsed.username or parsed.password or parsed.fragment or parsed.query:
+        raise ValueError('视觉 API 地址必须是 HTTPS 地址，不允许账号/密码/查询参数/片段')
+    # The UI commonly receives API base URLs, e.g. https://4router.net/v1.
+    # Complete ONLY known API base paths; don't rewrite custom full endpoints.
+    path=parsed.path.rstrip('/')
+    if path in ('', '/v1'):
+        end='/v1/messages' if provider=='anthropic' else '/v1/chat/completions'
+        return urllib.parse.urlunsplit(parsed._replace(path=end))
+    if path in ('/messages', '/chat/completions'):
+        end='/v1/messages' if provider=='anthropic' else '/v1/chat/completions'
+        return urllib.parse.urlunsplit(parsed._replace(path=end))
     return url
 
 
@@ -198,7 +224,8 @@ def _call_vision(frames, provider, model, url, api_key):
         with urllib.request.build_opener(NoRedirect()).open(req,timeout=35) as r: result=json.loads(r.read(300_000))
     except HTTPError as e:
         # 不回显响应体：服务可能在错误消息中反射凭证。
-        raise ValueError('视觉模型请求失败 HTTP '+str(e.code)) from None
+        hint={401:'（API Key 不正确或未获授权）',403:'（服务商拒绝访问）',404:'（模型或 API 路径不存在，请核对模型 ID 与接口协议）',429:'（请求过于频繁）'}.get(e.code,'')
+        raise ValueError('视觉模型请求失败 HTTP '+str(e.code)+hint) from None
     if provider=='anthropic':
         ans='\n'.join(x.get('text','') for x in result.get('content',[]) if x.get('type')=='text')
     else:
@@ -318,9 +345,9 @@ def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, pr
         answer={'ok':True,'bvid':bvid,'status':'preview_only','times':[f['second'] for f in frames], 'high_energy':bool(scores),'index_source':index_source,'image_source':'B站低清预览','notice':'预览图分辨率较低，不代表完整视频；画面没看清的内容不可编造'}
         if folder:answer['debug_dir']=str(folder)
         if not enabled:return answer
-        key=_credentials(provider)
+        key=_credentials(provider,home)
         if not key:
-            answer.update(status='vision_unavailable',error='没有读到视觉 API Key；已抓取预览图但尚未识图。请配置 BILI_VISION_API_KEY 或提供方官方环境变量。');return answer
+            answer.update(status='vision_unavailable',error='没有读到视觉 API Key；已抓取预览图但尚未识图。请在设置页「视觉 API Key」保存密钥，或配置 BILI_VISION_API_KEY。');return answer
         if not _claim_vision_quota(home):
             answer.update(status='daily_limit',error='视觉模型每日分析上限 8 次已用完；只取得预览图，未识图');return answer
         try:
