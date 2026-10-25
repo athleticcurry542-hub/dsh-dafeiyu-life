@@ -282,9 +282,6 @@ function WatchTab() {
       const [memePromptDraft,setMemePromptDraft] = React.useState(null)
       const [memePromptLoading,setMemePromptLoading] = React.useState(false)
       const [visionBV,setVisionBV] = React.useState('')
-      const [visionKeyDraft,setVisionKeyDraft] = React.useState('')
-      const [visionKeyStatus,setVisionKeyStatus] = React.useState(null)
-      const [visionKeyBusy,setVisionKeyBusy] = React.useState(false)
       const [visionTest,setVisionTest] = React.useState(null)
       const [visionBusy,setVisionBusy] = React.useState(false)
       const [visionDraft,setVisionDraft] = React.useState(null)
@@ -340,21 +337,6 @@ function WatchTab() {
 
       const cfg = st?.config
       React.useEffect(()=>{
-        if (tab!=='taste' || (!cfg?.visionEnabled && !cfg?.visionDebug)) return
-        jget('/vision-key').then(r=>{if(alive.current)setVisionKeyStatus(r)}).catch(()=>{})
-      },[tab,cfg?.visionEnabled,cfg?.visionDebug])
-      const manageVisionKey = async(action) => {
-        setVisionKeyBusy(true)
-        try {
-          const data = await jpost('/vision-key',action==='store'?{action,key:visionKeyDraft}:{action})
-          if(!data.ok) throw new Error(data.error||'保存失败')
-          setVisionKeyDraft('')
-          setVisionKeyStatus(await jget('/vision-key'))
-          say(action==='store'?'视觉 API Key 已加密保存，之后可测试识图':'已移除本地视觉 API Key','good')
-        } catch(e) {say(String(e?.message||e),'warn')}
-        finally {setVisionKeyBusy(false)}
-      }
-      React.useEffect(()=>{
         if(tab!=='social' || !cfg?.dmApprovalEnabled)return
         jget('/dm-approvals').then(x=>{if(alive.current)setApprovals(x.approvals||[])}).catch(()=>{})
       },[tab,cfg?.dmApprovalEnabled])
@@ -380,7 +362,7 @@ function WatchTab() {
         if (cfg && dmWhitelist === null) setDmWhitelist(cfg.dmWhitelist || '')
         if (cfg && dmStrangerText === null) setDmStrangerText(cfg.dmStrangerText || '')
         if (cfg && dmStrangerMax === null) setDmStrangerMax(String(cfg.dmStrangerMaxReplies ?? 1))
-        if(cfg && visionDraft===null) setVisionDraft(Object.fromEntries(['visionModelProvider','visionModelId','visionEndpoint','visionFrames'].map(k=>[k,cfg[k]??''])))
+        if(cfg && visionDraft===null) setVisionDraft(Object.fromEntries(['visionModelProvider','visionModelId','visionReasoningEffort','visionFrames'].map(k=>[k,cfg[k]??''])))
         if(cfg && modelDraft===null) setModelDraft(Object.fromEntries(['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort'].map(k=>[k,cfg[k]||''])))
         if(cfg && approvalPhrase===null) setApprovalPhrase(cfg.dmApprovalPhrase || '白饭🍚')
         if(cfg && approvedTotal===null) setApprovedTotal(String(cfg.dmApprovedTotalLimit ?? 50))
@@ -1145,30 +1127,30 @@ function WatchTab() {
           h(ToggleRow, {label:'Debug：保存实际预览图', note:'默认关闭；开启后把送去识图的 JPEG 保存到插件数据目录 vision-debug/BV号/，方便自己查看。',
             on:sw('visionDebug'),onChange:v=>patch({visionDebug:v},'预览图调试保存')}),
           (cfg.visionEnabled||cfg.visionDebug) ? h('div',{'data-bd-sub':''},
-            h('div',{'data-bd-label':''},'独立视觉模型（不影响刷视频 / 私信模型）'),
+            h('div',{'data-bd-label':''},'识图方式'),
             h('div',{'data-bd-row':''},
-              h('div',{'data-bd-grow':''},h('div',{'data-bd-note':''},'视觉 API 协议')),
-              h('select',{'data-bd-input':'',value:(visionDraft||{}).visionModelProvider||'anthropic',style:{width:'190px'},
-                onChange:e=>{const v=e.target.value;setVisionDraft(old=>({...old,visionModelProvider:v}));patch({visionModelProvider:v},'视觉模型提供方')}},
-                h('option',{value:'anthropic'},'Anthropic Messages'),h('option',{value:'openai'},'OpenAI 兼容接口'))),
-            ...[['visionModelId','视觉模型 ID','填写服务商实际模型 ID，例如 claude-haiku-4-5-20251001'],['visionEndpoint','API 地址（选填）','留空使用官方地址，第三方代理须填 HTTPS 完整接口地址']].map(([key,label,placeholder])=>h('div',{key},
-              h('div',{'data-bd-note':''},label),h('input',{'data-bd-input':'',value:(visionDraft||{})[key]??'',placeholder,
-                onChange:e=>setVisionDraft(old=>({...old,[key]:e.target.value})),
-                onBlur:()=>patch({[key]:(visionDraft||{})[key]||''},label)}))),
+              h('select',{'data-bd-input':'',value:['reuse_video_model','independent_dsh','auto'].includes(cfg.visionMode)?cfg.visionMode:'reuse_video_model',style:{width:'100%',maxWidth:'570px'},
+                onChange:e=>patch({visionMode:e.target.value},'视觉处理模式')},
+                h('option',{value:'reuse_video_model'},'复用刷视频 / 视频分析模型（推荐，不额外配置密钥）'),
+                h('option',{value:'independent_dsh'},'独立 DSH 视觉模型（单独配置 Provider / 模型 / 思考深度）'),
+                h('option',{value:'auto'},'自动优先复用视频模型（不暗中另调用其他付费模型）'))),
+            h('div',{'data-bd-note':''},'复用模式：图片经 DSH MCP 直接交给当前视频 Agent，与已有字幕、弹幕一起判断。独立模式：通过 DSH 账号已有的模型路由另起一个只读视觉 Agent；不需要单独填写 API Key 或 API 地址。两种模式都要求所选模型支持图片输入。'),
+            cfg.visionMode==='independent_dsh' ? h('div',{'data-bd-sub':''},
+              h('div',{'data-bd-label':''},'独立视觉模型（与其他模型设置相同格式）'),
+              ...[['visionModelProvider','模型提供方 Provider（可留空）','如 claude'],
+                  ['visionModelId','模型 ID（可留空）','如 claude-haiku-5-5'],
+                  ['visionReasoningEffort','思考深度（自由输入，可留空）','如 medium']].map(([key,label,placeholder])=>
+                h('div',{key},h('div',{'data-bd-note':''},label),
+                  h('input',{'data-bd-input':'',value:(visionDraft||{})[key]??'',placeholder,
+                    onChange:e=>setVisionDraft(old=>({...old,[key]:e.target.value})),
+                    onBlur:()=>patch({[key]:(visionDraft||{})[key]||''},label)}))),
+              h('div',{'data-bd-note':''},'留空时优先继承刷视频模型的相应配置。独立视觉 Agent 与主视频 Agent 是两次 DSH 模型会话，但不走旧的 API Key/DPAPI 接口。')):null,
             h('div',{'data-bd-row':''},h('div',{'data-bd-grow':''},
-              h('div',{'data-bd-label':''},'每条最多取几张图'),h('div',{'data-bd-note':''},'1–3 张，默认 2；优先高能时间点，失败退回均匀抽取。')),
+              h('div',{'data-bd-label':''},'每条最多取几张预览图'),h('div',{'data-bd-note':''},'1–3 张，默认 2；优先高能弹幕时间点，失败则均匀取帧。')),
               h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:3,value:(visionDraft||{}).visionFrames??2,
                 onChange:e=>setVisionDraft(old=>({...old,visionFrames:e.target.value})),
                 onBlur:()=>patch({visionFrames:Math.max(1,Math.min(3,Number((visionDraft||{}).visionFrames)||2))},'预览帧数量')})),
-            h('div',{'data-bd-label':''},'视觉 API Key（独立配置）'),
-            h('div',{'data-bd-note':''},'DSH 视频模型的密钥不会自动传给本功能。Windows 下保存为当前用户 DPAPI 加密文件，不写入普通配置或日志。'),
-            h('div',{'data-bd-row':''},
-              h('input',{'data-bd-input':'',type:'password',autoComplete:'new-password',placeholder:'粘贴你的视觉 API Key（保存后不会回显）',style:{flex:1,minWidth:'170px'},value:visionKeyDraft,
-                onChange:e=>setVisionKeyDraft(e.target.value)}),
-              h('button',{'data-bd-btn':'','data-primary':'',disabled:visionKeyBusy||visionKeyDraft.length<8||visionKeyStatus?.supported===false,onClick:()=>manageVisionKey('store')},'加密保存'),
-              h('button',{'data-bd-btn':'',disabled:visionKeyBusy||!visionKeyStatus?.saved,onClick:()=>manageVisionKey('delete')},'删除密钥')),
-            h('div',{'data-bd-note':''},visionKeyStatus?.saved?'当前 Windows 用户已保存视觉 API Key（仅显示状态，不会回显）':visionKeyStatus?.environment?'已检测到环境变量中的视觉 API Key':visionKeyStatus?.supported===false?'本系统仅支持进程环境变量方式':'尚未保存视觉 API Key；可先只开 Debug 抓图。'),
-            h('div',{'data-bd-note':''},'API 地址可填写 https://4router.net/v1 这样的基础地址，程序自动补齐对应的 /messages 或 /chat/completions。模型 ID 必须是服务商真实支持的名称。'),
+            h('div',{'data-bd-note':''},'不再需要视觉 API Key。旧版本本地可能保存过 DPAPI 加密文件，升级不会读取或上传它；如需清理，可删除 bili-duty 目录中的 .vision-api-key.dpapi。'),
             h('div',{'data-bd-row':''},
               h('input',{'data-bd-input':'',placeholder:'输入一个 BV 号，测试预览图片',style:{flex:1,minWidth:'180px'},value:visionBV,
                 onChange:e=>setVisionBV(e.target.value)}),

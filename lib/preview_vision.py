@@ -254,7 +254,7 @@ def _claim_vision_quota(home, daily_limit=8):
         return True
 
 
-def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, provider=None, model=None, endpoint=None):
+def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, provider=None, model=None, endpoint=None, return_frames=False, prefetch_only=False):
     """返回经过长度钳制的结构化文本；debug 才保存 JPEG，缓存只存分析文字。"""
     if not BV_RE.fullmatch(str(bvid or '')):return {'ok':False,'error':'BV号格式不正确'}
     home=Path(home).resolve()
@@ -265,13 +265,13 @@ def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, pr
     provider=(provider if provider is not None else os.environ.get('BILI_VISION_PROVIDER','anthropic')).strip().lower()
     model=(model if model is not None else os.environ.get('BILI_VISION_MODEL','')).strip()
     endpoint=endpoint if endpoint is not None else os.environ.get('BILI_VISION_ENDPOINT','')
-    if not enabled and not debug:return {'ok':False,'error':'视觉识图与 Debug 都未开启'}
-    if enabled and provider not in ('anthropic','openai'):
+    if not enabled and not debug and not return_frames and not prefetch_only:return {'ok':False,'error':'视觉识图与 Debug 都未开启'}
+    if enabled and not return_frames and provider not in ('anthropic','openai'):
         return {'ok':False,'error':'视觉模型提供方未配置'}
-    if enabled and not model:
+    if enabled and not return_frames and not model:
         return {'ok':False,'error':'视觉模型 ID 尚未配置'}
     cache=home/'vision-cache'/f'{bvid}.json'
-    if enabled and not debug and cache.exists():
+    if enabled and not debug and not return_frames and cache.exists():
         try:
             d=json.loads(cache.read_text('utf8'))
             if d.get('provider')==provider and d.get('model')==model and d.get('frames_limit')==max_frames and d.get('description'):
@@ -344,7 +344,12 @@ def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, pr
             (folder/'metadata.json').write_text(json.dumps({'bvid':bvid,'times':[f['second'] for f in frames],'source':'B站 videoshot 低清预览','high_energy':bool(scores),'index_source':index_source},ensure_ascii=False,indent=2),encoding='utf8')
         answer={'ok':True,'bvid':bvid,'status':'preview_only','times':[f['second'] for f in frames], 'high_energy':bool(scores),'index_source':index_source,'image_source':'B站低清预览','notice':'预览图分辨率较低，不代表完整视频；画面没看清的内容不可编造'}
         if folder:answer['debug_dir']=str(folder)
-        if not enabled:return answer
+        if return_frames:
+            # In-process only: never JSON-serialize image bytes or write API credentials.
+            answer['status']='frames_ready'
+            answer['frames']=frames
+            return answer
+        if prefetch_only or not enabled:return answer
         key=_credentials(provider,home)
         if not key:
             answer.update(status='vision_unavailable',error='没有读到视觉 API Key；已抓取预览图但尚未识图。请在设置页「视觉 API Key」保存密钥，或配置 BILI_VISION_API_KEY。');return answer
@@ -367,8 +372,9 @@ if __name__=='__main__':
     ap=argparse.ArgumentParser()
     ap.add_argument('--bvid',required=True)
     ap.add_argument('--home',required=True)
+    ap.add_argument('--preview-only',action='store_true',help='只抓取缩略图，绝不请求视觉模型')
     args=ap.parse_args()
     try:
-        print(json.dumps(analyze_preview(args.bvid,args.home),ensure_ascii=False))
+        print(json.dumps(analyze_preview(args.bvid,args.home,prefetch_only=args.preview_only),ensure_ascii=False))
     except Exception as ex:
         print(json.dumps({'ok':False,'error':str(ex)[:200]},ensure_ascii=False))

@@ -29,6 +29,7 @@ import subprocess
 import sqlite3
 import uuid
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, TextContent, ImageContent
 
 from bilibili_api import video, search, comment, Credential, dynamic, opus
 from bilibili_api import hot, rank, user, session, favorite_list
@@ -562,9 +563,10 @@ async def bili_video_info(bvid: str) -> str:
 # 这道上限是实际后端闸，不只依赖 AI 遵守提示词。手动预览测试走单独的受限脚本。
 _VISION_BVS_PER_RUN = set()
 _VISION_PER_RUN_LIMIT = 2
+_VISION_FRAMES_SERVED = {}  # 单轮内实际经 MCP 返回图片的 BV 时间点；不含图片正文
 
 @tool()
-async def bili_preview_vision(bvid: str) -> str:
+async def bili_preview_vision(bvid: str):
     """仅在确有视觉梗/画面理解价值时调用。低互动且无视觉线索的普通视频应跳过。"""
     if (e := _guard("bili_preview_vision")): return e
     if os.environ.get('BILI_VISION_ENABLED') != '1':
@@ -578,9 +580,71 @@ async def bili_preview_vision(bvid: str) -> str:
         _VISION_BVS_PER_RUN.add(bvid)
     try:
         from preview_vision import analyze_preview
-        return json.dumps(await asyncio.to_thread(analyze_preview, bvid, _DUTY_HOME),ensure_ascii=False)
+        mode = os.environ.get('BILI_VISION_MODE', 'separate')
+        if mode == 'independent_dsh':
+            from vision_dsh import describe_with_dsh
+            return json.dumps(await asyncio.to_thread(describe_with_dsh,bvid,_DUTY_HOME),ensure_ascii=False)
+        if mode in ('reuse_video_model','auto'):
+            # MCP SDK translates real image blocks to the video model route through DSH's
+            # attachment bridge. No independent vision API or DPAPI key is accessed here.
+            result = await asyncio.to_thread(analyze_preview, bvid, _DUTY_HOME,
+                                             enabled=False, return_frames=True)
+            if not result.get('ok'):
+                return json.dumps(result, ensure_ascii=False)
+            frames = result.pop('frames', [])
+            if not frames:
+                return json.dumps({'ok':False,'status':'no_frames','error':'未取得图片帧'},ensure_ascii=False)
+            result['status']='frames_ready'
+            result['mode']='reuse_video_model'
+            result['notice']='图片仅是 B站低清预览；下方图片由当前视频模型自己判断，不能据此推断完整剧情。'
+            _VISION_FRAMES_SERVED[bvid] = list(result.get('times',[]))
+            # Only the independent read-only DSH vision child uses this one-shot receipt.
+            # It confirms the MCP server returned image blocks, NOT that a remote model
+            # understood the pixels. A model's description remains marked unverified.
+            proof_file = os.environ.get('BILI_VISION_PROOF_FILE','')
+            if proof_file:
+                try:
+                    proof_path=Path(proof_file).resolve()
+                    if proof_path.parent == (_DUTY_HOME/'vision-proof').resolve() and re.fullmatch(r'[a-f0-9]{32}\.json',proof_path.name):
+                        proof_path.write_text(json.dumps({'bvid':bvid,'times':result['times']},ensure_ascii=False),encoding='utf8')
+                except OSError: pass
+            blocks = [TextContent(type='text', text=json.dumps(result,ensure_ascii=False))]
+            for i,frame in enumerate(frames):
+                blocks.append(TextContent(type='text',text=f'低清预览图 {i+1}/{len(frames)}：视频约 {frame["second"]} 秒（只描述看得清的内容）'))
+                blocks.append(ImageContent(type='image', mimeType='image/jpeg',
+                                           data=base64.b64encode(frame['bytes']).decode('ascii')))
+            return CallToolResult(content=blocks)
+        return json.dumps(await asyncio.to_thread(analyze_preview,bvid,_DUTY_HOME),ensure_ascii=False)
     except Exception as e:
         return json.dumps({'ok':False,'error':'预览视觉分析失败：'+str(e)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_preview_observation(bvid: str, description: str) -> str:
+    """复用视频模型看过真实 MCP 图片后，写下简短低清观察以便梗记忆检索；不代表画面已独立核实。"""
+    if (e := _guard('bili_preview_observation')): return e
+    try:
+        bv = _valid_bv(bvid)
+        if os.environ.get('BILI_VISION_MODE','separate') not in ('reuse_video_model','auto'):
+            raise ValueError('仅复用视频模型模式支持该工具')
+        if bv not in _VISION_FRAMES_SERVED:
+            raise ValueError('本轮未为该 BV 返回过真实图片，拒绝记录视觉观察')
+        note = _safe_line(description, 240)
+        if len(note) < 8:
+            raise ValueError('请填写8字以上的具体可见画面描述')
+        cache = _DUTY_HOME/'vision-cache'/f'{bv}.json'
+        cache.parent.mkdir(parents=True,exist_ok=True)
+        record = {'model':os.environ.get('BILI_VIDEO_MODEL_ID') or 'DSH视频模型',
+                  'provider':'dsh-video-agent', 'frames_limit':len(_VISION_FRAMES_SERVED[bv]),
+                  'times':_VISION_FRAMES_SERVED[bv], 'description':note,
+                  'origin':'video_agent_self_report_unverified'}
+        temp = cache.with_suffix('.tmp')
+        temp.write_text(json.dumps(record,ensure_ascii=False),encoding='utf8')
+        os.replace(temp,cache)
+        return json.dumps({'ok':True,'status':'agent_observation_unverified','bvid':bv,
+                           'description':note,'notice':'视频模型自述观察，未独立核验；只用于低清梗线索'},ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
 
 
 # ========== v2.4.0: 最小文件能力（只能访问插件自己的固定文件） ==========
