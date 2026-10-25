@@ -33,7 +33,7 @@ test('配置读取、保存、恢复默认接口和页面均接入',()=>{
   assert.match(server,/commentMemePrompt: ''/)
   assert.match(server,/p\.commentMemePrompt=normalizeCommentMemePrompt/)
   assert.match(server,/comment-meme-prompt-default/)
-  assert.match(server,/'commentMemePrompt','memeMemoryEnabled'/)
+  assert.match(server,/'commentMemePrompt','visionPrompt','memeMemoryEnabled'/)
   assert.match(client,/AI 选图提示词（可自定义）/)
   assert.match(client,/保存选图提示词/)
   assert.match(client,/恢复默认选图提示词/)

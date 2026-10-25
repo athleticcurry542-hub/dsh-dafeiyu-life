@@ -281,6 +281,10 @@ function WatchTab() {
       const [memePromptDefault,setMemePromptDefault] = React.useState(null)
       const [memePromptDraft,setMemePromptDraft] = React.useState(null)
       const [memePromptLoading,setMemePromptLoading] = React.useState(false)
+      const [visionPromptExpanded,setVisionPromptExpanded] = React.useState(false)
+      const [visionPromptDefault,setVisionPromptDefault] = React.useState(null)
+      const [visionPromptDraft,setVisionPromptDraft] = React.useState(null)
+      const [visionPromptLoading,setVisionPromptLoading] = React.useState(false)
       const [visionBV,setVisionBV] = React.useState('')
       const [visionTest,setVisionTest] = React.useState(null)
       const [visionBusy,setVisionBusy] = React.useState(false)
@@ -1126,6 +1130,39 @@ function WatchTab() {
             on:sw('visionEnabled'),onChange:v=>patch({visionEnabled:v},'预览识图总开关')}),
           h(ToggleRow, {label:'Debug：保存实际预览图', note:'默认关闭；开启后把送去识图的 JPEG 保存到插件数据目录 vision-debug/BV号/，方便自己查看。',
             on:sw('visionDebug'),onChange:v=>patch({visionDebug:v},'预览图调试保存')}),
+          h('div',{'data-bd-sub':''},
+            h('div',{'data-bd-row':''},
+              h('div',{'data-bd-grow':''},
+                h('div',{'data-bd-label':''},'视频视觉识图提示词（可自定义）'),
+                h('div',{'data-bd-note':''},cfg.visionPrompt ? '当前：使用自定义识图重点' : '当前：使用内置识图规则（与 AI 选梗图提示词不同）')),
+              h('button',{'data-bd-btn':'',disabled:visionPromptLoading,onClick:async()=>{
+                if(visionPromptExpanded){setVisionPromptExpanded(false);return}
+                setVisionPromptLoading(true)
+                try {
+                  let defaultText=visionPromptDefault
+                  if(defaultText===null){const x=await jget('/vision-prompt-default');if(!x?.ok)throw new Error('无法加载默认识图提示词');defaultText=x.prompt||'';setVisionPromptDefault(defaultText)}
+                  setVisionPromptDraft(String(cfg.visionPrompt||defaultText))
+                  setVisionPromptExpanded(true)
+                }catch(e){say('读取识图提示词失败：'+String(e?.message||e),'warn')}
+                finally{setVisionPromptLoading(false)}
+              }},visionPromptExpanded?'收起编辑':'查看／编辑')),
+            visionPromptExpanded ? h('div',{'data-bd-sub':''},
+              h('div',{'data-bd-note':''},'控制何时值得识图、识图后关注哪些画面线索；同时用于复用视频模型和独立 DSH 视觉模型。程序权限、识图次数、真实图片验证不可修改。保存后下一轮生效。'),
+              h('textarea',{'data-bd-input':'',rows:9,maxLength:4000,style:{minHeight:'144px',resize:'vertical'},
+                value:visionPromptDraft??'',onChange:e=>setVisionPromptDraft(e.target.value)}),
+              h('div',{'data-bd-row':''},
+                h('span',{'data-bd-note':''},`${(visionPromptDraft||'').length} / 4000 字符`),
+                h('button',{'data-bd-btn':'','data-primary':'',disabled:Boolean(busy)||!String(visionPromptDraft||'').trim(),
+                  onClick:async()=>{
+                    const next=String(visionPromptDraft||'').trim()
+                    if(next===visionPromptDefault) await patch({visionPrompt:'',clear:['visionPrompt']},'视觉识图提示词（内置默认）')
+                    else await patch({visionPrompt:next},'视觉识图提示词')
+                  }},'保存识图提示词'),
+                h('button',{'data-bd-btn':'',disabled:Boolean(busy),onClick:async()=>{
+                  setVisionPromptDraft(visionPromptDefault||'')
+                  await patch({visionPrompt:'',clear:['visionPrompt']},'恢复默认识图提示词')
+                }},'恢复默认')),
+              h('div',{'data-bd-note':''},'只是改变 AI 的分析重点，不能让模型凭空看见图像；预览图必须真实进入视觉模型上下文。')) : null),
           (cfg.visionEnabled||cfg.visionDebug) ? h('div',{'data-bd-sub':''},
             h('div',{'data-bd-label':''},'识图方式'),
             h('div',{'data-bd-row':''},
