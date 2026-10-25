@@ -724,6 +724,11 @@ def _meme_conn():
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""")
+    # 向后兼容：此前自动学到的梗视为已经启用；升级后新梗先进入主人审核队列。
+    columns={row['name'] for row in conn.execute('PRAGMA table_info(memes)').fetchall()}
+    if 'review_status' not in columns:
+        conn.execute("ALTER TABLE memes ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved'")
+        conn.commit()
     conn.execute("""CREATE TABLE IF NOT EXISTS meme_sources (
         meme_id INTEGER NOT NULL,
         bvid TEXT NOT NULL,
@@ -744,10 +749,10 @@ def _meme_lookup(query="", limit=8):
         if q:
             # 参数化模糊匹配；别把 B站文本解释为 SQL/正则/工具指令。
             rows = conn.execute("""SELECT id,name,aliases,kind,meaning,confidence,updated_at FROM memes
-                WHERE instr(name, ?) > 0 OR instr(aliases, ?) > 0 OR instr(meaning, ?) > 0
+                WHERE review_status='approved' AND (instr(name, ?) > 0 OR instr(aliases, ?) > 0 OR instr(meaning, ?) > 0)
                 ORDER BY updated_at DESC LIMIT ?""", (q,q,q,n)).fetchall()
         else:
-            rows = conn.execute("SELECT id,name,aliases,kind,meaning,confidence,updated_at FROM memes ORDER BY updated_at DESC LIMIT ?", (n,)).fetchall()
+            rows = conn.execute("SELECT id,name,aliases,kind,meaning,confidence,updated_at FROM memes WHERE review_status='approved' ORDER BY updated_at DESC LIMIT ?", (n,)).fetchall()
         found=[]
         for row in rows:
             item=dict(row)
@@ -806,12 +811,12 @@ def _meme_save(name, meaning, bvid, evidence, aliases="", kind="梗", evidence_t
                 # 已知释义不被无声覆盖；更新来自新视频的证据，避免 AI 来回改定义。
                 conn.execute("UPDATE memes SET updated_at=?, aliases=CASE WHEN aliases='' THEN ? ELSE aliases END WHERE id=?",(now,als,mid))
             else:
-                conn.execute('INSERT INTO memes(key,name,aliases,kind,meaning,confidence,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+                conn.execute("INSERT INTO memes(key,name,aliases,kind,meaning,confidence,created_at,updated_at,review_status) VALUES(?,?,?,?,?,?,?, ?, 'pending')",
                          (key,nm,als,kd,desc,trust,now,now))
                 mid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]
             conn.execute('INSERT INTO meme_sources(meme_id,bvid,evidence_type,evidence,noted_at) VALUES(?,?,?,?,?) ON CONFLICT(meme_id,bvid) DO UPDATE SET evidence_type=excluded.evidence_type,evidence=excluded.evidence,noted_at=excluded.noted_at',
                          (mid,bv,source_type,ev,now))
-        return {'ok':True,'saved':not bool(old),'name':nm,'id':mid,'source_bvid':bv,'visual_status':('低清预览线索（待核实）' if source_type=='低清预览' else '外观未知（未识图）')}
+        return {'ok':True,'saved':not bool(old),'name':nm,'id':mid,'review_status':('pending' if not old else 'unchanged'),'source_bvid':bv,'visual_status':('低清预览线索（待核实）' if source_type=='低清预览' else '外观未知（未识图）')}
     finally:
         conn.close()
 

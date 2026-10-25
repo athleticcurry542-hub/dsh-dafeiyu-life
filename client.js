@@ -270,6 +270,12 @@ function WatchTab() {
       const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
       const [mentionHistoryExpanded, setMentionHistoryExpanded] = React.useState(false)
       const [memeMemory, setMemeMemory] = React.useState(null)
+      const [growth, setGrowth] = React.useState(null)
+      const [growthDraft, setGrowthDraft] = React.useState('')
+      const [growthType, setGrowthType] = React.useState('style')
+      const [growthBusy, setGrowthBusy] = React.useState(false)
+      const [growthExpanded, setGrowthExpanded] = React.useState(false)
+      const [growthStatus, setGrowthStatus] = React.useState('')
       const [memeKeyword, setMemeKeyword] = React.useState('')
       const [memeBusy, setMemeBusy] = React.useState(false)
       const [memeHistoryExpanded, setMemeHistoryExpanded] = React.useState(false)
@@ -335,6 +341,35 @@ function WatchTab() {
         if (tab !== 'taste') return
         loadMemeMemory(memeKeyword)
       }, [tab])
+      // 成长记忆与梗知识分开存储。只在「偏好」页读取，避免后台每 5 秒重复刷新。
+      const loadGrowth = async () => {
+        try {
+          const r = await jget('/persona-growth')
+          if(!r?.ok) throw new Error(r?.error || '读取失败')
+          if(alive.current) setGrowth(r)
+        } catch(e) {
+          if(alive.current) {setGrowth({ok:false});setGrowthStatus('读取成长记忆失败：'+String(e?.message||e))}
+        }
+      }
+      React.useEffect(() => {
+        if(tab==='taste') loadGrowth()
+      }, [tab])
+      const growthAction = async (action, body={},confirmText='') => {
+        if(growthBusy) return
+        if(confirmText && !window.confirm(confirmText)) return
+        setGrowthBusy(true);setGrowthStatus('')
+        try {
+          const r=await jpost('/persona-growth',{action,...body})
+          if(!r?.ok) throw Error(r?.error||'成长记忆操作失败')
+          if(action==='add') setGrowthDraft('')
+          setGrowthStatus(action==='sync'
+            ? `报告同步完成：新增 ${r.result?.added??0} 条视频观察、${r.result?.proposals??0} 条兴趣候选`
+            : ({add:'已保存为待审核经验',approve:'已批准；下一轮生效',reject:'已忽略',delete:'已删除',undo:'已恢复上一版本'})[action]||'已完成')
+          await loadGrowth()
+        } catch(e){setGrowthStatus(String(e?.message||e))}
+        finally{setGrowthBusy(false)}
+      }
+
       const deleteMeme = async (id) => {
         setMemeBusy(true)
         try {
@@ -664,6 +699,11 @@ function WatchTab() {
       const sw = (k) => Boolean(cfg[k])
 
       return h('div', { 'data-bd-page': '' },
+        h('div',{ 'data-bd-sec':'',style:{padding:'12px',borderRadius:'12px',border:'1px solid var(--dsw-alias-bg-layer-3,rgba(127,127,127,.24))'}},
+          h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
+            h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'🐳 大肥鱼管理中心'),
+              h('div',{'data-bd-note':''},'成长经验审核、梗知识编辑／批准、限额聊天申请统一在宽屏页面管理，无需启动 18763 服务。')),
+            h('a',{href:'/api/bili-duty/manage',target:'_blank',rel:'noopener noreferrer','data-bd-btn':'',style:{display:'inline-block',textDecoration:'none'}},'打开管理中心 ↗'))),
 
         /* ── 大肥鱼总开关：永久展示，不隐藏设置，不清除历史 ── */
         h('div', { 'data-bd-sec': '', style: {padding:'12px',border:'1px solid var(--dsw-alias-bg-layer-3,rgba(127,127,127,.24))',borderRadius:'12px'} },
@@ -1128,6 +1168,48 @@ function WatchTab() {
             st.asrTail ? h('div', null,
               h('div', { 'data-bd-note': '' }, st.asrInstalling ? '正在装转写依赖（进度）：' : '转写依赖的日志（末尾）—— 只有「没字幕的视频」用得到它：'),
               h('pre', { 'data-bd-pre': '' }, st.asrTail)) : null) : null),
+
+        /* ── 大肥鱼成长记忆：跟原生设置页绑定，无额外网页或 Node 服务。 ── */
+        h('div',{'data-bd-sec':'','data-bd-group':'taste','data-bd-away':tab==='taste'?undefined:''},
+          h('div',{'data-bd-h':''},'🐳 大肥鱼 · 成长记忆'),
+          h('div',{'data-bd-note':''},'核心人设、白饭、Token、Claude 小姐的关系始终由你决定。这里的经验必须人工批准才会影响下一轮；日报仅产生待审核兴趣，不会自动改变人设。'),
+          h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
+            h('div',{'data-bd-label':''},growth?.ok
+              ? `经验 ${growth.data?.entries?.length||0} 条 · 视频观察 ${growth.data?.observationCount||0} 条 · 修订 ${growth.data?.revision||0}`
+              : growth ? '成长记忆暂不可读取，请点刷新检查' : '正在载入成长记忆…'),
+            h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:loadGrowth},'刷新')),
+          h('div',{'data-bd-row':''},
+            h('select',{'data-bd-input':'',style:{width:'auto'},'aria-label':'成长经验类型',value:growthType,onChange:e=>setGrowthType(e.target.value)},
+              ...[['style','评论表达'],['interest','兴趣偏好'],['experience','经历经验'],['relationship','关系观察']].map(([v,l])=>h('option',{key:v,value:v},l))),
+            h('span',{'data-bd-note':''},'新增反馈先进入待审核状态')),
+          h('textarea',{'data-bd-input':'',rows:3,maxLength:230,style:{resize:'vertical',minHeight:'70px'},
+            placeholder:'例：大肥鱼自己被整活时，先寻找自然嘴硬或自嘲的切入点，不要只因「没知识点」而跳过。',
+            value:growthDraft,onChange:e=>setGrowthDraft(e.target.value)}),
+          h('div',{'data-bd-row':''},
+            h('button',{'data-bd-btn':'','data-primary':'',disabled:growthBusy||growthDraft.trim().length<6,
+              onClick:()=>growthAction('add',{type:growthType,text:growthDraft.trim()})},'添加待审核经验'),
+            h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('sync')},'从最近日报学习兴趣'),
+            h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('undo',{},'撤销最近一次成长库修改？')},'撤销最近修改')),
+          growthStatus ? h('div',{'data-bd-msg':''},growthStatus) : null,
+          h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
+            h('div',{'data-bd-label':''},'成长经验列表'),
+            (growth?.data?.entries||[]).length>4 ? h('button',{'data-bd-btn':'',onClick:()=>setGrowthExpanded(x=>!x)},growthExpanded?'收起':'展开全部') : null),
+          growth?.ok && growth.data?.entries?.length
+            ? h('div',{style:{maxHeight:growthExpanded?'360px':'300px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'8px',overflowWrap:'anywhere'}},
+                ...(growthExpanded?growth.data.entries.slice().reverse():growth.data.entries.slice(-4).reverse()).map(e=>
+                  h('div',{'data-bd-item':'',key:e.id},h('div',{'data-bd-item-body':''},
+                    h('div',{'data-bd-item-t':''},e.text),
+                    h('div',{'data-bd-note':''},`类型：${({style:'表达',interest:'兴趣',experience:'经历',relationship:'关系观察'})[e.type]||e.type} · ${({pending:'待审核',approved:'已批准',rejected:'已忽略'})[e.status]||e.status}`),
+                    e.evidence ? h('div',{'data-bd-note':''},e.evidence) : null,
+                    h('div',{'data-bd-row':''},
+                      e.status!=='approved' ? h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('approve',{id:e.id})},'批准') : null,
+                      e.status!=='rejected' ? h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('reject',{id:e.id})},'忽略') : null,
+                      h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('delete',{id:e.id},'确定永久删除这条成长经验？')},'删除'))))))
+            : h('div',{'data-bd-note':''},growth?.ok?'还没有成长经验。可以从你的评论反馈开始添加。':'暂时没有可展示的数据。'),
+          h('div',{'data-bd-label':''},'下一轮实际注入的成长经验（只读预览）'),
+          h('pre',{'data-bd-pre':'',style:{maxHeight:'190px'}},growth?.ok?(growth.context||'当前没有已批准经验。'):'请先刷新数据。'),
+          h('div',{'data-bd-note':''},'保存在原有 .dsh/bili-duty/persona-growth/v1.json。已批准经验最多注入约1300字；独立旧管理页不再需要运行。')
+        ),
 
         /* ── 长期梗记忆：有来源、可查询、可删除，默认开启，不要求用户整理 JSON ── */
         h('div', { 'data-bd-sec':'', 'data-bd-group':'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },

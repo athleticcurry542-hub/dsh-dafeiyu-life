@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>大肥鱼 · 管理中心</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,'Microsoft YaHei',sans-serif;--ink:#20272f;--muted:#697685;--page:#f4f7fb;--panel:#fff;--stroke:#dbe3eb;--action:#305fd1;--tint:#edf3ff;--bad:#a33e3e}
+@media(prefers-color-scheme:dark){:root{--ink:#e6ecf3;--muted:#a4b2c4;--page:#131b25;--panel:#1b2733;--stroke:#3a4c5c;--action:#88adff;--tint:#263850;--bad:#ff8585}}
+*{box-sizing:border-box}body{margin:0;background:var(--page);color:var(--ink);line-height:1.5}button,input,select,textarea{font:inherit}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}
+.wrap{max-width:1120px;margin:auto;padding:28px 24px 60px}.top{display:flex;justify-content:space-between;gap:18px;align-items:center}.top h1{margin:0;font-size:26px}.muted{color:var(--muted);font-size:13px}.top p{margin:3px 0 0}.tabs{display:flex;gap:8px;margin:24px 0;flex-wrap:wrap}
+button,.button{border:1px solid var(--stroke);border-radius:9px;background:var(--panel);color:var(--ink);padding:8px 13px;text-decoration:none}button:hover,.button:hover{background:var(--tint)}.tabs button[aria-selected="true"],button.primary{background:var(--action);color:var(--page);border-color:var(--action)}.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.toolbar input{flex:1;min-width:170px}
+input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid var(--stroke);border-radius:8px;padding:9px 11px}textarea{resize:vertical;width:100%;min-height:86px}label{display:block;font-size:13px;font-weight:600;margin-bottom:5px}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.row>*{flex-shrink:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(275px,1fr));gap:13px}
+.card{border:1px solid var(--stroke);background:var(--panel);padding:17px;border-radius:13px;min-width:0;overflow-wrap:anywhere}.card h3{margin:0 0 8px;font-size:16px}.card p{margin:6px 0}.card .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.card .actions button{font-size:13px;padding:5px 10px}.pill{display:inline-block;border-radius:30px;padding:2px 9px;font-size:12px;background:var(--tint);color:var(--action);margin-right:6px}.pill.pending{background:#fff0d2;color:#8c6200}.pill.rejected{background:#fae7e7;color:#9b4747}#message{min-height:25px;margin:12px 0;color:var(--action)}.actions .danger{color:var(--bad)}section[hidden]{display:none!important}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:11px}.fields>*{min-width:0}.fields input,.fields select{width:100%}.inset{padding:12px 0;border-top:1px dashed var(--stroke);margin-top:13px}.queue-badge{display:inline-flex;min-width:20px;justify-content:center;background:#d54949;color:#fff;border-radius:12px;font-size:11px;padding:1px 5px}#growth-context{white-space:pre-wrap;max-height:200px;overflow:auto;font-size:12px;background:var(--tint);padding:12px;border-radius:8px}
+@media(max-width:580px){.wrap{padding:15px 12px 35px}.top h1{font-size:21px}.tabs button{flex:1}}
+</style>
+<script defer src="/api/bili-duty/manage.js"></script>
+</head>
+<body><main class="wrap">
+<header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">成长记忆 · 梗知识 · 聊天申请｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
+<nav class="tabs" aria-label="管理分类"><button data-tab="growth" aria-selected="true">成长记忆 <span id="growth-count" class="queue-badge" hidden></span></button><button data-tab="meme" aria-selected="false">梗知识库 <span id="meme-count" class="queue-badge" hidden></span></button><button data-tab="dm" aria-selected="false">聊天申请 <span id="dm-count" class="queue-badge" hidden></span></button></nav>
+<p id="message" role="status" aria-live="polite"></p>
+<section id="panel-growth"><div class="card"><h3>新增成长反馈</h3><p class="muted">只能写入待审核经验；核心人设由你控制，不自动修改。</p><div class="toolbar"><select id="growth-type"><option value="style">评论表达</option><option value="interest">长期兴趣</option><option value="experience">视频经历</option><option value="relationship">角色关系观察</option></select><button id="growth-add" class="primary">保存待审核</button><button id="growth-sync">从日报提取兴趣</button><button id="growth-undo">撤销最近修改</button></div><textarea id="growth-draft" maxlength="230" placeholder="例如：与大肥鱼自己有关的玩梗视频，不要因为没有技术价值就跳过"></textarea></div>
+<div class="toolbar" style="margin-top:14px"><h2 style="margin:0">成长经验</h2><select id="growth-filter"><option value="">全部状态</option><option value="pending">待审核</option><option value="approved">已批准</option><option value="rejected">已忽略</option></select></div><div class="grid" id="growth-list"></div><div class="card" style="margin-top:14px"><h3>下一轮会注入的人设经验（只读）</h3><pre id="growth-context"></pre></div></section>
+<section id="panel-meme" hidden><div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗先待审核；旧记录自动保留可用。修改后可手动批准或拒绝，不删除原视频证据。</p><div class="grid" id="meme-list"></div></section>
+<section id="panel-dm" hidden><div class="card" style="margin-bottom:16px"><h3>申请与回复额度设置</h3>
+<p class="muted">更改后立即同步到 DSH 插件本地配置。可信白名单不受这些额度约束。</p>
+<div class="fields"><div><label for="dm-enable">开启限额聊天申请</label><input id="dm-enable" type="checkbox" style="width:22px;height:22px"></div>
+<div><label for="dm-phrase">申请暗号</label><input id="dm-phrase" maxlength="60" placeholder="白饭🍚"></div>
+<div><label for="dm-total">已审批用户累计上限</label><input id="dm-total" type="number" min="1" max="10000" value="50"></div>
+<div><label for="dm-daily">已审批用户每日上限</label><input id="dm-daily" type="number" min="1" max="1000" value="10"></div></div>
+<div class="actions" style="margin-top:12px"><button id="dm-settings-save" class="primary">保存申请规则</button><button id="dm-settings-reload">重新读取</button></div></div>
+<div class="toolbar"><h2 style="margin:0">限额聊天申请</h2><select id="dm-filter"><option value="pending">只看待审批</option><option value="">全部申请</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select></div><p class="muted">这里只审核 B站用户申请，不修改可信白名单。通过后仍受你设置的每日／累计聊天限额控制。</p><div class="grid" id="dm-list"></div></section>
+<footer class="muted" style="margin-top:30px">数据只保存在本机 DSH 插件目录；此页面不从第三方加载脚本。若页面打不开，请先从 DSH 的「刷B站」设置点击管理中心入口。</footer>
+</main></body></html>

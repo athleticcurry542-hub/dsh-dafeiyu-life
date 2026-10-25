@@ -31,6 +31,14 @@ class MemeMemoryTests(unittest.TestCase):
         self.save=self.scope['_meme_save'];self.find=self.scope['_meme_lookup']
         self.bvid='BV1pXHK6mE6z'
 
+    def approve(self, name):
+        out=subprocess.check_output([sys.executable,str(ROOT/'lib/meme-memory-admin.py'),str(self.home),'list',name])
+        entries=json.loads(out)['entries']
+        self.assertTrue(entries)
+        payload=json.dumps({'id':entries[0]['id'],'status':'approved'},ensure_ascii=False)
+        r=json.loads(subprocess.check_output([sys.executable,str(ROOT/'lib/meme-memory-admin.py'),str(self.home),'review',payload]))
+        self.assertTrue(r['ok'])
+
     def tearDown(self):
         self.tmp.cleanup()
 
@@ -40,6 +48,8 @@ class MemeMemoryTests(unittest.TestCase):
         self.assertTrue(r['ok'])
         self.assertTrue(r['saved'])
         self.assertTrue((self.home/'meme-memory.sqlite3').exists())
+        self.assertEqual(self.find('奶娃')['entries'],[], '未审核梗不能进入 AI 检索')
+        self.approve('奶蛙')
         a=self.find('奶娃')['entries']
         self.assertEqual(len(a),1)
         self.assertEqual(a[0]['name'],'奶蛙')
@@ -53,6 +63,7 @@ class MemeMemoryTests(unittest.TestCase):
     def test_same_name_new_video_adds_evidence_without_overwriting_meaning(self):
         self.save('奶蛙','一开始还不确定是什么',self.bvid,'标题里有奶蛙',evidence_type='标题',confidence='有文字依据')
         self.save('奶蛙','声称可爱外形（未被验证）','BV1sTHP66E5j','评论区又出现奶蛙',evidence_type='评论')
+        self.approve('奶蛙')
         entry=self.find('奶蛙')['entries'][0]
         self.assertEqual(entry['meaning'],'一开始还不确定是什么')
         self.assertEqual(entry['confidence'],'待核实')
@@ -70,6 +81,7 @@ class MemeMemoryTests(unittest.TestCase):
             self.assertEqual(self.find()['count'],10)
             r=self.save('新梗00','应该不覆盖原文','BV1sTHP66E5j','另一个视频的证据')
             self.assertTrue(r['ok'])
+            self.approve('新梗00')
             self.assertEqual(len(self.find('新梗00')['entries'][0]['sources']),2)
         with patch.dict(os.environ, {'BILI_MEME_MAX_ENTRIES':'15'}):
             self.assertTrue(self.save('第十一条梗','有字幕记录',self.bvid,'有证据')['ok'])
@@ -91,6 +103,7 @@ class MemeMemoryTests(unittest.TestCase):
     def test_literal_search_and_delete(self):
         self.save('二创梗','啥都可能会出现',self.bvid,'字幕解释了二创梗')
         self.assertEqual(self.find('%')['entries'],[])
+        self.approve('二创梗')
         ident=self.find('二创')['entries'][0]['id']
         out=subprocess.check_output([sys.executable,str(ROOT/'lib/meme-memory-admin.py'),str(self.home),'delete',str(ident)])
         self.assertTrue(json.loads(out)['deleted'])

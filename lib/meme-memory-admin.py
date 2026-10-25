@@ -1,63 +1,113 @@
 #!/usr/bin/env python3
-"""梗记忆只读列表 / 显式删除。只供插件自有 HTTP handler 调用。"""
+# Local SQLite meme-memory owner moderation. Never loads Bilibili SDK or external URLs.
 import json
+import re
 import sqlite3
 import sys
+from datetime import datetime
 from pathlib import Path
 
+INVALID = re.compile(r'(?i)(?:api[_-]?key|cookie|password|sessdata|https?://|[A-Za-z]:[\\/]|\.dsh[/\\]|-----BEGIN)')
+KINDS = ('梗', '角色', '人物', '系列', '其他')
+CONFIDENCES = ('待核实', '有文字依据')
+STATUSES = ('pending', 'approved', 'rejected')
 
 def result(obj):
-    print(json.dumps(obj, ensure_ascii=False))
+    print(json.dumps(obj,ensure_ascii=False))
 
+def clean(v, maxlen, *, required=True):
+    if not isinstance(v,str):
+        raise ValueError('字段必须是文本')
+    value=re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', v).strip()
+    if len(value)>maxlen or INVALID.search(value) or (required and not value):
+        raise ValueError('字段过长、为空或包含私密/网址内容')
+    return value
+
+def migrate(conn):
+    if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='memes'").fetchone():
+        return False
+    cols={x['name'] for x in conn.execute('PRAGMA table_info(memes)')}
+    if 'review_status' not in cols:
+        with conn:
+            conn.execute("ALTER TABLE memes ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved'")
+    return True
 
 def main():
     try:
-        if len(sys.argv) != 4:
-            raise ValueError('参数格式错误')
-        home = Path(sys.argv[1]).resolve()
-        action, arg = sys.argv[2], sys.argv[3]
-        if action not in ('list', 'delete'):
+        if len(sys.argv)!=4:
+            raise ValueError('参数数量不正确')
+        home=Path(sys.argv[1]).resolve()
+        action=sys.argv[2]
+        if action not in ('list','delete','edit','review'):
             raise ValueError('不支持的操作')
-        db = (home / 'meme-memory.sqlite3').resolve()
-        if not db.is_relative_to(home):
-            raise ValueError('文件位置无效')
+        db=(home/'meme-memory.sqlite3').resolve()
+        if not db.is_relative_to(home) or db.is_symlink():
+            raise ValueError('数据文件位置不安全')
         if not db.exists():
-            result({'ok':True,'total':0,'entries':[],'deleted':False})
+            result({'ok':True,'total':0,'entries':[], 'deleted':False} if action=='list'
+                   else {'ok':False,'error':'梗知识库尚未创建，不能修改或审批不存在的条目'})
             return
-        conn = sqlite3.connect(str(db), timeout=5)
+        conn=sqlite3.connect(str(db),timeout=8)
         conn.row_factory=sqlite3.Row
+        conn.execute('PRAGMA busy_timeout=8000')
         try:
-            if action == 'list':
-                q = arg[:40]
-                count = conn.execute('SELECT COUNT(*) FROM memes').fetchone()[0]
-                if q:
-                    rows = conn.execute('''SELECT id,name,aliases,meaning,kind,confidence,updated_at FROM memes
-                         WHERE instr(name,?)>0 OR instr(aliases,?)>0 OR instr(meaning,?)>0
-                         ORDER BY updated_at DESC LIMIT 30''',(q,q,q)).fetchall()
-                else:
-                    rows = conn.execute('''SELECT id,name,aliases,meaning,kind,confidence,updated_at FROM memes
-                        ORDER BY updated_at DESC LIMIT 30''').fetchall()
+            if not migrate(conn):
+                result({'ok':True,'total':0,'entries':[]})
+                return
+            if action=='list':
+                query=clean(sys.argv[3][:40],40,required=False)
+                rows=conn.execute('''SELECT id,name,aliases,meaning,kind,confidence,updated_at,review_status FROM memes
+                    WHERE instr(name,?)>0 OR instr(aliases,?)>0 OR instr(meaning,?)>0
+                    ORDER BY CASE WHEN review_status='pending' THEN 0 ELSE 1 END,updated_at DESC LIMIT 50''',
+                    (query,query,query)).fetchall()
                 entries=[]
-                for r in rows:
-                    entry=dict(r)
-                    entry['sources']=[dict(x) for x in conn.execute('''SELECT bvid,evidence_type,evidence,noted_at FROM meme_sources
-                          WHERE meme_id=? ORDER BY noted_at DESC LIMIT 3''',(r['id'],)).fetchall()]
-                    entry['visual_status']='外观未知（未识图）'
-                    entries.append(entry)
-                result({'ok':True,'total':count,'entries':entries})
-            else:
-                ident=int(arg)
-                if ident < 1 or ident > 2147483647:
-                    raise ValueError('非法记忆编号')
+                for row in rows:
+                    item=dict(row)
+                    item['sources']=[dict(x) for x in conn.execute('''SELECT bvid,evidence_type,evidence,noted_at FROM meme_sources
+                        WHERE meme_id=? ORDER BY noted_at DESC LIMIT 3''',(item['id'],)).fetchall()]
+                    item['visual_status']='低清预览线索（待核实）' if any(s['evidence_type']=='低清预览' for s in item['sources']) else '外观未知（未识图）'
+                    entries.append(item)
+                counts={r['review_status']:r['n'] for r in conn.execute('SELECT review_status, COUNT(*) AS n FROM memes GROUP BY review_status')}
+                result({'ok':True,'total':sum(counts.values()),'counts':counts,'entries':entries})
+                return
+            try:
+                payload=json.loads(sys.argv[3]) if action in ('edit','review') else {'id':int(sys.argv[3])}
+                ident=int(payload['id'])
+            except (TypeError,ValueError,KeyError,OverflowError):
+                raise ValueError('无效记录编号')
+            if not 0<ident<2147483647:raise ValueError('无效记录编号')
+            if action=='delete':
                 with conn:
-                    c=conn.execute('DELETE FROM memes WHERE id=?',(ident,))
+                    old=conn.execute('SELECT id FROM memes WHERE id=?',(ident,)).fetchone()
                     conn.execute('DELETE FROM meme_sources WHERE meme_id=?',(ident,))
-                result({'ok':True,'deleted':c.rowcount>0})
+                    conn.execute('DELETE FROM memes WHERE id=?',(ident,))
+                result({'ok':True,'deleted':bool(old)})
+                return
+            row=conn.execute('SELECT id FROM memes WHERE id=?',(ident,)).fetchone()
+            if not row:raise ValueError('梗条目不存在')
+            now=datetime.now().astimezone().isoformat(timespec='seconds')
+            if action=='review':
+                status=payload.get('status')
+                if status not in STATUSES:raise ValueError('审核状态错误')
+                with conn:
+                    conn.execute('UPDATE memes SET review_status=?,updated_at=? WHERE id=?',(status,now,ident))
+                result({'ok':True,'status':status,'id':ident})
+            else:
+                name=clean(payload.get('name'),48)
+                if len(name)<2:raise ValueError('梗名至少2个字')
+                aliases=clean(payload.get('aliases',''),140,required=False)
+                meaning=clean(payload.get('meaning'),220)
+                kind=payload.get('kind')
+                confidence=payload.get('confidence')
+                if kind not in KINDS or confidence not in CONFIDENCES:raise ValueError('梗类型或可信度不合法')
+                with conn:
+                    conn.execute('''UPDATE memes SET key=?,name=?,aliases=?,meaning=?,kind=?,confidence=?,updated_at=? WHERE id=?''',
+                        (name.casefold(),name,aliases,meaning,kind,confidence,now,ident))
+                result({'ok':True,'updated':True,'id':ident})
         finally:
             conn.close()
-    except Exception as exc:
-        result({'ok':False,'error':type(exc).__name__+': '+str(exc)[:100]})
+    except (Exception,) as exc:
+        # Avoid echoing untrusted arbitrary values in errors.
+        result({'ok':False,'error':type(exc).__name__+': '+ ('梗名与已有记录重复' if isinstance(exc,sqlite3.IntegrityError) else str(exc)[:100])})
 
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__': main()

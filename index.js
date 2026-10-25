@@ -1,4 +1,4 @@
-import { buildGrowthContext, syncReportsToGrowth } from './lib/persona-growth.mjs'
+import { buildGrowthContext, syncReportsToGrowth, listGrowth, proposeGrowth, reviewGrowth, deleteGrowth, undoGrowth } from './lib/persona-growth.mjs'
 /**
  * dsh-bili-scroll-plus —— host 半端
  * ============================================================================
@@ -1177,7 +1177,7 @@ function reportMeta() {
     // 用户可以复制需要的文字到设置中的“人设提示词”框；避免宿主代 Agent 读入用户私人文件。
     const persona = String(cfg.personaPrompt || '').trim().slice(0, 6000)
     const ownerDoc = persona ? '\n\n===== 用户手动填写的人设（仅风格，不应原文公开）=====\n' + persona + '\n===== 人设结束 =====\n' : ''
-        /* dsh-persona-growth: begin */
+    /* dsh-persona-growth: begin */
     // 只读取经主人批准的成长经验；不重写 personaPrompt / characterLore。
     const growthDoc = (() => {
       try {
@@ -1189,7 +1189,7 @@ function reportMeta() {
       }
     })()
     /* dsh-persona-growth: end */
-const loreDoc = '\n【角色背景与模型拟人梗（仅作为虚构角色语境；用户人设优先）】\n' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE) + '\n'
+    const loreDoc = '\n【角色背景与模型拟人梗（仅作为虚构角色语境；用户人设优先）】\n' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE) + '\n'
     let memeInventory = null
     if (cfg.commentMemesEnabled) {
       try {
@@ -1746,7 +1746,7 @@ const loreDoc = '\n【角色背景与模型拟人梗（仅作为虚构角色语�
 
   function dmChatPrompt({ uid, text, messages, history }) {
     // 聊天只使用用户在本插件设置里手动填写的人设，不能隐式读取工作区文件。
-    const persona = String(cfg.personaPrompt || '').trim().slice(0, 3000) + '\n角色语境：' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,600)
+    const persona = String(cfg.personaPrompt || '').trim().slice(0, 3000) + '\n角色语境：' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,600) + buildGrowthContext(stateDir,{maxChars:650})
     const historyText = history.slice(-16).map((m) => (m.role === 'assistant' ? '助手' : '用户') + '：' + String(m.text).slice(0, 500)).join('\n')
     const recentText = messages.slice(-8).map((m) => String(m).slice(0, 500)).join('\n')
     return `你是 B站 账号的私信聊天助手。仅为用户 UID=${uid} 草拟一条自然、简短、友好的中文回复。
@@ -1800,7 +1800,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
 
   const interactionBatcher = createInteractionBatcher({
     invoke: (prompt) => invokeInteractionPrompt(prompt, 24000),
-    getPersona: () => `${String(cfg.personaPrompt || '')}\n${(normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,1700)}`, 
+    getPersona: () => `${String(cfg.personaPrompt || '')}\n${(normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,1700)}\n${buildGrowthContext(stateDir,{maxChars:850})}`, 
     logger: {warn: (msg) => log('互动 AI：' + msg)},
   })
 
@@ -2510,6 +2510,20 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     }
 
 
+    // 管理中心随 DSH 插件自动提供，不启动独立端口或子进程。
+    // 与 API 同源；所有脚本、样式均为插件内置静态资源，禁用外部请求。
+    if (req.method === 'GET' && path === '/api/bili-duty/manage') {
+      const body=readFileSync(join(pluginDir,'lib','management-console.html'),'utf8')
+      res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store',
+        'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"})
+      return res.end(body)
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/manage.js') {
+      const body=readFileSync(join(pluginDir,'lib','management-console.js'),'utf8')
+      res.writeHead(200,{'content-type':'application/javascript; charset=utf-8',
+        'cache-control':'no-store','x-content-type-options':'nosniff'})
+      return res.end(body)
+    }
     if (req.method === 'GET' && path === '/api/bili-duty/status') {
       try { rollSeen() } catch (e) { /* 归档失败不影响状态接口 */ }
       try { syncNotes() } catch (e) { /* 笔记失败不影响状态接口 */ }
@@ -2553,16 +2567,20 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         failed:events.length-sent.length,recent:events.slice(-12).reverse()})
     }
     if ((req.method === 'GET' && path === '/api/bili-duty/meme-memory') ||
-        (req.method === 'POST' && path === '/api/bili-duty/meme-memory/delete')) {
+        (req.method === 'POST' && ['/api/bili-duty/meme-memory/delete','/api/bili-duty/meme-memory/edit','/api/bili-duty/meme-memory/review'].includes(path))) {
       // 梗库在插件家目录固定 SQLite 文件里，Web 侧也只能通过本地定参脚本读/删。
       // 不启动 headless Agent、不读任意文件；不向大模型发送整份库。
-      const del = req.method === 'POST'
-      const body = del ? await readBody(req) : {}
-      const id = Math.floor(Number(body?.id) || 0)
-      if (del && (!Number.isSafeInteger(id) || id <= 0)) return sendJson(res, 400, {ok:false,error:'无效记录编号'})
-      const keyword = del ? '' : String(url.searchParams.get('q') || '').slice(0,40)
+      const mutation = req.method === 'POST'
+      const body = mutation ? await readBody(req) : {}
+      const id = Number(body?.id)
+      if (mutation && (!Number.isSafeInteger(id) || id <= 0)) return sendJson(res, 400, {ok:false,error:'无效记录编号'})
+      const keyword = mutation ? '' : String(url.searchParams.get('q') || '').slice(0,40)
+      const operation = mutation ? path.substring(path.lastIndexOf('/')+1) : 'list'
       const py = join(pluginDir, 'lib', 'meme-memory-admin.py')
-      const commandArgs = [py, stateDir, del ? 'delete' : 'list', del ? String(id) : keyword]
+      const data = operation === 'edit' ? JSON.stringify({id,name:body.name,aliases:body.aliases,meaning:body.meaning,kind:body.kind,confidence:body.confidence})
+        : operation === 'review' ? JSON.stringify({id,status:body.status})
+        : String(id)
+      const commandArgs = [py, stateDir, operation, mutation ? data : keyword]
       const result = await new Promise(resolve => {
         const child = spawn(cfg.pythonPath || 'python',commandArgs,{cwd:stateDir,shell:false,windowsHide:true,env:pyEnv(),stdio:['ignore','pipe','pipe']})
         let out = '', done = false
@@ -2642,6 +2660,32 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     }
     if (req.method === 'GET' && path === '/api/bili-duty/comment-meme-prompt-default') {
       return sendJson(res, 200, {ok:true, prompt:DEFAULT_COMMENT_MEME_PROMPT, maxLength:4000})
+    }
+    // 大肥鱼人格成长记忆：直接集成到 DSH 原生设置页，无需启动 127.0.0.1:18763 管理服务。
+    // 此接口只操作本地 persona-growth/v1.json，绝不改写主人填写的人设或角色背景。
+    if (req.method === 'GET' && path === '/api/bili-duty/persona-growth') {
+      const data = listGrowth(stateDir)
+      return sendJson(res, 200, {ok:true, data, context:buildGrowthContext(stateDir,{maxChars:1300})})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/persona-growth') {
+      const body = await readBody(req)
+      const action = String(body.action || '')
+      try {
+        let result
+        if (action === 'add') result = proposeGrowth(stateDir, {
+          text:body.text, type:body.type, tags:body.tags, source:'owner', evidence:''
+        })
+        else if (action === 'approve' || action === 'reject') {
+          result = reviewGrowth(stateDir, String(body.id || ''), action==='approve'?'approved':'rejected')
+        }
+        else if (action === 'delete') result = deleteGrowth(stateDir, String(body.id || ''))
+        else if (action === 'undo') result = undoGrowth(stateDir)
+        else if (action === 'sync') result = syncReportsToGrowth(stateDir,{limit:12})
+        else return sendJson(res,400,{ok:false,error:'不支持的成长记忆操作'})
+        return sendJson(res,200,{ok:true,result})
+      } catch (e) {
+        return sendJson(res,400,{ok:false,error:'成长记忆操作失败：'+String(e?.message || e).slice(0,160)})
+      }
     }
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
       return sendJson(res, 200, { ok: true, config: cfg, windows: WINDOWS, home: stateDir })
@@ -3012,7 +3056,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       if (!pick) return true   // 不是浏览器发的（本机脚本/宿主内部）—— 本机进程本来就有权限
       try {
         const u = new URL(pick)
-        return /^(127\.0\.0\.1|localhost|\[::1\])$/i.test(u.hostname)
+        return u.host.toLowerCase() === host.toLowerCase()
       } catch { return false }
     } catch { return false }
   }
