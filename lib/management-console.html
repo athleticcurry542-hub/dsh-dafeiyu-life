@@ -73,8 +73,10 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div><label for="dm-phrase">申请暗号</label><input id="dm-phrase" maxlength="60" placeholder="白饭🍚"></div>
 <div><label for="dm-total">获批用户累计回复上限（1–10000）</label><input id="dm-total" type="number" min="1" max="10000" value="50"></div>
 <div><label for="dm-daily">获批用户每日回复上限（1–1000）</label><input id="dm-daily" type="number" min="1" max="1000" value="10"></div>
+<div><label for="dm-wish-limit">新建临时视频心愿 @ 次数（1–10）</label><input id="dm-wish-limit" type="number" min="1" max="10" value="3"></div>
 </div><div class="actions"><button id="dm-settings-save" class="primary">保存私信规则</button><button id="dm-settings-reload">重新读取</button></div></div>
 <div class="toolbar"><h2 style="margin:0">限额聊天申请</h2><select id="dm-filter"><option value="pending">只看待审批</option><option value="">全部申请</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select></div><p class="muted">这里只审核 B站 用户申请，不修改可信白名单。通过后仍受每日／累计额度控制。</p><div class="grid" id="dm-list"></div>
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>临时视频心愿（仅获批用户）</h3><button id="dm-wishes-refresh">刷新心愿</button></div><p class="muted">对方明确要求找视频后自动创建；30天有效，最多 @ 设置次数后停用。仅计评论接口接受的 @ 尝试，通知送达无法核实。可手动取消。</p><div id="dm-wishes-list" class="records"></div></div>
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>最近私信会话</h3><button id="dm-recent-reload">刷新会话</button></div><p class="muted">只显示本插件已经保存的对话片段；不从 B站 额外拉取完整历史。记录仅在本机展示。</p><div id="dm-recent-list" class="records"></div></div>
 </section>
 <footer class="muted" style="margin-top:30px">数据只保存在本机 DSH 插件目录；此页面不从第三方加载脚本。若页面打不开，请先从 DSH 的「刷B站」设置点击管理中心入口。</footer>

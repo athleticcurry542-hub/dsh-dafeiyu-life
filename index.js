@@ -36,6 +36,7 @@ import { resolveUid } from './lib/uid.mjs'
 import { loadCred as dmCred, listSessions as dmList, fetchMsgs as dmFetch } from './lib/dm.mjs'
 import { ensureUv } from './lib/uvfetch.mjs'
 import { createDmAutoReply } from './lib/dm-autoreply.mjs'
+import { listActiveVideoWishes } from './lib/video-wishes.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
 import { createCommentInteract } from './lib/comment-interact.mjs'
@@ -167,6 +168,7 @@ export const Config = !z ? undefined : z.object({
   dmApprovalPhrase: z.string().default('白饭🍚').extra('volatile',true),
   dmApprovedTotalLimit: z.natural().default(50).extra('volatile',true),
   dmApprovedDailyLimit: z.natural().default(10).extra('volatile',true),
+  dmWishMentionLimit: z.natural().default(3).extra('volatile',true),
   commentWatchReplies: z.boolean().default(false).extra('volatile', true),
   commentWatchTop: z.boolean().default(false).extra('volatile', true),
   commentTopCount: z.natural().default(5).extra('volatile', true),
@@ -316,7 +318,7 @@ function reportMeta() {
     masterEnabled: true,
     dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0,
     dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
-    dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10,
+    dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10, dmWishMentionLimit: 3,
     videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '',
     commentWatchReplies: false, commentWatchTop: false, commentTopCount: 5, commentTopVideoCount: 3,
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5,
@@ -385,7 +387,7 @@ function reportMeta() {
     if ('characterLore' in p) p.characterLore = normalizeCharacterLore(p.characterLore)
     if ('dmWatch' in p) p.dmWatch = Boolean(p.dmWatch)
     if ('dmWatchMinutes' in p) p.dmWatchMinutes = Math.max(1, Math.min(120, Number(p.dmWatchMinutes) || 1))
-    if ('dmReplyPerDay' in p) p.dmReplyPerDay = Math.max(0, Math.min(20, Number(p.dmReplyPerDay) || 0))
+    if ('dmReplyPerDay' in p) p.dmReplyPerDay = Math.max(0, Math.min(1000, Math.floor(Number(p.dmReplyPerDay) || 0)))
     if ('dmOwnerUid' in p) p.dmOwnerUid = Math.max(0, Number(p.dmOwnerUid) || 0)
     if ('dmWhitelist' in p) p.dmWhitelist = String(p.dmWhitelist || '').slice(0, 2500)
     if ('dmStrangerOnce' in p) p.dmStrangerOnce = p.dmStrangerOnce === true
@@ -396,6 +398,7 @@ function reportMeta() {
     if ('dmApprovalPhrase' in p) p.dmApprovalPhrase = String(p.dmApprovalPhrase||'白饭🍚').trim().slice(0,60)
     if ('dmApprovedTotalLimit' in p) p.dmApprovedTotalLimit = Math.max(1,Math.min(10000,Math.floor(Number(p.dmApprovedTotalLimit)||50)))
     if ('dmApprovedDailyLimit' in p) p.dmApprovedDailyLimit = Math.max(1,Math.min(1000,Math.floor(Number(p.dmApprovedDailyLimit)||10)))
+    if ('dmWishMentionLimit' in p) p.dmWishMentionLimit = Math.max(1,Math.min(10,Math.floor(Number(p.dmWishMentionLimit)||3)))
     for (const k of ['commentWatchReplies', 'commentWatchTop', 'commentAllowGeneralTop']) if(k in p) p[k] = p[k] === true
     for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,30,5]]) {
       if(k in p) p[k] = Math.max(min, Math.min(max, Math.floor(Number(p[k]) || def)))
@@ -1189,6 +1192,16 @@ function reportMeta() {
       }
     })()
     /* dsh-persona-growth: end */
+    const wishDoc = (() => {
+      if (!cfg.autoComment || cfg.dmMode === 'only' || cfg.mentionMode === 'off') return ''
+      try {
+        const db=readJson(join(stateDir,'dm-autoreply-state.json'),{})
+        const wishes=listActiveVideoWishes(db,stateDir,Date.now(),{limit:20}).filter(x=>x.remaining>0)
+        if(!wishes.length)return ''
+        return '\n【已获批私信用户的临时视频心愿】\n' + wishes.map(w=>`心愿 ID=${w.id}，主题=${w.topic}，剩余可尝试${w.remaining}次`).join('\n')
+          + '\n遇见真正匹配的视频时，可以在 bili_reply 调用中设置 should_mention=true 和 temporary_wish_id=对应 ID 来顺手叫他看；视频内容不匹配绝不勉强，不要凭空捏造 ID。发送工具会自己校验 B站真实视频标题和 UID，并限制每个心愿的次数。不要向评论透露聊天权限或后台审核。\n'
+      }catch{return ''}
+    })()
     const loreDoc = '\n【角色背景与模型拟人梗（仅作为虚构角色语境；用户人设优先）】\n' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE) + '\n'
     let memeInventory = null
     if (cfg.commentMemesEnabled) {
@@ -1216,6 +1229,7 @@ function reportMeta() {
       + `下面是使用者的设定（如果有）—— **按它来**，别用你默认那套人格。`
       + ownerDoc
       + growthDoc
+      + wishDoc
       + loreDoc
       + (ownerDoc
         ? ''
@@ -1711,6 +1725,7 @@ function reportMeta() {
       strangerMaxReplies: cfg.dmStrangerMaxReplies, strangerFirstFixed: cfg.dmStrangerFirstFixed,
       approvalEnabled:cfg.dmApprovalEnabled, approvalPhrase:cfg.dmApprovalPhrase,
       approvedTotalLimit:cfg.dmApprovedTotalLimit, approvedDailyLimit:cfg.dmApprovedDailyLimit,
+      wishMentionLimit:cfg.dmWishMentionLimit,
       whitelist: [...allow], strangerText: cfg.dmStrangerText,
       intervalMinutes: cfg.dmWatchMinutes,
       maxPerPoll: 3, maxPerHour: 40,
@@ -2697,7 +2712,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
         'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
-        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit',
+        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'favFolderId']) {
         if (k in body) patch[k] = body[k]
       }
@@ -2753,6 +2768,15 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
 
     if (req.method === 'GET' && path === '/api/bili-duty/dm-approvals') {
       return sendJson(res,200,{ok:true, approvals:await dmAutoreply.listApprovals()})
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/video-wishes') {
+      return sendJson(res,200,{ok:true,wishes:await dmAutoreply.listVideoWishes()})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/video-wishes') {
+      const body=await readBody(req)
+      const result=body.action==='cancel' ? await dmAutoreply.cancelVideoWish(String(body.uid||''),String(body.id||''))
+        : {ok:false,error:'不支持的心愿操作'}
+      return sendJson(res,result.ok?200:400,result)
     }
     if (req.method === 'POST' && path === '/api/bili-duty/dm-approvals') {
       const body=await readBody(req)
