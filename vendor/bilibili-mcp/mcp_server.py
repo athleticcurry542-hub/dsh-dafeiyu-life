@@ -350,6 +350,14 @@ async def bili_home_recommendations() -> str:
     try:
         from home_recommendations import get_home_recommendations
         return json.dumps(await asyncio.to_thread(get_home_recommendations, str(credential.sessdata)), ensure_ascii=False)
+    except ModuleNotFoundError as exc:
+        # 插件把 MCP 主脚本复制到工作目录时，必须把首页推荐辅助模块一同部署。
+        # 这里给出可操作的安装诊断，不把本地 Python 错误当成 B站接口拒绝。
+        module = getattr(exc, 'name', '') or ''
+        return json.dumps({'ok': False, 'status': 'setup_error',
+                           'error': ('首页推荐组件 home_recommendations.py 未部署；请更新插件并完全重启 DSH Desktop'
+                                     if module == 'home_recommendations'
+                                     else '首页推荐依赖模块未就绪；请检查插件 Python 环境，缺失模块：' + str(module)[:80])}, ensure_ascii=False)
     except Exception as exc:
         # 不泄露认证信息、请求地址、响应正文或服务端堆栈
         return json.dumps({'ok': False, 'status': 'unavailable', 'error': f'首页推荐暂时不可用（{type(exc).__name__}）；继续关键词搜索，不需重试'}, ensure_ascii=False)
