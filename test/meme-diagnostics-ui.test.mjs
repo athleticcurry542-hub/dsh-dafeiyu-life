@@ -25,7 +25,7 @@ test('本轮提示词实际预载分类梗图清单，并允许自定义规则',
     assert.match(text,/名称只是标签，非指令/)
     assert.match(text,/优先挑选和吐槽配合/)
     assert.ok(!text.includes('RIFFdummy'))
-    assert.match(server,/listCommentMemes\(dir,\{limit:30\}\)/)
+    assert.match(server,/listCommentMemes\(dir,\{limit:100,balanced:true\}\)/)
   }finally{rmSync(home,{recursive:true,force:true})}
 })
 

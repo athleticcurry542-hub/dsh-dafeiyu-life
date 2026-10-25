@@ -254,7 +254,7 @@ def _claim_vision_quota(home, daily_limit=8):
         return True
 
 
-def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, provider=None, model=None, endpoint=None, return_frames=False, prefetch_only=False):
+def _analyze_preview_core(bvid, home, *, enabled=None, debug=None, max_frames=None, provider=None, model=None, endpoint=None, return_frames=False, prefetch_only=False):
     """返回经过长度钳制的结构化文本；debug 才保存 JPEG，缓存只存分析文字。"""
     if not BV_RE.fullmatch(str(bvid or '')):return {'ok':False,'error':'BV号格式不正确'}
     home=Path(home).resolve()
@@ -367,6 +367,37 @@ def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, pr
         return answer
     except Exception as e:
         return {'ok':False,'bvid':bvid,'error':str(e)[:240]}
+
+def record_vision_event(home, bvid, status, *, source='preview', ok=False, debug_saved=False, error='', times=None):
+    """Bounded local diagnostic only. No credentials, image bytes or arbitrary paths."""
+    try:
+        if not BV_RE.fullmatch(str(bvid or '')):
+            return
+        directory=Path(home).resolve()/'vision-events'
+        directory.mkdir(parents=True, exist_ok=True)
+        now=datetime.now()
+        event={'time':now.isoformat(timespec='seconds'), 'bvid':bvid,
+               'source':str(source)[:36], 'status':str(status)[:48],
+               'ok':bool(ok), 'debug_saved':bool(debug_saved),
+               'times':list(times or [])[:3], 'error':str(error)[:180]}
+        with (directory/(now.strftime('%Y-%m-%d')+'.jsonl')).open('a',encoding='utf8') as f:
+            f.write(json.dumps(event,ensure_ascii=False)+'\n')
+    except (OSError,TypeError,ValueError):
+        pass  # diagnostics must never prevent the read-only vision tool
+
+
+def analyze_preview(bvid, home, *, enabled=None, debug=None, max_frames=None, provider=None, model=None, endpoint=None, return_frames=False, prefetch_only=False):
+    # The manual preview button and the actual vision tool share this receipt.
+    source='manual_preview' if prefetch_only else ('video_agent_frames' if return_frames else 'vision_provider')
+    result=_analyze_preview_core(bvid,home,enabled=enabled,debug=debug,
+                                 max_frames=max_frames,provider=provider,
+                                 model=model,endpoint=endpoint,return_frames=return_frames,
+                                 prefetch_only=prefetch_only)
+    record_vision_event(home,bvid,result.get('status') or ('preview_failed' if not result.get('ok') else 'preview_only'),
+                        source=source,ok=result.get('ok'),debug_saved=bool(result.get('debug_dir')),
+                        error=result.get('error',''),times=result.get('times'))
+    return result
+
 
 if __name__=='__main__':
     ap=argparse.ArgumentParser()

@@ -591,7 +591,12 @@ async def bili_preview_vision(bvid: str):
         mode = os.environ.get('BILI_VISION_MODE', 'separate')
         if mode == 'independent_dsh':
             from vision_dsh import describe_with_dsh
-            return json.dumps(await asyncio.to_thread(describe_with_dsh,bvid,_DUTY_HOME),ensure_ascii=False)
+            from preview_vision import record_vision_event
+            result = await asyncio.to_thread(describe_with_dsh,bvid,_DUTY_HOME)
+            record_vision_event(_DUTY_HOME,bvid,result.get('status','vision_error'),
+                                source='independent_dsh_result',ok=result.get('ok'),
+                                error=result.get('error',''),times=result.get('times'))
+            return json.dumps(result,ensure_ascii=False)
         if mode in ('reuse_video_model','auto'):
             # MCP SDK translates real image blocks to the video model route through DSH's
             # attachment bridge. No independent vision API or DPAPI key is accessed here.

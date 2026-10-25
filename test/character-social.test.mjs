@@ -31,7 +31,7 @@ test('comment meme strategy receives bounded listing before AI chooses and suppo
   const prompt=buildCommentMemePrompt({inventory:'• 奶娃/奶龙大笑\n• 其他/无语',dailyLimit:20,roundLimit:2})
   assert.match(prompt,/奶娃\/奶龙大笑/)
   assert.match(prompt,/no_meme_image_reason/)
-  assert.match(prompt,/不为提高附图率强行硬配图/)
+  assert.match(prompt,/不要为凑图改评论/)
 })
 test('settings write and prompt endpoints, reject agent editing private profile',async()=>{
   const home=mkdtempSync(join(tmpdir(),'bili-social-'))
