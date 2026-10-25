@@ -39,6 +39,7 @@ import { createDmAutoReply } from './lib/dm-autoreply.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
 import { createCommentInteract } from './lib/comment-interact.mjs'
+import { recentComments } from './lib/recent-comments.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { listCommentMemes } from './lib/comment-meme-library.mjs'
@@ -2813,38 +2814,13 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     //    （设置页那个按钮、以及每轮结束 90 秒后自动跑一次，都走这里）
     if (req.method === 'POST' && path === '/api/bili-duty/verify') return sendJson(res, 200, await runVerify('manual'))
 
-    // 管理中心：最近公开评论记录。只读 seen.md 中已有的 BV/rpid/时间/短摘要，不读取任意路径。
+    // 管理中心：合并判重表和评论发送工具的本地成功回执；不主动抓取 B站，也不声称已公开展示。
     if (req.method === 'GET' && path === '/api/bili-duty/recent-comments') {
-      const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 50))
-      const files = [seenFile]
-      const archiveDir = join(stateDir, 'seen')
-      try {
-        if (existsSync(archiveDir)) for (const name of readdirSync(archiveDir).filter(n => /^\d{4}-\d{2}\.md$/i.test(n)).slice(-24)) files.push(join(archiveDir, name))
-      } catch { /* 主表仍可读 */ }
-      const rows = []
-      const seenKeys = new Set()
-      for (const file of files) {
-        let text = ''
-        try { text = readFileSync(file, 'utf8') } catch { continue }
-        for (const line of text.split(/\r?\n/)) {
-          if (!line.trim().startsWith('|')) continue
-          const cells = line.split('|').map(x => x.trim()).slice(1, -1)
-          const bi = cells.findIndex(x => /^BV[0-9A-Za-z]{10}$/.test(x))
-          if (bi < 0) continue
-          const rpid = String(cells[bi + 1] || '')
-          if (!/^\d{6,30}$/.test(rpid)) continue
-          const key = cells[bi] + ':' + rpid
-          if (seenKeys.has(key)) continue
-          seenKeys.add(key)
-          const root = /^\d{1,30}$/.test(String(cells[bi + 2] || '')) ? String(cells[bi + 2]) : ''
-          const date = cells.slice(bi + 2).find(x => /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(x)) || ''
-          const snippet = String(cells[cells.length - 1] || '').replace(/[\r\n]/g, ' ').slice(0, 120)
-          rows.push({ bvid: cells[bi], rpid, root, time: date, snippet,
-            url: 'https://www.bilibili.com/video/' + cells[bi] + '?comment=' + encodeURIComponent(rpid) })
-        }
-      }
-      rows.sort((a,b) => String(b.time).localeCompare(String(a.time)))
-      return sendJson(res, 200, {ok:true,total:rows.length,rows:rows.slice(0,limit),note:'内容仅包含判重表里保存的评论短摘要，不代表当前仍公开可见。'})
+      return sendJson(res, 200, recentComments(stateDir, {
+        limit: url.searchParams.get('limit'),
+        offset: url.searchParams.get('offset'),
+        day: url.searchParams.get('day'),
+      }))
     }
 
     // 「看今天的报告」：把报告的文本读出来给设置页显示（浏览器不能直接开本地文件 ✗）
