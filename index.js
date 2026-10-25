@@ -5,8 +5,8 @@ import { buildGrowthContext, syncReportsToGrowth, listGrowth, proposeGrowth, rev
  * 它是什么：每天替你刷一轮 B站 的插件版。
  *   1. **插件内部起那份 Python MCP**（`vendor/bilibili-mcp/mcp_server.py`），把它的能力
  *      注册成 dsh 工具（搜 / 字幕 / 评论 / 发评论 @ 人 / 登录检查）—— 用户不用再手改 profile。
- *   2. **谷时定时器**：中午 12:00–14:00、夜间 00:30–08:30（`lib/state.mjs` 里的 `WINDOWS`），
- *      开了哪个窗口才在哪个窗口自动跑；「定量刷」的数字是**每天总量上限**。
+ *   2. **自定义自动刷定时器**：用户配置多段本机时间，间隔可低至 1 分钟，
+ *      只有处在用户保存的窗口内才自动跑；「定量刷」的数字是**每天总量上限**。
  *   3. **跑一轮** = 起一个 `dsh --profile headless <prompt>`（跟老方案同一条路，已被验证过），
  *      把 `duty.md` 交给它，报告写进 `<家>/out/<日期>.md`。
  *   4. **设置页**（`client.js`）通过 `/api/bili-duty/*` 读写配置、看状态、扫码登录。
@@ -30,7 +30,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { McpClient } from './lib/mcp.mjs'
 import { verifyRecent, appendVerifyToReport } from './lib/verify.mjs'
-import { WINDOWS, stateDirOf, readJson, writeJson, ensureHomeFiles, ensureCharter, charterPath, inWindow, dayKey } from './lib/state.mjs'
+import { stateDirOf, readJson, writeJson, ensureHomeFiles, ensureCharter, charterPath, dayKey } from './lib/state.mjs'
 import { loginStart, loginPoll, saveCredential, renderQrPng } from './lib/login.mjs'
 import { resolveUid } from './lib/uid.mjs'
 import { loadCred as dmCred, listSessions as dmList, fetchMsgs as dmFetch } from './lib/dm.mjs'
@@ -47,7 +47,7 @@ import { DEFAULT_COMMENT_MEME_PROMPT, buildCommentMemePrompt, normalizeCommentMe
 import { DEFAULT_VISION_PROMPT, buildVisionPrompt, normalizeVisionPrompt } from './lib/vision-prompt.mjs'
 import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
 import { DEFAULT_CHARACTER_LORE, normalizeCharacterLore, normalizeMentionProfiles, buildMentionProfilePrompt } from './lib/character-social.mjs'
-import { shouldRunWindow } from './lib/peak-schedule.mjs'
+import { shouldRunWindow, parsePeakWindows, readPeakWindows, activePeakWindow, DEFAULT_PEAK_INTERVAL_MINUTES } from './lib/peak-schedule.mjs'
 import { effectiveModelSelection } from './lib/model-routing.mjs'
 import { mergeWatchedRows } from './lib/watched.mjs'
 
@@ -71,11 +71,10 @@ export const Config = !z ? undefined : z.object({
   masterEnabled: z.boolean().default(true).extra('volatile', true),
   /** 峰谷自动刷（总开关） */
   peakValley: z.boolean().default(false).extra('volatile', true),
-  /** 峰谷窗口重复运行间隔；0=旧版每个窗口每天一轮，30–720=按分钟重复（不抢占正在运行的任务） */
-  peakIntervalMinutes: z.natural().default(0).extra('volatile', true),
-  /** 峰谷子开关：中午 / 晚上 */
-  noon: z.boolean().default(true).extra('volatile', true),
-  night: z.boolean().default(true).extra('volatile', true),
+  /** 自定义时间段（JSON 数组，如 [{\"start\":\"09:00\",\"end\":\"11:00\"}]）；默认空列表不自动运行。 */
+  peakWindows: z.string().default('[]').extra('volatile', true),
+  /** 自动运行间隔 1–720 分钟，默认 30（非最低限制） */
+  peakIntervalMinutes: z.natural().default(30).extra('volatile', true),
   /** 自动评论 @ 使用者（默认关 —— 会拿用户的号说话，必须他自己开） */
   autoComment: z.boolean().default(false).extra('volatile', true),
   commentSyncDynamic: z.boolean().default(false).extra('volatile', true),
@@ -323,7 +322,7 @@ function reportMeta() {
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: '', characterLore: '',
-    perDay: 50, pickPerRound: 5, peakValley: false, peakIntervalMinutes: 0, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
+    perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, visionMode: 'reuse_video_model', visionDebug: false, visionModelProvider: '', visionReasoningEffort: '', visionModelId: '', visionEndpoint: '', visionFrames: 2, visionPrompt: '', commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1, commentMemePrompt: '',
     homeRecommendationsEnabled: true, keywords: [], commentPerRound: 5, mentionName: '', mentionTargets: '', mentionProfiles: '{}', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
   }
@@ -375,9 +374,10 @@ function reportMeta() {
     if ('mentionMode' in p) p.mentionMode = ['off', 'ai', 'ai_select', 'always'].includes(String(p.mentionMode)) ? String(p.mentionMode) : 'ai'
     if ('perDay' in p) p.perDay = Math.max(0, Math.floor(Number(p.perDay) || 0))
     if ('pickPerRound' in p) p.pickPerRound = Math.max(1, Math.min(50, Math.floor(Number(p.pickPerRound) || 5)))
+    if ('peakWindows' in p) p.peakWindows = JSON.stringify(readPeakWindows(p.peakWindows))
     if ('peakIntervalMinutes' in p) {
-      const n = Math.floor(Number(p.peakIntervalMinutes) || 0)
-      p.peakIntervalMinutes = n <= 0 ? 0 : Math.max(30, Math.min(720, n))
+      const n = Math.floor(Number(p.peakIntervalMinutes))
+      p.peakIntervalMinutes = Number.isFinite(n) && n >= 1 ? Math.min(720, n) : DEFAULT_PEAK_INTERVAL_MINUTES
     }
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     for (const k of ['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort']) if(k in p) p[k]=String(p[k]||'').trim().slice(0,160).replace(/[\r\n\0]/g,'')
@@ -566,6 +566,7 @@ function reportMeta() {
    *      漏掉任何一处，正好就是「设置页改了没反应」那个 bug 本身 ⇒ 收成一个函数。）
    */
   const persistCfg = async (patch) => {
+    if ('peakWindows' in patch) parsePeakWindows(patch.peakWindows) // 保存错误要明说，不能悄悄清空列表
     const clean = clampPatch('mentionProfiles' in patch ? {...patch, mentionTargets: patch.mentionTargets ?? cfg.mentionTargets, mentionName: patch.mentionName ?? cfg.mentionName} : patch)
     if ('masterEnabled' in clean) {
       // 先同步文件，再持久化；写入失败必须报错，不能出现界面显示已暂停而 Python 仍可外发。
@@ -821,11 +822,9 @@ function reportMeta() {
         canPickThisRound: picksThisRound(cfg.perDay, cfg.pickPerRound, countPickedToday(now)),
         // ⭐ 2026-10-19：这一轮会用哪个 dsh（空 = 没找到 ⇒ 那一轮根本跑不起来）
         dshCli: dshCliCached(),
-        windows: Object.fromEntries(Object.entries(WINDOWS).map(([k, w]) => [k, {
-          label: w.label, start: w.start, end: w.end,
-          switchOn: Boolean(cfg[k]),
-          opening: inWindow(now, w),
-        }])),
+        windows: readPeakWindows(cfg.peakWindows).map((w, i) => ({
+          ...w, opening: activePeakWindow(now, readPeakWindows(cfg.peakWindows)) === i,
+        })),
         masterEnabled: cfg.masterEnabled,
         peakValley: cfg.peakValley,
         autoComment: cfg.autoComment,
@@ -893,7 +892,7 @@ function reportMeta() {
   tool({
     name: 'bili_config',
     description: '读 / 改「刷B站」的设置。不给 `patch` 就是读；给了就改（只认 schema 里的字段）。\n'
-      + '例：`{"perDay":20,"pickPerRound":5,"peakValley":true,"noon":true,"night":true,"autoComment":false,"transcribe":false,"keywords":["DeepSeek Harness"]}`；'
+      + '例：`{"perDay":20,"pickPerRound":5,"peakValley":true,"peakWindows":"[{\\"start\\":\\"09:00\\",\\"end\\":\\"11:00\\"}]","peakIntervalMinutes":5}`；'
       + '私信投递：`{"dmMode":"only","dmUid":12345678}`（dmMode = off / only / both）。',
     parameters: { patch: { type: 'object', additionalProperties: true, description: '要改的字段（可省）' } },
     async execute(args) {
@@ -904,9 +903,9 @@ function reportMeta() {
         if ('visionPrompt' in args.patch) return {ok:false, blocked:true, error:'视觉识图提示词只能由用户在设置页编辑'}
         if ('mentionProfiles' in args.patch || 'characterLore' in args.patch) return {ok:false,blocked:true,error:'好友画像与角色关系设定只能由用户在设置页编辑'}
         // ⭐ 设置页显式设过的键以宿主为准 ⇒ 必须跟着写一份，否则"改了没反应"（钳范围也在这里）
-        host = (await persistCfg(args.patch)).host
+        try { host = (await persistCfg(args.patch)).host } catch (e) { return {ok:false,error:String(e?.message||e)} }
       }
-      return { ok: true, config: cfg, windows: WINDOWS, home: stateDir, venvReady: venvReadyNow(), host }
+      return { ok: true, config: cfg, windows: readPeakWindows(cfg.peakWindows), home: stateDir, venvReady: venvReadyNow(), host }
     },
   })
 
@@ -922,7 +921,7 @@ function reportMeta() {
   }
 
   /* ⭐ 「定量刷」承诺的是**每天挑几条**（2026-10-16 审查修 H1：原来 st.count 从没自增过，
-   *   tick 那道 `count >= perDay` 的闸形同虚设 ⇒ noon + night 两个窗口各跑满一轮，
+   *   tick 那道 `count >= perDay` 的闸形同虚设 ⇒ 相邻的多个窗口可能各跑满一轮，
    *   后一轮还会把前一轮的报告覆盖掉）。
    *   数哪儿？数**今天的报告**里那些 `### BV号` 标题行（章程写死了这个格式）。
    *   ⚠️ 为什么不数「报告里出现的所有 BV」（2026-10-17 复查修的）：报告里还会出现**没挑中**的 BV ——
@@ -1671,26 +1670,22 @@ function reportMeta() {
       refreshCfg()                    // ⭐ 定时器活得比设置页久：每一跳都重新读一遍配置
       if (cfg.masterEnabled !== true || !cfg.peakValley) return
       const now = new Date()
+      const windows = readPeakWindows(cfg.peakWindows)
+      const active = activePeakWindow(now, windows)
+      if (active === -1) return // 没配置 / 当前不在任何时间段内，就不运行
       const st = readJson(dutyStateFile, {})
-      const today = dayKey(now)
       // ⭐ 闸门看的是「今天已经**挑到几条**」（从今天的报告里数出来），不是「跑了几轮」
       if (countPickedToday(now) >= Number(cfg.perDay || 0)) return
       // ⭐ 「不写日报」那档没有报告可数 ⇒ 数不出条数就保守一点：一天只跑一轮
       if (String(cfg.reportLevel || 'full') === 'off' && roundsToday(now) >= 1) return
-      for (const k of ['noon', 'night']) {
-        if (!cfg[k]) continue
-        if (!inWindow(now, WINDOWS[k])) continue
-        const key = `${today}:${k}`
-        const decision = shouldRunWindow({ now, windowKey: key, intervalMinutes: cfg.peakIntervalMinutes,
-          windows: st.windows, lastRunAt: st.lastRunAt })
-        if (!decision.allowed) continue
-        const started = runDuty(`window:${k}`)
-        // 🔒 只有成功拉起 Agent 才记录时段触发时间；当前正在跑/启动失败不会吞掉下一次机会。
-        if (!started?.started) { log(`谷时任务未启动（${decision.reason}）：${started?.error || started?.why || '忙碌'}`); return }
-        bumpState({ windows: { ...(st.windows || {}), [key]: true }, count: roundsToday(now) + 1,
-          lastRunAt: now.toISOString(), lastWhy: k })
-        return
-      }
+      const decision = shouldRunWindow({ now, intervalMinutes: cfg.peakIntervalMinutes,
+        lastRunAt: st.lastRunAt })
+      if (!decision.allowed) return
+      const key = `custom-${active + 1}`
+      const started = runDuty(`window:${key}`)
+      // 🔒 只有成功拉起 Agent 才记录时间；忙碌/启动失败不会消耗间隔。
+      if (!started?.started) { log(`自定义时段任务未启动：${started?.error || started?.why || '忙碌'}`); return }
+      bumpState({ count: roundsToday(now) + 1, lastRunAt: now.toISOString(), lastWhy: key })
     } catch (e) {
       log(`定时器这一跳出错（已兜住，不影响宿主）：${e?.stack ?? e}`)
     }
@@ -2423,7 +2418,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       home: stateDir,
       config: cfg,
       masterEnabled: cfg.masterEnabled === true,
-      windows: WINDOWS,
+      windows: readPeakWindows(cfg.peakWindows),
       today,
       ranToday: st.day === today ? Number(st.count || 0) : 0,   // 今天跑了几轮
       pickedToday: countPickedToday(),                          // 今天挑到几条（从报告里数）
@@ -2693,13 +2688,13 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       }
     }
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
-      return sendJson(res, 200, { ok: true, config: cfg, windows: WINDOWS, home: stateDir })
+      return sendJson(res, 200, { ok: true, config: cfg, windows: readPeakWindows(cfg.peakWindows), home: stateDir })
     }
 
     if (req.method === 'POST' && path === '/api/bili-duty/config') {
       const body = await readBody(req)
       const patch = {}
-      for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakIntervalMinutes', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
+      for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
         'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit',
@@ -2726,6 +2721,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       // ⭐ 私信那两个字段的合法值（2026-10-17 摘 PR #9；其余范围钳制统一在 persistCfg 里）
       if ('dmMode' in patch) patch.dmMode = ['off', 'only', 'both'].includes(String(patch.dmMode)) ? String(patch.dmMode) : 'off'
       if ('dmUid' in patch) patch.dmUid = Math.max(0, Math.min(Number(patch.dmUid) || 0, Number.MAX_SAFE_INTEGER))
+      if ('peakWindows' in patch) {
+        try { parsePeakWindows(patch.peakWindows) } catch (e) { return sendJson(res, 400, {ok:false,error:String(e?.message||e)}) }
+      }
       const { clean, host } = await persistCfg(patch)
       log(`设置已更新：${JSON.stringify({...clean, ...('mentionProfiles' in clean ? {mentionProfiles:'[好友画像已更新]'} : {}), ...('characterLore' in clean ? {characterLore:'[角色关系设定已更新]'} : {}), ...('commentMemePrompt' in clean ? {commentMemePrompt: '[选图提示词已更新]'} : {}), ...('visionPrompt' in clean ? {visionPrompt: '[识图提示词已更新]'} : {})})}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
       return sendJson(res, 200, { ok: true, config: cfg, host })
@@ -3127,5 +3125,5 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
   } catch (e) { log(`HTTP 路由没挂上：${e?.message ?? e}`) }
 
   ctx.effect(() => () => { try { mcp?.stop() } catch { /* 收摊 */ } }, 'bili-duty: 收 MCP 子进程')
-  log(`已挂载（家=${stateDir}，python=${cfg.pythonPath}，峰谷=${cfg.peakValley ? '开' : '关'}）`)
+  log(`已挂载（家=${stateDir}，python=${cfg.pythonPath}，定时=${cfg.peakValley ? '开' : '关'}）`)
 }

@@ -19,7 +19,7 @@
  *   ⇒ **别自己糊一个标题栏按钮 + 全屏 overlay** ✗（第一版就是这么干的，使用者一眼看出"跟别的插件不一样"）。
  *
  * 这一页要满足使用者 2026-10-14 说的形状：
- *   · **总开关 → 打开之后下面才展开子开关**（峰谷自动刷 → 中午 / 晚上）
+ *   · **总开关 → 打开之后配置自定义自动刷时间段**（支持跨午夜和多时段）
  *   · **数字项要能自己填**（定量刷：每天几条）
  *   · **账号绑定必须在设置页里**（扫码登录 + 二维码直接显示在页里）
  *   · 会发东西出去的（自动评论）、要下大模型的（本地转写）**默认关**
@@ -135,11 +135,6 @@ window.__ModuleLoader__.load({
   background:var(--dsw-alias-bg-layer-4,rgba(128,128,128,.14));color:var(--dsw-alias-label-secondary,#c9ccd1);}
 `
 
-    // ⚠️ 与 lib/state.mjs 的 WINDOWS 保持一致（官方口径：工作日 9–12、14–18 是高峰，其余都是谷时）
-    const DEFAULT_WINDOWS = {
-      noon: { label: '中午谷时', start: '12:00', end: '14:00' },
-      night: { label: '晚上/夜间谷时', start: '18:00', end: '09:00' },
-    }
 
     /* ────────────── 小组件 ────────────── */
 
@@ -254,6 +249,7 @@ function WatchTab() {
       const [perDay, setPerDay] = React.useState(null)
       const [pickPerRound, setPickPerRound] = React.useState(null)
       const [peakIntervalDraft, setPeakIntervalDraft] = React.useState(null)
+      const [peakWindowsDraft, setPeakWindowsDraft] = React.useState(null)
       const [perRound, setPerRound] = React.useState(null)
       const [dmUid, setDmUid] = React.useState(null)        // 私信收件人 UID（本地草稿）
       const [dmWatch, setDmWatch] = React.useState(null)          // 后台私信总开关
@@ -315,7 +311,13 @@ function WatchTab() {
         if (cfg && rl === null) setRl(cfg.reportLevel || 'full')
         if (cfg && perDay === null) setPerDay(String(cfg.perDay ?? 50))
         if (cfg && pickPerRound === null) setPickPerRound(String(cfg.pickPerRound ?? 5))
-        if (cfg && peakIntervalDraft === null) setPeakIntervalDraft(String(cfg.peakIntervalMinutes ?? 0))
+        if (cfg && peakIntervalDraft === null) setPeakIntervalDraft(String(cfg.peakIntervalMinutes ?? 30))
+        if (cfg && peakWindowsDraft === null) {
+          try {
+            const rows = JSON.parse(cfg.peakWindows || '[]')
+            setPeakWindowsDraft(Array.isArray(rows) ? rows.map(w => ({start:String(w.start||''),end:String(w.end||'')})) : [])
+          } catch { setPeakWindowsDraft([]) }
+        }
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && dailyPublicCommentLimit === null) setDailyPublicCommentLimit(String(cfg.commentDailyLimit ?? 10))
         if (cfg && dynamicDailyLimitDraft === null) setDynamicDailyLimitDraft(String(cfg.dynamicDailyLimit ?? 3))
@@ -351,7 +353,15 @@ function WatchTab() {
         return () => {alive = false; clearInterval(timer)}
       }, [])
 
-      const win = { ...DEFAULT_WINDOWS, ...(st?.windows || {}) }
+      const scheduleRows = peakWindowsDraft || []
+      const updateSchedule = (idx, key, value) => setPeakWindowsDraft(rows => (rows || []).map((w, i) => i === idx ? {...w, [key]:value} : w))
+      const saveSchedule = () => {
+        const rows = peakWindowsDraft || []
+        if (rows.some(w => !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(w.start) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(w.end) || w.start === w.end)) {
+          say('时间段格式无效：请填完整 HH:MM，开始和结束不能相同', 'warn'); return
+        }
+        patch({peakWindows:JSON.stringify(rows)}, '自定义时间段')
+      }
 
       const say = (text, tone) => {
         setMsg(text); setMsgTone(tone || '')
@@ -643,27 +653,35 @@ function WatchTab() {
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },
           h('div', { 'data-bd-h': '' }, '什么时候自己跑'),
           h(ToggleRow, {
-            label: '峰谷时段自动刷',
-            note: '只在谷时跑 —— 工作日 12:00–14:00 与 18:00 之后（整个周末也算谷时）；关了就只能手动跑',
+            label: '自定义时段自动刷',
+            note: '仅在下方指定的时间段内启动（按电脑本地时间；不再按固定的峰谷价格模式判断）。',
             on: sw('peakValley'),
-            onChange: (v) => patch({ peakValley: v }, '峰谷时段自动刷'),
+            onChange: (v) => patch({ peakValley: v }, '自定义时段自动刷'),
           }),
           sw('peakValley') ? h('div', { 'data-bd-sub': '' },
-            ...['noon', 'night'].map((k) => h(ToggleRow, {
-              key: k,
-              label: win[k].label,
-              note: `${win[k].start} – ${win[k].end}`,
-              on: sw(k),
-              onChange: (v) => patch({ [k]: v }, win[k].label),
-            })),
+            h('div', { 'data-bd-note': '' }, '可以设置多个时间段，跨午夜例如 23:00–02:00。开始包含，结束不包含；多个时间段共用同一个运行间隔。'),
+            ...scheduleRows.map((w, i) => h('div', { key:i, 'data-bd-row': '' },
+              h('span', { 'data-bd-label': '' }, `时段 ${i + 1}`),
+              h('input', { 'data-bd-input':'', type:'time', style:{width:120}, value:w.start,
+                'aria-label':`时段 ${i + 1} 开始`, onChange:e=>updateSchedule(i,'start',e.target.value) }),
+              h('span', null, '至'),
+              h('input', { 'data-bd-input':'', type:'time', style:{width:120}, value:w.end,
+                'aria-label':`时段 ${i + 1} 结束`, onChange:e=>updateSchedule(i,'end',e.target.value) }),
+              h('button', { 'data-bd-btn':'', disabled:Boolean(busy), onClick:()=>setPeakWindowsDraft(rows=>(rows||[]).filter((_,j)=>j!==i)) }, '删除')
+            )),
+            h('div', { 'data-bd-row': '' },
+              h('button', { 'data-bd-btn':'', disabled:Boolean(busy)||scheduleRows.length>=16,
+                onClick:()=>setPeakWindowsDraft(rows=>[...(rows||[]),{start:'',end:''}]) }, '＋ 添加时间段'),
+              h('button', { 'data-bd-btn':'', 'data-primary':'', disabled:Boolean(busy), onClick:saveSchedule }, '保存时间段')),
+            scheduleRows.length===0 ? h('div', {'data-bd-msg':'','data-warn':''}, '没有已设置的时间段：即使开关开启也不会自动运行。') : null,
             h('div', { 'data-bd-row': '' },
               h('div', { 'data-bd-grow': '' },
                 h('div', { 'data-bd-label': '' }, '谷时自动运行间隔（分钟）'),
-                h('div', { 'data-bd-note': '' }, '0 = 兼容旧版（每个时段每天一轮）；30～720 = 同一谷时窗口内按分钟再次运行。到日上限、正在运行、总开关关闭时不会新开轮次。')),
-              h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0, max: 720, step: 1,
+                h('div', { 'data-bd-note': '' }, '1～720 分钟；30 只是默认值，不是最低限制。至少每分钟检查一次；仍受每日选片上限、任务互斥及总开关约束。')),
+              h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 720, step: 1,
                 value: peakIntervalDraft ?? '',
                 onChange: (e) => setPeakIntervalDraft(e.target.value),
-                onBlur: () => { const raw = Number(peakIntervalDraft) || 0; const n = raw <= 0 ? 0 : Math.max(30,Math.min(720,Math.floor(raw))); setPeakIntervalDraft(String(n)); patch({ peakIntervalMinutes: n }, '自动运行间隔') },
+                onBlur: () => { const raw = Number(peakIntervalDraft); const n = Number.isFinite(raw) && raw>=1 ? Math.max(1,Math.min(720,Math.floor(raw))) : 30; setPeakIntervalDraft(String(n)); patch({ peakIntervalMinutes: n }, '自动运行间隔') },
               })
             )) : null),
 
