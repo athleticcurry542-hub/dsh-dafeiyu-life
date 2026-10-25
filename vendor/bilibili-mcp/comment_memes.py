@@ -17,6 +17,8 @@ import urllib.request
 EXTENSIONS = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp'}
 NAME = re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,48}$')
 MAX_BYTES = 8 * 1024 * 1024
+MAX_FOLDER_DEPTH = 3
+MAX_SCAN = 300
 
 
 def folder_of(home):
@@ -28,36 +30,84 @@ def folder_of(home):
     return folder
 
 
+def _valid_segment(value):
+    return bool(value and value not in ('.', '..') and NAME.fullmatch(value))
+
+
+def _valid_selection(value):
+    if not isinstance(value, str) or not value or len(value) > 180 or '\\' in value:
+        return False
+    parts = value.split('/')
+    return 1 <= len(parts) <= MAX_FOLDER_DEPTH + 1 and all(_valid_segment(p) for p in parts) and Path(parts[-1]).suffix.lower() not in EXTENSIONS
+
+
 def _list(home):
     folder = folder_of(home)
     items = []
-    for p in sorted(folder.iterdir(), key=lambda x: x.name.casefold()):
-        if p.is_symlink() or not p.is_file() or p.suffix.lower() not in EXTENSIONS:
-            continue
-        if not NAME.fullmatch(p.stem) or p.stat().st_size > MAX_BYTES:
-            continue
-        items.append({'name': p.stem, 'type': p.suffix.lower(), 'bytes': p.stat().st_size})
-        if len(items) >= 100:
-            break
-    return items
+    def walk(directory, parts):
+        if len(items) >= MAX_SCAN:
+            return
+        for p in sorted(directory.iterdir(), key=lambda x: x.name.casefold()):
+            if len(items) >= MAX_SCAN:
+                break
+            try:
+                if p.is_symlink():
+                    continue
+                if p.is_dir() and len(parts) < MAX_FOLDER_DEPTH and _valid_segment(p.name):
+                    walk(p, parts + [p.name])
+                elif p.is_file() and p.suffix.lower() in EXTENSIONS and _valid_segment(p.stem):
+                    name = '/'.join(parts + [p.stem])
+                    size = p.stat().st_size
+                    if len(name) <= 180 and 0 < size <= MAX_BYTES:
+                        items.append({'name': name, 'type': p.suffix.lower(), 'bytes': size, 'path': p, 'category': parts[0] if parts else ''})
+            except OSError:
+                continue
+    walk(folder, [])
+    counts = {}
+    for row in items:
+        key = row['name'].casefold()
+        counts[key] = counts.get(key, 0) + 1
+    return [r for r in items if counts[r['name'].casefold()] == 1]
 
 
 def list_names(home):
-    """Only reveal safe image names; never expose arbitrary filesystem paths."""
-    return [row['name'] for row in _list(home)]
+    """Return unambiguous extensionless category/name paths, never filesystem paths."""
+    return [row['name'] for row in _list(home)[:100]]
+
+
+def list_library(home, category='', limit=100):
+    """Enumerate safe subfolders for an agent; results are data, never instructions."""
+    items = _list(home)
+    categories = {}
+    for row in items:
+        categories[row['category']] = categories.get(row['category'], 0) + 1
+    cat_rows = [{'path': k, 'label': k or '根目录', 'count': v} for k,v in sorted(categories.items())]
+    if category and (not _valid_segment(category)):
+        raise ValueError('分类名称无效')
+    filtered = [row for row in items if not category or row['category'] == category]
+    count = max(1,min(100,int(limit)))
+    return {'ok':True,'names':[r['name'] for r in filtered[:count]], 'categories':cat_rows,
+            'total':len(items),'shown':min(len(filtered),count),'truncated':len(filtered)>count or len(items)>=MAX_SCAN}
 
 
 def select_image(home, name):
-    if not isinstance(name, str) or not NAME.fullmatch(name) or Path(name).suffix.lower() in EXTENSIONS:
-        raise ValueError('请从梗图库清单中选择图片名称（不要填路径或扩展名）')
+    if not _valid_selection(name):
+        raise ValueError('必须从梗图库选择完整的分类/名称，不允许扩展名或任意路径')
     folder = folder_of(home)
     items = [row for row in _list(home) if row['name'] == name]
     if len(items) != 1:
-        raise ValueError('梗图不存在或名称重复；请先查看梗图库清单')
+        raise ValueError('梗图不存在或名称重复；请先刷新梗图库')
     entry = items[0]
-    path = folder / (name + entry['type'])
-    if path.is_symlink() or not path.resolve().is_relative_to(folder.resolve()):
-        raise ValueError('禁止读取符号链接梗图')
+    path = entry['path']
+    # Prevent symlinks anywhere along the selected relative path.
+    relative = path.relative_to(folder)
+    step = folder
+    for component in relative.parts:
+        step = step / component
+        if step.is_symlink():
+            raise ValueError('禁止读取符号链接梗图或目录')
+    if not path.resolve().is_relative_to(folder.resolve()):
+        raise ValueError('梗图不在安全目录内')
     data = path.read_bytes()
     if not data or len(data) > MAX_BYTES:
         raise ValueError('梗图为空或过大（最大8MB）')
@@ -72,8 +122,7 @@ def select_image(home, name):
             w, h = img.size
             if w < 16 or h < 16 or w > 4096 or h > 4096 or w*h > 16_000_000:
                 raise ValueError('梗图像素尺寸不合适')
-            # 评论上传链路先使用已支持的 PNG/GIF/JPEG，不把 WebP 原样提交给接口。
-            # 动态 WebP 只取首帧；不声称 B站会展示动画。
+            # B站不直接上传 WebP；静态转换时，动画只取第一帧。
             if img.format == 'WEBP':
                 img.seek(0)
                 has_alpha = 'A' in img.getbands() or 'transparency' in img.info
@@ -81,15 +130,14 @@ def select_image(home, name):
                 buf = BytesIO()
                 frame.save(buf, format='PNG')
                 data = buf.getvalue()
-                filename = name + '.png'
+                filename = path.stem + '.png'
                 mime = 'image/png'
                 if len(data) > MAX_BYTES:
                     raise ValueError('WebP 转换为 PNG 后超过8MB，请压缩图片后重试')
             else:
-                # Verify actual content rather than trusting an extension or just image headers.
                 img.load()
                 mime = {'PNG':'image/png','JPEG':'image/jpeg','GIF':'image/gif'}[img.format]
-    except (UnidentifiedImageError, OSError, EOFError) as exc:
+    except (UnidentifiedImageError, OSError, EOFError):
         raise ValueError('文件内容不是有效图片') from None
     return {'name': name, 'data': data, 'type': mime, 'width': w, 'height': h, 'filename': filename}
 

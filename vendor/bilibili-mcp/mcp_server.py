@@ -1115,14 +1115,14 @@ def _comment_meme_debug(bvid, name, reason, status):
 
 
 @tool()
-async def bili_comment_meme_list() -> str:
-    """获取用户在 comment-memes 目录手动放入的梗图文件名（最多100张）。只返回名称，不读取其他本地文件。"""
+async def bili_comment_meme_list(category: str = "") -> str:
+    """获取评论梗图库分类及安全的「分类/文件名」清单；可选 category 过滤一个分类，最多100项。"""
     if (deny := _guard('bili_comment_meme_list')): return deny
     if not _comment_meme_config()[0]:
         return json.dumps({'ok':False,'error':'评论附梗图已关闭'},ensure_ascii=False)
     try:
-        from comment_memes import list_names
-        return json.dumps({'ok':True,'names':list_names(_DUTY_HOME)},ensure_ascii=False)
+        from comment_memes import list_library
+        return json.dumps(list_library(_DUTY_HOME, category=category),ensure_ascii=False)
     except Exception:
         return json.dumps({'ok':False,'error':'本地梗图库读取失败'},ensure_ascii=False)
 
@@ -1152,7 +1152,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         no_mention_reason: AI 同时生成评论时，主动选择不 @ 的一句简短解释；只保存本地给用户看
         sync_to_dynamic: AI 生成评论时同步判断，是否值得额外公开一条动态（默认 false）
         dynamic_daily_limit: 宿主设置的每日最多尝试次数；headless 会被环境变量中的用户设置覆盖
-        meme_image_name: 可选的本地梗图名称（无路径、无扩展名），来自 bili_comment_meme_list
+        meme_image_name: bili_comment_meme_list 中存在的分类/梗图名（无扩展名），不可自行拼路径
         meme_image_reason: AI 选择梗图的简短情境理由，只供用户 Debug，不公开发送
     
     Returns:

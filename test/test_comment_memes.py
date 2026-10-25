@@ -112,3 +112,49 @@ class CommentMemeTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+class CategorizedCommentMemeTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / 'comment-memes'
+        for folder in ('奶娃', '其他', '大模型娘化素材', '奶娃/经典表情'):
+            (self.root / folder).mkdir(parents=True,exist_ok=True)
+        pic=Image.new('RGBA',(40,40),(0,200,40,255))
+        pic.save(self.root/'奶娃'/'奶龙大笑.webp','WEBP')
+        pic.save(self.root/'其他'/'奶龙大笑.PNG','PNG')
+        pic.save(self.root/'奶娃'/'经典表情'/'奶龙无语.png','PNG')
+        pic.convert('RGB').save(self.root/'大模型娘化素材'/'角色震惊.jpg','JPEG')
+
+    def test_nested_names_and_select_exact_category(self):
+        names=m.list_names(self.temp.name)
+        self.assertIn('奶娃/奶龙大笑',names)
+        self.assertIn('其他/奶龙大笑',names)
+        self.assertIn('奶娃/经典表情/奶龙无语',names)
+        self.assertEqual(m.select_image(self.temp.name,'奶娃/奶龙大笑')['type'],'image/png')
+        self.assertEqual(m.select_image(self.temp.name,'其他/奶龙大笑')['type'],'image/png')
+        self.assertEqual(m.select_image(self.temp.name,'其他/奶龙大笑')['filename'],'奶龙大笑.PNG')
+        self.assertEqual(m.select_image(self.temp.name,'奶娃/经典表情/奶龙无语')['name'],'奶娃/经典表情/奶龙无语')
+        category=m.list_library(self.temp.name,category='奶娃')
+        self.assertEqual(category['shown'],2)
+        self.assertNotIn('其他/奶龙大笑',category['names'])
+        self.assertEqual(category['total'],4)
+
+    def test_malicious_path_and_symlink_folders_blocked(self):
+        for name in ('../secret', '奶娃/../secret', '/奶娃/奶龙大笑', '奶娃\\奶龙大笑',
+                     '奶娃/奶龙大笑.webp', 'C:/奶娃/奶龙大笑', '奶娃//奶龙大笑', '奶娃/./奶龙大笑'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                m.select_image(self.temp.name,name)
+        try:
+            (self.root/'泄漏').symlink_to(Path(self.temp.name),target_is_directory=True)
+        except (OSError,NotImplementedError):
+            self.skipTest('filesystem has no symlinks')
+        self.assertFalse(any(x.startswith('泄漏/') for x in m.list_names(self.temp.name)))
+
+    def test_ambiguous_names_in_same_folder_are_hidden(self):
+        pic=Image.new('RGB',(40,40),(255,0,0))
+        pic.save(self.root/'奶娃'/'奶龙大笑.png')
+        self.assertNotIn('奶娃/奶龙大笑',m.list_names(self.temp.name))
+        self.assertIn('其他/奶龙大笑',m.list_names(self.temp.name))
+        with self.assertRaises(ValueError):
+            m.select_image(self.temp.name,'奶娃/奶龙大笑')
