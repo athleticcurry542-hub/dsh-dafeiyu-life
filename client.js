@@ -268,8 +268,6 @@ function WatchTab() {
       const [dynamicDailyLimitDraft, setDynamicDailyLimitDraft] = React.useState(null)
       const [commentQuota, setCommentQuota] = React.useState(null)
       const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
-      const [memeDiagnostics, setMemeDiagnostics] = React.useState(null)
-      const [memeDiagnosticsExpanded, setMemeDiagnosticsExpanded] = React.useState(false)
       const [mentionHistoryExpanded, setMentionHistoryExpanded] = React.useState(false)
       const [memeMemory, setMemeMemory] = React.useState(null)
       const [memeKeyword, setMemeKeyword] = React.useState('')
@@ -295,6 +293,13 @@ function WatchTab() {
       const [mention, setMention] = React.useState(null)
       const [mentionTargets, setMentionTargets] = React.useState(null)
       const [mentionMode, setMentionMode] = React.useState(null)
+      const [friendProfiles,setFriendProfiles] = React.useState(null)
+      const [friendProfilesExpanded,setFriendProfilesExpanded] = React.useState(false)
+      const [loreDraft,setLoreDraft] = React.useState(null)
+      const [loreDefault,setLoreDefault] = React.useState(null)
+      const [loreExpanded,setLoreExpanded] = React.useState(false)
+      const [memeDiagnostics,setMemeDiagnostics] = React.useState(null)
+      const [memeDiagExpanded,setMemeDiagExpanded] = React.useState(false)
       const [modelDraft,setModelDraft] = React.useState(null)
       const [approvals,setApprovals] = React.useState([])
       const [approvalPhrase,setApprovalPhrase] = React.useState(null)
@@ -362,6 +367,8 @@ function WatchTab() {
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
         if (cfg && mentionMode === null) setMentionMode(cfg.mentionMode || 'ai')
+        if (cfg && friendProfiles === null) {try {setFriendProfiles(JSON.parse(cfg.mentionProfiles||'{}'))} catch {setFriendProfiles({})}}
+        if (cfg && loreDraft === null) setLoreDraft(cfg.characterLore || '')
         if (cfg && dmUid === null) setDmUid(cfg.dmUid ? String(cfg.dmUid) : '')
         if (cfg && dmMode === null) setDmMode(cfg.dmMode || 'only')
         if (cfg && dmWatch === null) setDmWatch(cfg.dmWatch !== false)
@@ -404,13 +411,11 @@ function WatchTab() {
         const timer = setInterval(tick, 10000)
         return () => { alive = false; clearInterval(timer) }
       }, [])
-
       React.useEffect(() => {
-        let alive = true
-        const tick = () => jget('/comment-meme-diagnostics').then(r => { if(alive) setMemeDiagnostics(r) }).catch(() => { if(alive) setMemeDiagnostics({ok:false}) })
-        tick()
-        const timer = setInterval(tick, 10000)
-        return () => {alive = false; clearInterval(timer)}
+        let active=true
+        const tick=()=>jget('/meme-diagnostics').then(r=>{if(active)setMemeDiagnostics(r)}).catch(()=>{if(active)setMemeDiagnostics({ok:false})})
+        tick();const id=setInterval(tick,10000)
+        return ()=>{active=false;clearInterval(id)}
       }, [])
 
       const win = { ...DEFAULT_WINDOWS, ...(st?.windows || {}) }
@@ -790,6 +795,27 @@ function WatchTab() {
             onBlur: () => {const t=String(mentionTargets??'').trim();patch(t?{mentionTargets:t}:{mentionTargets:'',clear:['mentionTargets']}, '@好友名单')},
           }),
           h('div', { 'data-bd-note': '' }, '名单为空会继承旧 mentionName。填写正确的 UID 能尝试 B站原生 @；真实提醒是否推送仍由平台决定。'),
+          h('div',{'data-bd-row':''},
+            h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每位 @ 好友的人设与兴趣'),h('div',{'data-bd-note':''},'按昵称分别配置；仅供 AI 判断是否邀请，不公开。')),
+            h('button',{'data-bd-btn':'',onClick:()=>setFriendProfilesExpanded(v=>!v)},friendProfilesExpanded?'收起好友画像':'编辑好友画像')),
+          friendProfilesExpanded ? h('div', { 'data-bd-sub': '', style:{maxHeight:'380px',overflowY:'auto',overflowWrap:'anywhere'} },
+            h('div', { 'data-bd-label': '' }, '每位 @ 好友的角色关系与兴趣（独立保存）'),
+            h('div', { 'data-bd-note': '' }, '先在上方填写昵称|UID，再为每位好友补充关系、喜欢的话题和邀请偏好。仅传给刷视频 Agent 判断适合邀请谁；不公开。最多 8 人。'),
+            ...String(mentionTargets || cfg?.mentionTargets || mention || cfg?.mentionName || '').split(/[\r\n,，;；]+/).map(x=>x.split('|')[0].trim().replace(/^@/,'')).filter((x,i,a)=>x && x.length<=40 && a.indexOf(x)===i).slice(0,8).map(name=>{
+              const v=(friendProfiles||{})[name]||{}
+              const update=(field,value)=>setFriendProfiles(old=>({...old,[name]:{...(old?.[name]||{}),[field]:value}}))
+              return h('div',{key:name,'data-bd-sub':'',style:{margin:'3px 0'}},
+                h('div',{'data-bd-label':''},name),
+                ...[['relationship','与大肥鱼是什么关系','如：老朋友、经常一起玩游戏（人设设定）'],
+                    ['interests','喜欢什么内容','如：DeepSeek、AI娘化、奶龙整活、游戏'],
+                    ['preferences','什么时候适合邀请','如：遇到反差搞笑或视觉梗时可邀请；普通新闻别@']].map(([key,label,placeholder])=>
+                      h('div',{key},h('div',{'data-bd-note':''},label),h('input',{'data-bd-input':'',value:v[key]||'',placeholder,
+                        maxLength:key==='interests'?400:key==='preferences'?240:100,
+                        onChange:e=>update(key,e.target.value)})))
+              )
+            }),
+            h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'','data-primary':'',disabled:Boolean(busy),onClick:()=>patch({mentionProfiles:JSON.stringify(friendProfiles||{})},'每位好友的@画像')},'保存好友人设／兴趣')),
+            h('div',{'data-bd-note':''},'AI 根据真实视频内容与画像匹配，不会保证每条评论都@。修改后请点保存；自定义资料不会替代 UID 校验。')) : null,
           h('div', { 'data-bd-label': '' }, '公开评论 @ 策略'),
           h('select', { 'data-bd-input': '', value: mentionMode ?? 'ai', onChange:(e)=>{setMentionMode(e.target.value);patch({mentionMode:e.target.value}, '@ 策略')} },
             h('option', {value:'ai'}, '视情况 @ 所有好友（旧版兼容）'),
@@ -827,6 +853,20 @@ function WatchTab() {
                     `${x.bvid} · ${x.kind === 'reply' ? '楼中楼' : '顶层'} · ${x.success ? (x.mention_attempted ? '尝试 @' : '未 @') : '发送未成功'} · ${reasonText}${aiExplanation}`)
                 })))
             : h('div', { 'data-bd-note': '' }, mentionDiagnostics?.ok ? '今天还没有新版诊断记录。' : ''),
+          h('div', { 'data-bd-sep': '' }),
+          h('div', { 'data-bd-h': '' }, '今日梗图诊断'),
+          h('div', { 'data-bd-note': '' }, 'AI 是否选图、选择原因和真实发送回执由本地记录，不依赖日报；接口接受不代表图片已公开展示。'),
+          h('div', { 'data-bd-label': '' }, memeDiagnostics?.ok
+            ? `顶层评论 ${memeDiagnostics.total} 条 · 尝试附图 ${memeDiagnostics.attempted} 条 · 未附图 ${memeDiagnostics.notAttached} 条`
+            : '今日附图诊断：暂不可读取'),
+          memeDiagnostics?.ok && memeDiagnostics.failed ? h('div',{'data-bd-note':''},`另有 ${memeDiagnostics.failed} 次评论未成功`) : null,
+          memeDiagnostics?.ok && memeDiagnostics.recent?.length ? h('div',{'data-bd-sub':''},
+            h('div',{'data-bd-row':''},h('span',{'data-bd-note':''},memeDiagExpanded?'最近最多 12 条（滚动查看）':'默认最近 3 条'),
+              memeDiagnostics.recent.length>3 ? h('button',{'data-bd-btn':'',onClick:()=>setMemeDiagExpanded(v=>!v)},memeDiagExpanded?'收起':'展开最近 12 条'):null),
+            h('div',{style:{maxHeight:memeDiagExpanded?'220px':'none',overflowY:memeDiagExpanded?'auto':'visible',overflowWrap:'anywhere'}},
+              ...(memeDiagExpanded?memeDiagnostics.recent:memeDiagnostics.recent.slice(0,3)).map((x,i)=>
+                h('div',{key:(x.time||'')+i,'data-bd-note':''},`${x.bvid} · ${x.success?'已评论':'评论未成功'} · ${x.status==='ai_declined'?'未选图':x.status==='submitted_unverified'?'尝试附图（展示未验证）':x.status} · ${x.image||''}${x.reason?' · AI说明：'+x.reason:''}`)))
+          ) : h('div',{'data-bd-note':''},memeDiagnostics?.ok?'今天还没有新版梗图诊断。':''),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信内容 = 本轮每条的「标题 + 链接 + 一句话」，一轮合并成一条发。⚠️ 建议先让这个号和收件人互关：B站 对「陌生人私信」会限流，还可能不弹提醒。') : null,
 
           (dmMode === 'off' || dmMode === 'both') ? h('div', { 'data-bd-sep': '' }) : null,
@@ -881,30 +921,8 @@ function WatchTab() {
             note:'默认关闭。仅使用你自己放入 comment-memes 文件夹的 PNG/JPG/GIF/WebP 图片（WebP 发送时转换为静态 PNG）。AI 在写评论时看情绪决定是否附图；真实上传和发送需要 B站接口许可。',
             on:sw('commentMemesEnabled'),onChange:v=>patch({commentMemesEnabled:v},'评论附梗图')}),
           h(ToggleRow, {label:'Debug：记录 AI 选择的梗图',
-            note:'除自动生成的「今日梗图诊断」外，额外记录已选梗图的发送调试数据到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
+            note:'保存 BV号、梗图名、选择原因和发送状态到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
             on:sw('commentMemesDebug'),onChange:v=>patch({commentMemesDebug:v},'梗图 Debug')}),
-          h('div',{'data-bd-sub':''},
-            h('div',{'data-bd-h':''},'今日梗图诊断'),
-            h('div',{'data-bd-note':''},'AI 发评论时顺带说明不附图的原因，程序直接记录；接口接受带图评论不代表 B站已公开显示图片。'),
-            h('div',{'data-bd-label':''},memeDiagnostics?.ok
-              ? `已发表评论 ${memeDiagnostics.total} 条 · 带图已提交 ${memeDiagnostics.attached} 条 · 未附图 ${memeDiagnostics.notAttached} 条`
-              : '今日梗图数据：暂不可读取'),
-            memeDiagnostics?.ok && memeDiagnostics.failed
-              ? h('div',{'data-bd-note':''},`另有 ${memeDiagnostics.failed} 次发送未成功；实际图片上传尝试 ${memeDiagnostics.uploadAttempts} 次`) : null,
-            memeDiagnostics?.ok && memeDiagnostics.recent?.length
-              ? h('div',null,
-                  h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
-                    h('span',{'data-bd-note':''},memeDiagnosticsExpanded?'最近最多12条（内部滚动）':'默认显示最近3条'),
-                    memeDiagnostics.recent.length>3?h('button',{'data-bd-btn':'',onClick:()=>setMemeDiagnosticsExpanded(x=>!x)},memeDiagnosticsExpanded?'收起':'展开最近12条'):null),
-                  h('div',{style:{maxHeight:memeDiagnosticsExpanded?'220px':'none',overflowY:memeDiagnosticsExpanded?'auto':'visible',overflowWrap:'anywhere'}},
-                    ...(memeDiagnosticsExpanded?memeDiagnostics.recent:memeDiagnostics.recent.slice(0,3)).map((x,i)=>{
-                      const what=({ai_skipped:'AI 未选图',disabled:'未开启附图',submitted_unverified:'带图已提交（未验证公开展示）',
-                        quota_reached:'附图额度已满',not_sent:'选图但发送失败',not_verified:'图片结果未验证',
-                        comment_rejected:'B站拒绝带图评论',receipt_unverified:'评论回执未核实',uncertain_no_retry:'发送不确定，禁止重试'})[x.status]||'图片状态未知'
-                      return h('div',{key:(x.time||'')+i,'data-bd-note':''},
-                        `${x.bvid} · ${x.success?'已发送':'发送未成功'} · ${what}${x.image?' · '+x.image:''}${x.ai_reason?' · AI说明：'+x.ai_reason:(x.status==='ai_skipped'?' · AI未填写原因':'')}`)
-                    })))
-                : h('div',{'data-bd-note':''},memeDiagnostics?.ok?'今天还没有新版诊断记录。':'')),
           sw('commentMemesEnabled') ? h('div',{'data-bd-sub':''},
             ...[['commentMemesPerDay',memeImageDailyDraft,setMemeImageDailyDraft,10000,'每日最多尝试附图几次'],
                 ['commentMemesPerRound',memeImageRoundDraft,setMemeImageRoundDraft,5,'每轮最多尝试附图几次']].map(([key,draft,setter,max,label])=>h('div',{'data-bd-row':'',key},
@@ -912,7 +930,7 @@ function WatchTab() {
               h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:0,max,value:draft??'',
                 onChange:e=>setter(e.target.value),onBlur:()=>{const n=Math.max(0,Math.min(max,Math.floor(Number(draft)||0)));setter(String(n));patch({[key]:n},label)}}))),
             h('div',{'data-bd-note':''},'每日附图尝试次数可设 0–10000（0 表示不附图）；每轮最多 5 次仍单独限制。AI 只有选择合适梗图时才使用额度。'),
-            h('div',{'data-bd-note':''},'梗图库支持分类子文件夹：comment-memes/奶娃/奶龙大笑.webp、comment-memes/其他/无语.png。AI 每轮先看到最多30个真实梗图名，再按视频桥段与评论情绪选择；不强制附图，选图时使用「分类/图片名」，同一目录勿放同名不同格式。每张最大8MB；WebP 动图只取首帧。'),
+            h('div',{'data-bd-note':''},'梗图库支持分类子文件夹：comment-memes/奶娃/奶龙大笑.webp、comment-memes/其他/无语.png。AI 按视频桥段和评论情绪判断是否附图（默认不附），选图时使用「分类/图片名」，同一目录勿放同名不同格式。每张最大8MB；WebP 动图只取首帧。'),
             h('div',{'data-bd-row':''},
               h('div',{'data-bd-grow':''},
                 h('div',{'data-bd-label':''},'AI 选图提示词（可自定义）'),
@@ -1251,6 +1269,22 @@ function WatchTab() {
             (st.personaFromWs && String(persona || '').trim() === '')
               ? '你现在还是用「工作区」里那份 AGENTS.md 说话的（照旧生效）。想把它搬到这儿改，就把上面的路径填成本机那个目录。'
               : '改完点下面「保存」；下一轮就按这个说话。'),
+          h('div', { 'data-bd-row': '' },h('div',{'data-bd-grow':''},
+            h('div',{'data-bd-label':''},'大肥鱼与 DeepSeek／模型拟人角色的关系设定'),
+            h('div',{'data-bd-note':''},'默认内置角色背景；可改为你自己的世界观，和上面的人设一起生效。')), 
+            h('button',{'data-bd-btn':'',onClick:async()=>{
+              if(loreExpanded){setLoreExpanded(false);return}
+              try{let def=loreDefault;if(def===null){const r=await jget('/character-lore-default');def=r.prompt||'';setLoreDefault(def)}
+                setLoreDraft(cfg.characterLore||def);setLoreExpanded(true)}catch(e){say('读取角色背景失败：'+String(e?.message||e),'warn')}
+            }},loreExpanded?'收起':'查看／编辑')),
+          loreExpanded ? h('div',{'data-bd-sub':''},
+            h('textarea',{'data-bd-input':'',rows:9,maxLength:4000,style:{minHeight:'144px',resize:'vertical'},
+              value:loreDraft??'',onChange:e=>setLoreDraft(e.target.value)}),
+            h('div',{'data-bd-row':''},
+              h('span',{'data-bd-note':''},`${(loreDraft||'').length}/4000`),
+              h('button',{'data-bd-btn':'','data-primary':'',onClick:()=>patch({characterLore:(loreDraft||'')===loreDefault?'':loreDraft,clear:(loreDraft||'')===loreDefault?['characterLore']:[]},'大肥鱼角色关系设定')},'保存关系设定'),
+              h('button',{'data-bd-btn':'',onClick:async()=>{setLoreDraft(loreDefault||'');await patch({characterLore:'',clear:['characterLore']},'恢复默认角色背景')}},'恢复默认')),
+            h('div',{'data-bd-note':''},'这是虚构角色关系，不代表真实品牌或UP主的授权与关系；不会自动改写你已有的人设。')):null,
           h('div', { 'data-bd-label': '' }, '日报写多细'),
           h('select', {
             'data-bd-input': '', value: rl ?? 'full',

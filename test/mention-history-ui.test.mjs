@@ -14,7 +14,7 @@ test('settings UI shows counts and reasons without another model',()=>{
   assert.ok(ui.includes("jget('/mention-diagnostics')"))
 })
 test('tool no longer returns verbose AI-facing mention decision, but preserves receipt',()=>{
-  assert.ok(py.includes('return _comment_result(out, bvid, rpid, mention_diagnostic, meme_diagnostic)'))
+  assert.ok(py.includes('return _result(out, bvid, rpid, mention_diagnostic)'))
   assert.ok(!py.includes('"mention_diagnostic": mention_diagnostic'))
   assert.ok(py.includes('"mention_delivery": "uid_mapping_submitted_unverified"'))
 })
