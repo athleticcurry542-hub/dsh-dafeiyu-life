@@ -308,8 +308,15 @@ MIT（内置的 `vendor/bilibili-mcp/` 另见该目录下的 LICENSE）
 
 ### v2.4.15：本地梗图可选附在顶层评论
 
-新增 `commentMemesEnabled`（默认关）、`commentMemesDebug`、`commentMemesPerDay`（默认2）、`commentMemesPerRound`（默认1）。图片存放在 `bili-duty/comment-memes/`，仅接受用户自己放入的 PNG/JPG/GIF 文件，AI 通过文件名选择，程序按限额尝试上传并提交单张图片到 B站视频顶层评论。Debug 结果位于 `bili-duty/comment-memes-debug/`；成功回执无法证明图片最终公开可见。本版修复 `bimp.hdslb.com` 视频预览图片白名单，未扩展为任意 B站图片域名。动态附梗图尚未实现。详见 `覆盖说明-v2.4.15.md`。
+新增 `commentMemesEnabled`（默认关）、`commentMemesDebug`、`commentMemesPerDay`（默认2）、`commentMemesPerRound`（默认1）。图片存放在 `bili-duty/comment-memes/`，仅接受用户自己放入的 PNG/JPG/GIF/WebP 文件（WebP 发送前转静态 PNG，只取动图首帧），AI 通过文件名选择，程序按限额尝试上传并提交单张图片到 B站视频顶层评论。Debug 结果位于 `bili-duty/comment-memes-debug/`；成功回执无法证明图片最终公开可见。本版修复 `bimp.hdslb.com` 视频预览图片白名单，未扩展为任意 B站图片域名。动态附梗图尚未实现。详见 `覆盖说明-v2.4.15.md`。
 
 
 ## v2.4.16：新版 B站预览图兼容
 支持 `bimp.hdslb.com/videoshotpvhdboss/` 预览拼图及 `pvdata` 二进制时间索引，同时保留旧格式、安全校验与全部 v2.4.15 功能。详见 `覆盖说明-v2.4.16.md`。
+
+### v2.4.17：梗图 WebP + 更高每日附图额度
+
+- `comment-memes/` 支持 `.webp` 文件（包括中文文件名）；刷新梗图库会列出。PNG/JPG/JPEG/GIF 仍兼容。
+- 选择 WebP 发送时先由 Python Pillow 在本地转为静态 PNG；动态 WebP 仅取第一帧。单张源图和转换后图片均不得超过 8 MB。
+- 评论图片**每日尝试额度**改为可设置 0–10000 次，默认 2；`0` 相当于不尝试附图。**每轮上限**继续为 0–5 次，默认 1，不能被每日额度覆盖。
+- 图片发送仍默认关闭，需要在「公开评论」里主动开启；接口接收不等于确认 B站公开显示图片。

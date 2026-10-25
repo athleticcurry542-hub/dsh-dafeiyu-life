@@ -342,7 +342,7 @@ function reportMeta() {
     if ('memeMemoryMaxEntries' in p) { const n=Number(p.memeMemoryMaxEntries); p.memeMemoryMaxEntries=Number.isFinite(n)?Math.max(10,Math.min(2000,Math.floor(n))):300 }
     if ('homeRecommendationsEnabled' in p) p.homeRecommendationsEnabled = p.homeRecommendationsEnabled === true
     for (const k of ['commentMemesEnabled','commentMemesDebug']) if (k in p) p[k]=p[k]===true
-    if ('commentMemesPerDay' in p) p.commentMemesPerDay=Math.max(0,Math.min(20,Math.floor(Number(p.commentMemesPerDay)||0)))
+    if ('commentMemesPerDay' in p) p.commentMemesPerDay=Math.max(0,Math.min(10000,Math.floor(Number(p.commentMemesPerDay)||0)))
     if ('commentMemesPerRound' in p) p.commentMemesPerRound=Math.max(0,Math.min(5,Math.floor(Number(p.commentMemesPerRound)||0)))
     for (const k of ['visionEnabled','visionDebug']) if (k in p) p[k]=p[k]===true
     if ('visionModelProvider' in p) p.visionModelProvider=['anthropic','openai'].includes(p.visionModelProvider)?p.visionModelProvider:'anthropic'
@@ -2495,10 +2495,10 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         const folder = join(stateDir,'comment-memes')
         mkdirSync(folder,{recursive:true})
         if (lstatSync(folder).isSymbolicLink()) return sendJson(res,200,{ok:false,names:[],error:'梗图库目录不能是符号链接'})
-        const names = readdirSync(folder).filter(name => /\.(?:png|jpe?g|gif)$/i.test(name))
+        const names = readdirSync(folder).filter(name => /\.(?:png|jpe?g|gif|webp)$/i.test(name))
           .filter(name => !/[\\/\x00-\x1f<>:"|?*]/.test(name) && name.length <= 64)
           .filter(name => {try {const st=lstatSync(join(folder,name));return st.isFile() && !st.isSymbolicLink() && st.size <= 8*1024*1024 && st.size>0} catch {return false}})
-          .slice(0,100).map(name=>name.replace(/\.(?:png|jpe?g|gif)$/i,''))
+          .slice(0,100).map(name=>name.replace(/\.(?:png|jpe?g|gif|webp)$/i,''))
         return sendJson(res,200,{ok:true,names,home:folder})
       } catch {return sendJson(res,200,{ok:false,names:[],error:'无法读取梗图库目录'})}
     }

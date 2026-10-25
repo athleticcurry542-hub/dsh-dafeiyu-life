@@ -1099,7 +1099,7 @@ _COMMENT_MEME_ROUND_USED = set()
 
 def _comment_meme_config():
     enabled = os.environ.get('BILI_COMMENT_MEMES_ENABLED') == '1'
-    day = max(0, min(20, int(os.environ.get('BILI_COMMENT_MEMES_PER_DAY','2'))))
+    day = max(0, min(10000, int(os.environ.get('BILI_COMMENT_MEMES_PER_DAY','2'))))
     run = max(0, min(5, int(os.environ.get('BILI_COMMENT_MEMES_PER_ROUND','1'))))
     return enabled, day, run
 

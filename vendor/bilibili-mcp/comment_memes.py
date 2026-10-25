@@ -14,7 +14,7 @@ import sqlite3
 import urllib.parse
 import urllib.request
 
-EXTENSIONS = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif'}
+EXTENSIONS = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp'}
 NAME = re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,48}$')
 MAX_BYTES = 8 * 1024 * 1024
 
@@ -62,17 +62,36 @@ def select_image(home, name):
     if not data or len(data) > MAX_BYTES:
         raise ValueError('梗图为空或过大（最大8MB）')
     from PIL import Image, UnidentifiedImageError
+    filename = path.name
     try:
         with Image.open(BytesIO(data)) as img:
-            if img.format not in ('PNG', 'JPEG', 'GIF'):
-                raise ValueError('只允许真实的 PNG/JPEG/GIF 图片')
+            if img.format not in ('PNG', 'JPEG', 'GIF', 'WEBP'):
+                raise ValueError('只允许真实的 PNG/JPEG/GIF/WebP 图片')
+            if entry['type'] == '.webp' and img.format != 'WEBP':
+                raise ValueError('WebP 文件内容与扩展名不符')
             w, h = img.size
             if w < 16 or h < 16 or w > 4096 or h > 4096 or w*h > 16_000_000:
                 raise ValueError('梗图像素尺寸不合适')
-            mime = {'PNG':'image/png','JPEG':'image/jpeg','GIF':'image/gif'}[img.format]
-    except (UnidentifiedImageError, OSError) as exc:
+            # 评论上传链路先使用已支持的 PNG/GIF/JPEG，不把 WebP 原样提交给接口。
+            # 动态 WebP 只取首帧；不声称 B站会展示动画。
+            if img.format == 'WEBP':
+                img.seek(0)
+                has_alpha = 'A' in img.getbands() or 'transparency' in img.info
+                frame = img.convert('RGBA' if has_alpha else 'RGB')
+                buf = BytesIO()
+                frame.save(buf, format='PNG')
+                data = buf.getvalue()
+                filename = name + '.png'
+                mime = 'image/png'
+                if len(data) > MAX_BYTES:
+                    raise ValueError('WebP 转换为 PNG 后超过8MB，请压缩图片后重试')
+            else:
+                # Verify actual content rather than trusting an extension or just image headers.
+                img.load()
+                mime = {'PNG':'image/png','JPEG':'image/jpeg','GIF':'image/gif'}[img.format]
+    except (UnidentifiedImageError, OSError, EOFError) as exc:
         raise ValueError('文件内容不是有效图片') from None
-    return {'name': name, 'data': data, 'type': mime, 'width': w, 'height': h, 'filename': path.name}
+    return {'name': name, 'data': data, 'type': mime, 'width': w, 'height': h, 'filename': filename}
 
 
 def reserve_attempt(home, per_day, per_round, round_counter):
