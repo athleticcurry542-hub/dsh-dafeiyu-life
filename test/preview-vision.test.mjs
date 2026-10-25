@@ -20,5 +20,5 @@ test('MCP 只接受 bvid，必须先过白名单与总开关',()=>{
 })
 test('前端有两个开关和独立视觉模型与测试按钮',()=>{
  const ui=txt('client.js')
- for(const s of ['预览识图','保存实际预览图','visionModelProvider','visionModelId','visionEndpoint','vision-preview-test'])assert.ok(ui.includes(s))
+ for(const s of ['预览识图','保存实际预览图','visionModelProvider','visionModelId','vision-preview-test'])assert.ok(ui.includes(s))
 })

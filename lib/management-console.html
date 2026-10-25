@@ -11,25 +11,68 @@
 button,.button{border:1px solid var(--stroke);border-radius:9px;background:var(--panel);color:var(--ink);padding:8px 13px;text-decoration:none}button:hover,.button:hover{background:var(--tint)}.tabs button[aria-selected="true"],button.primary{background:var(--action);color:var(--page);border-color:var(--action)}.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.toolbar input{flex:1;min-width:170px}
 input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid var(--stroke);border-radius:8px;padding:9px 11px}textarea{resize:vertical;width:100%;min-height:86px}label{display:block;font-size:13px;font-weight:600;margin-bottom:5px}.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.row>*{flex-shrink:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(275px,1fr));gap:13px}
 .card{border:1px solid var(--stroke);background:var(--panel);padding:17px;border-radius:13px;min-width:0;overflow-wrap:anywhere}.card h3{margin:0 0 8px;font-size:16px}.card p{margin:6px 0}.card .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.card .actions button{font-size:13px;padding:5px 10px}.pill{display:inline-block;border-radius:30px;padding:2px 9px;font-size:12px;background:var(--tint);color:var(--action);margin-right:6px}.pill.pending{background:#fff0d2;color:#8c6200}.pill.rejected{background:#fae7e7;color:#9b4747}#message{min-height:25px;margin:12px 0;color:var(--action)}.actions .danger{color:var(--bad)}section[hidden]{display:none!important}
-.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:11px}.fields>*{min-width:0}.fields input,.fields select{width:100%}.inset{padding:12px 0;border-top:1px dashed var(--stroke);margin-top:13px}.queue-badge{display:inline-flex;min-width:20px;justify-content:center;background:#d54949;color:#fff;border-radius:12px;font-size:11px;padding:1px 5px}#growth-context{white-space:pre-wrap;max-height:200px;overflow:auto;font-size:12px;background:var(--tint);padding:12px;border-radius:8px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:11px}.fields>*{min-width:0}.fields input,.fields select{width:100%}.fields input[type=checkbox]{width:22px;height:22px}.inset{padding:12px 0;border-top:1px dashed var(--stroke);margin-top:13px}.queue-badge{display:inline-flex;min-width:20px;justify-content:center;background:#d54949;color:#fff;border-radius:12px;font-size:11px;padding:1px 5px}#growth-context{white-space:pre-wrap;max-height:200px;overflow:auto;font-size:12px;background:var(--tint);padding:12px;border-radius:8px}pre.output{white-space:pre-wrap;overflow:auto;max-height:65vh;background:var(--tint);border-radius:8px;padding:14px;font-size:12px} .records{display:grid;gap:9px}.record{border:1px solid var(--stroke);border-radius:9px;padding:11px;overflow-wrap:anywhere}.record a{color:var(--action)}.checkline{display:flex;align-items:center;gap:8px}.checkline label{margin:0}
 @media(max-width:580px){.wrap{padding:15px 12px 35px}.top h1{font-size:21px}.tabs button{flex:1}}
 </style>
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
 <body><main class="wrap">
-<header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">成长记忆 · 梗知识 · 聊天申请｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
-<nav class="tabs" aria-label="管理分类"><button data-tab="growth" aria-selected="true">成长记忆 <span id="growth-count" class="queue-badge" hidden></span></button><button data-tab="meme" aria-selected="false">梗知识库 <span id="meme-count" class="queue-badge" hidden></span></button><button data-tab="dm" aria-selected="false">聊天申请 <span id="dm-count" class="queue-badge" hidden></span></button></nav>
+<header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">今日诊断 · 每日报告 · 后台私信 · 最近评论 · 成长记忆 · 梗知识｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
+<nav class="tabs" aria-label="管理分类">
+<button data-tab="diagnostics" aria-selected="true">今日诊断</button>
+<button data-tab="reports" aria-selected="false">每日报告</button>
+<button data-tab="dm" aria-selected="false">后台私信 <span id="dm-count" class="queue-badge" hidden></span></button>
+<button data-tab="comments" aria-selected="false">最近评论</button>
+<button data-tab="growth" aria-selected="false">成长记忆 <span id="growth-count" class="queue-badge" hidden></span></button>
+<button data-tab="meme" aria-selected="false">梗知识库 <span id="meme-count" class="queue-badge" hidden></span></button>
+</nav>
 <p id="message" role="status" aria-live="polite"></p>
-<section id="panel-growth"><div class="card"><h3>新增成长反馈</h3><p class="muted">只能写入待审核经验；核心人设由你控制，不自动修改。</p><div class="toolbar"><select id="growth-type"><option value="style">评论表达</option><option value="interest">长期兴趣</option><option value="experience">视频经历</option><option value="relationship">角色关系观察</option></select><button id="growth-add" class="primary">保存待审核</button><button id="growth-sync">从日报提取兴趣</button><button id="growth-undo">撤销最近修改</button></div><textarea id="growth-draft" maxlength="230" placeholder="例如：与大肥鱼自己有关的玩梗视频，不要因为没有技术价值就跳过"></textarea></div>
+<section id="panel-diagnostics">
+<div class="toolbar"><h2 style="margin:0">今日诊断</h2><button id="diag-refresh" class="primary">刷新诊断</button></div>
+<div class="grid">
+<article class="card"><h3>今日 @ 诊断</h3><p class="muted">记录顶层评论的 @ 决策原因。尝试 @ 不保证 B站 一定通知送达。</p><div id="mention-summary" class="muted">正在读取…</div><div id="mention-list" class="records"></div></article>
+<article class="card"><h3>今日梗图诊断</h3><p class="muted">显示 AI 是否选图、附图回执与本地原因；工具接受不等于图片一定公开展示。</p><div id="meme-summary" class="muted">正在读取…</div><div id="meme-diag-list" class="records"></div></article>
+</div>
+</section>
+<section id="panel-reports" hidden>
+<div class="toolbar"><h2 style="margin:0">每日报告</h2><input id="report-day" type="date"><button id="report-load" class="primary">读取报告</button><button id="report-copy">复制报告文本</button></div>
+<p id="report-meta" class="muted">报告只从本机 out 目录读取，不会重新调用模型。</p><pre id="report-content" class="output">选择日期后读取。</pre>
+</section>
+<section id="panel-comments" hidden>
+<div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><h3>后台评论互动设置</h3><button id="comments-refresh">刷新状态与记录</button></div><p id="comments-status" class="muted">正在读取状态…</p>
+<div class="fields">
+<div class="checkline"><input id="comment-watch-replies" type="checkbox"><label for="comment-watch-replies">后台回复别人对我的评论</label></div>
+<div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>
+<div class="checkline"><input id="comment-allow-general-top" type="checkbox"><label for="comment-allow-general-top">允许回复一般有趣的热评</label></div>
+<div><label for="comment-top-count">每视频查看热评数（1–20）</label><input id="comment-top-count" type="number" min="1" max="20" value="5"></div>
+<div><label for="comment-top-videos">每轮检查视频数（1–6）</label><input id="comment-top-videos" type="number" min="1" max="6" value="3"></div>
+<div><label for="comment-per-poll">每轮最多回复（1–5）</label><input id="comment-per-poll" type="number" min="1" max="5" value="1"></div>
+<div><label for="comment-per-day">近24小时最多回复（1–30）</label><input id="comment-per-day" type="number" min="1" max="30" value="5"></div>
+</div><div class="actions"><button id="comments-settings-save" class="primary">保存评论互动设置</button></div></div>
+<div class="toolbar"><h2 style="margin:0">最近公开评论记录</h2><select id="comments-limit"><option value="20">最近20条</option><option value="50" selected>最近50条</option><option value="100">最近100条</option></select><button id="comments-load">刷新记录</button></div><p class="muted">数据来自本地判重表，仅保存评论 ID、时间和正文短摘要；记录存在不代表 B站 当前仍公开可见。可用「复核评论」再查。</p><div id="recent-comments-list" class="records"></div>
+</section>
+<section id="panel-growth" hidden><div class="card"><h3>新增成长反馈</h3><p class="muted">只能写入待审核经验；核心人设由你控制，不自动修改。</p><div class="toolbar"><select id="growth-type"><option value="style">评论表达</option><option value="interest">长期兴趣</option><option value="experience">视频经历</option><option value="relationship">角色关系观察</option></select><button id="growth-add" class="primary">保存待审核</button><button id="growth-sync">从日报提取兴趣</button><button id="growth-undo">撤销最近修改</button></div><textarea id="growth-draft" maxlength="230" placeholder="例如：与大肥鱼自己有关的玩梗视频，不要因为没有技术价值就跳过"></textarea></div>
 <div class="toolbar" style="margin-top:14px"><h2 style="margin:0">成长经验</h2><select id="growth-filter"><option value="">全部状态</option><option value="pending">待审核</option><option value="approved">已批准</option><option value="rejected">已忽略</option></select></div><div class="grid" id="growth-list"></div><div class="card" style="margin-top:14px"><h3>下一轮会注入的人设经验（只读）</h3><pre id="growth-context"></pre></div></section>
 <section id="panel-meme" hidden><div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗先待审核；旧记录自动保留可用。修改后可手动批准或拒绝，不删除原视频证据。</p><div class="grid" id="meme-list"></div></section>
-<section id="panel-dm" hidden><div class="card" style="margin-bottom:16px"><h3>申请与回复额度设置</h3>
-<p class="muted">更改后立即同步到 DSH 插件本地配置。可信白名单不受这些额度约束。</p>
-<div class="fields"><div><label for="dm-enable">开启限额聊天申请</label><input id="dm-enable" type="checkbox" style="width:22px;height:22px"></div>
+<section id="panel-dm" hidden>
+<div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><h3>后台私信状态</h3><button id="dm-network-test">测试私信接口连接</button><button id="dm-refresh">刷新状态与会话</button></div><p id="dm-status" class="muted">正在读取后台状态…</p><p id="dm-error" class="muted"></p><p class="muted">网络失败会显示接口主机与底层错误码；如果出现 ECONNRESET、ENETUNREACH、ETIMEDOUT 或 DNS 错误，需同时检查系统网络／代理与 B站连通性。</p></div>
+<div class="card" style="margin-bottom:14px"><h3>后台私信规则</h3><p class="muted">修改后保存到 DSH 本机配置。陌生人自动回复默认关闭；开启前请确认你接受自动回复行为。</p>
+<div class="fields">
+<div class="checkline"><input id="dm-watch" type="checkbox"><label for="dm-watch">启用后台私信监听</label></div>
+<div class="checkline"><input id="dm-stranger-enabled" type="checkbox"><label for="dm-stranger-enabled">允许陌生人自动回复</label></div>
+<div><label for="dm-whitelist">白名单 UID（换行或逗号分隔）</label><textarea id="dm-whitelist" maxlength="5000" placeholder="12345678&#10;87654321"></textarea></div>
+<div><label for="dm-interval">检查间隔（分钟，1–120）</label><input id="dm-interval" type="number" min="1" max="120" value="1"></div>
+<div><label for="dm-reply-per-day">每日自动回复上限（0=不限，最大1000）</label><input id="dm-reply-per-day" type="number" min="0" max="1000" value="0"></div>
+<div><label for="dm-stranger-max">每个陌生人最多回复次数（1–20）</label><input id="dm-stranger-max" type="number" min="1" max="20" value="1"></div>
+<div class="checkline"><input id="dm-first-fixed" type="checkbox"><label for="dm-first-fixed">陌生人第一条使用固定欢迎语</label></div>
+<div><label for="dm-welcome">陌生人固定欢迎语（最多450字）</label><textarea id="dm-welcome" maxlength="450"></textarea></div>
+<div class="checkline"><input id="dm-approval-enabled" type="checkbox"><label for="dm-approval-enabled">允许陌生人申请继续聊天</label></div>
 <div><label for="dm-phrase">申请暗号</label><input id="dm-phrase" maxlength="60" placeholder="白饭🍚"></div>
-<div><label for="dm-total">已审批用户累计上限</label><input id="dm-total" type="number" min="1" max="10000" value="50"></div>
-<div><label for="dm-daily">已审批用户每日上限</label><input id="dm-daily" type="number" min="1" max="1000" value="10"></div></div>
-<div class="actions" style="margin-top:12px"><button id="dm-settings-save" class="primary">保存申请规则</button><button id="dm-settings-reload">重新读取</button></div></div>
-<div class="toolbar"><h2 style="margin:0">限额聊天申请</h2><select id="dm-filter"><option value="pending">只看待审批</option><option value="">全部申请</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select></div><p class="muted">这里只审核 B站用户申请，不修改可信白名单。通过后仍受你设置的每日／累计聊天限额控制。</p><div class="grid" id="dm-list"></div></section>
+<div><label for="dm-total">获批用户累计回复上限（1–10000）</label><input id="dm-total" type="number" min="1" max="10000" value="50"></div>
+<div><label for="dm-daily">获批用户每日回复上限（1–1000）</label><input id="dm-daily" type="number" min="1" max="1000" value="10"></div>
+</div><div class="actions"><button id="dm-settings-save" class="primary">保存私信规则</button><button id="dm-settings-reload">重新读取</button></div></div>
+<div class="toolbar"><h2 style="margin:0">限额聊天申请</h2><select id="dm-filter"><option value="pending">只看待审批</option><option value="">全部申请</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select></div><p class="muted">这里只审核 B站 用户申请，不修改可信白名单。通过后仍受每日／累计额度控制。</p><div class="grid" id="dm-list"></div>
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>最近私信会话</h3><button id="dm-recent-reload">刷新会话</button></div><p class="muted">只显示本插件已经保存的对话片段；不从 B站 额外拉取完整历史。记录仅在本机展示。</p><div id="dm-recent-list" class="records"></div></div>
+</section>
 <footer class="muted" style="margin-top:30px">数据只保存在本机 DSH 插件目录；此页面不从第三方加载脚本。若页面打不开，请先从 DSH 的「刷B站」设置点击管理中心入口。</footer>
 </main></body></html>

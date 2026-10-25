@@ -110,3 +110,15 @@ test('newly received stranger messages get a single acknowledgment even after ma
   for(let i=0;i<3;i++) assert.equal((await m.make().poll()).sent,0)
   assert.equal(m.sent.length,1)
 })
+
+
+test('recent conversation list returns only bounded local snippets', async()=>{
+  const m=await mk();const agent=m.make();await agent.poll();
+  m.inbox.push(msg('200','1','最近一条消息'));
+  assert.equal((await agent.poll()).sent,1);
+  const rows=await agent.listRecentConversations(10);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].uid,'200');
+  assert.equal(rows[0].recent.at(-1).role,'assistant');
+  assert.match(rows[0].recent.at(-1).text,/AI:最近一条消息/);
+});

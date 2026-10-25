@@ -257,28 +257,9 @@ function WatchTab() {
       const [perRound, setPerRound] = React.useState(null)
       const [dmUid, setDmUid] = React.useState(null)        // 私信收件人 UID（本地草稿）
       const [dmWatch, setDmWatch] = React.useState(null)          // 后台私信总开关
-      const [dmWhitelist, setDmWhitelist] = React.useState(null)
-      const [dmStrangerText, setDmStrangerText] = React.useState(null)
-      const [dmStrangerMax, setDmStrangerMax] = React.useState(null)
-      const [commentTopCount, setCommentTopCount] = React.useState(null)
-      const [commentTopVideoCount, setCommentTopVideoCount] = React.useState(null)
-      const [commentReplyPerPoll, setCommentReplyPerPoll] = React.useState(null)
-      const [commentReplyPerDay, setCommentReplyPerDay] = React.useState(null)
       const [dailyPublicCommentLimit, setDailyPublicCommentLimit] = React.useState(null)
       const [dynamicDailyLimitDraft, setDynamicDailyLimitDraft] = React.useState(null)
       const [commentQuota, setCommentQuota] = React.useState(null)
-      const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
-      const [mentionHistoryExpanded, setMentionHistoryExpanded] = React.useState(false)
-      const [memeMemory, setMemeMemory] = React.useState(null)
-      const [growth, setGrowth] = React.useState(null)
-      const [growthDraft, setGrowthDraft] = React.useState('')
-      const [growthType, setGrowthType] = React.useState('style')
-      const [growthBusy, setGrowthBusy] = React.useState(false)
-      const [growthExpanded, setGrowthExpanded] = React.useState(false)
-      const [growthStatus, setGrowthStatus] = React.useState('')
-      const [memeKeyword, setMemeKeyword] = React.useState('')
-      const [memeBusy, setMemeBusy] = React.useState(false)
-      const [memeHistoryExpanded, setMemeHistoryExpanded] = React.useState(false)
       const [memeMaxEntriesDraft, setMemeMaxEntriesDraft] = React.useState(null)
       const [commentMemeList,setCommentMemeList] = React.useState(null)
       const [memeImageDailyDraft,setMemeImageDailyDraft] = React.useState(null)
@@ -304,16 +285,9 @@ function WatchTab() {
       const [loreDraft,setLoreDraft] = React.useState(null)
       const [loreDefault,setLoreDefault] = React.useState(null)
       const [loreExpanded,setLoreExpanded] = React.useState(false)
-      const [memeDiagnostics,setMemeDiagnostics] = React.useState(null)
-      const [memeDiagExpanded,setMemeDiagExpanded] = React.useState(false)
       const [modelDraft,setModelDraft] = React.useState(null)
-      const [approvals,setApprovals] = React.useState([])
-      const [approvalPhrase,setApprovalPhrase] = React.useState(null)
-      const [approvedTotal,setApprovedTotal] = React.useState(null)
-      const [approvedDaily,setApprovedDaily] = React.useState(null)
       const [login, setLogin] = React.useState(null)
       const [runNote, setRunNote] = React.useState(null)
-      const [report, setReport] = React.useState(null)        // 非 null = 报告已展开   // 顶部那行状态（跑一轮/装依赖的反馈原来在最底下，看不见）
       const [watchedRows, setWatchedRows] = React.useState(null)   // null = 还没读；[] = 读到了但没记录
       const [watchedPicked, setWatchedPicked] = React.useState(false) // 只看挑中的
     const [watchedState, setWatchedState] = React.useState('')
@@ -334,58 +308,7 @@ function WatchTab() {
         if (loginTimer.current) { clearInterval(loginTimer.current); loginTimer.current = null }
       }, [])
 
-      const loadMemeMemory = (q='') => jget('/meme-memory?q='+encodeURIComponent(q)).then(r => {
-        if(alive.current) setMemeMemory(r)
-      }).catch(() => {if(alive.current)setMemeMemory({ok:false})})
-      React.useEffect(() => {
-        if (tab !== 'taste') return
-        loadMemeMemory(memeKeyword)
-      }, [tab])
-      // 成长记忆与梗知识分开存储。只在「偏好」页读取，避免后台每 5 秒重复刷新。
-      const loadGrowth = async () => {
-        try {
-          const r = await jget('/persona-growth')
-          if(!r?.ok) throw new Error(r?.error || '读取失败')
-          if(alive.current) setGrowth(r)
-        } catch(e) {
-          if(alive.current) {setGrowth({ok:false});setGrowthStatus('读取成长记忆失败：'+String(e?.message||e))}
-        }
-      }
-      React.useEffect(() => {
-        if(tab==='taste') loadGrowth()
-      }, [tab])
-      const growthAction = async (action, body={},confirmText='') => {
-        if(growthBusy) return
-        if(confirmText && !window.confirm(confirmText)) return
-        setGrowthBusy(true);setGrowthStatus('')
-        try {
-          const r=await jpost('/persona-growth',{action,...body})
-          if(!r?.ok) throw Error(r?.error||'成长记忆操作失败')
-          if(action==='add') setGrowthDraft('')
-          setGrowthStatus(action==='sync'
-            ? `报告同步完成：新增 ${r.result?.added??0} 条视频观察、${r.result?.proposals??0} 条兴趣候选`
-            : ({add:'已保存为待审核经验',approve:'已批准；下一轮生效',reject:'已忽略',delete:'已删除',undo:'已恢复上一版本'})[action]||'已完成')
-          await loadGrowth()
-        } catch(e){setGrowthStatus(String(e?.message||e))}
-        finally{setGrowthBusy(false)}
-      }
-
-      const deleteMeme = async (id) => {
-        setMemeBusy(true)
-        try {
-          const r=await jpost('/meme-memory/delete',{id})
-          if(!r?.ok) throw new Error(r?.error || '删除失败')
-          await loadMemeMemory(memeKeyword)
-          say('已删除这条梗记忆','good')
-        } catch(e) { say(String(e?.message||e),'warn') }
-        finally {setMemeBusy(false)}
-      }
-
       const cfg = st?.config
-      React.useEffect(()=>{
-        if(tab!=='social' || !cfg?.dmApprovalEnabled)return
-        jget('/dm-approvals').then(x=>{if(alive.current)setApprovals(x.approvals||[])}).catch(()=>{})
-      },[tab,cfg?.dmApprovalEnabled])
       React.useEffect(() => {
         if (cfg && kws === null) setKws((cfg.keywords || []).join('\n'))
         if (cfg && persona === null) setPersona(cfg.personaPrompt || '')
@@ -407,18 +330,8 @@ function WatchTab() {
         if (cfg && dmUid === null) setDmUid(cfg.dmUid ? String(cfg.dmUid) : '')
         if (cfg && dmMode === null) setDmMode(cfg.dmMode || 'only')
         if (cfg && dmWatch === null) setDmWatch(cfg.dmWatch !== false)
-        if (cfg && dmWhitelist === null) setDmWhitelist(cfg.dmWhitelist || '')
-        if (cfg && dmStrangerText === null) setDmStrangerText(cfg.dmStrangerText || '')
-        if (cfg && dmStrangerMax === null) setDmStrangerMax(String(cfg.dmStrangerMaxReplies ?? 1))
         if(cfg && visionDraft===null) setVisionDraft(Object.fromEntries(['visionModelProvider','visionModelId','visionReasoningEffort','visionFrames'].map(k=>[k,cfg[k]??''])))
         if(cfg && modelDraft===null) setModelDraft(Object.fromEntries(['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort'].map(k=>[k,cfg[k]||''])))
-        if(cfg && approvalPhrase===null) setApprovalPhrase(cfg.dmApprovalPhrase || '白饭🍚')
-        if(cfg && approvedTotal===null) setApprovedTotal(String(cfg.dmApprovedTotalLimit ?? 50))
-        if(cfg && approvedDaily===null) setApprovedDaily(String(cfg.dmApprovedDailyLimit ?? 10))
-        if (cfg && commentTopCount === null) setCommentTopCount(String(cfg.commentTopCount ?? 5))
-        if (cfg && commentTopVideoCount === null) setCommentTopVideoCount(String(cfg.commentTopVideoCount ?? 3))
-        if (cfg && commentReplyPerPoll === null) setCommentReplyPerPoll(String(cfg.commentReplyPerPoll ?? 1))
-        if (cfg && commentReplyPerDay === null) setCommentReplyPerDay(String(cfg.commentReplyPerDay ?? 5))
         if (cfg && favId === null) setFavId(String(cfg.favFolderId ?? 0))
       }, [cfg])
 
@@ -436,21 +349,6 @@ function WatchTab() {
         fetchQuota()
         const timer = setInterval(fetchQuota, 10000)
         return () => {alive = false; clearInterval(timer)}
-      }, [])
-
-      // 与评论每日配额一样每 10 秒更新。读取 Python 工具本地落盘的数据，无 LLM 调用。
-      React.useEffect(() => {
-        let alive = true
-        const tick = () => jget('/mention-diagnostics').then(r => { if (alive) setMentionDiagnostics(r) }).catch(() => { if (alive) setMentionDiagnostics({ok:false}) })
-        tick()
-        const timer = setInterval(tick, 10000)
-        return () => { alive = false; clearInterval(timer) }
-      }, [])
-      React.useEffect(() => {
-        let active=true
-        const tick=()=>jget('/meme-diagnostics').then(r=>{if(active)setMemeDiagnostics(r)}).catch(()=>{if(active)setMemeDiagnostics({ok:false})})
-        tick();const id=setInterval(tick,10000)
-        return ()=>{active=false;clearInterval(id)}
       }, [])
 
       const win = { ...DEFAULT_WINDOWS, ...(st?.windows || {}) }
@@ -504,14 +402,6 @@ function WatchTab() {
     }
     const onWatchPage = (d) => onLoadWatched(watchedState, watchedTier, Math.max(0, watchedOffset + d))
 
-      const onShowReport = async () => {
-        if (report !== null) { setReport(null); return }       // 再点一次收起
-        setBusy('report')
-        try {
-          const r = await jget('/report')
-          setReport(r && r.exists ? (r.text || '（报告是空的）') : '今天还没有报告 —— 跑一轮之后就有了')
-        } catch (e) { setReport('读不到报告：' + String(e?.message ?? e)) } finally { setBusy('') }
-      }
 
       // ⭐ 复核评论：接口回"发送成功"≠ 公开可见（新号/风控会进审核，那时候连 @ 都不会推）
       //    所以让宿主真去拉一次评论列表 / 楼中楼，确认那条到底在不在。
@@ -524,7 +414,6 @@ function WatchTab() {
           const vis = (r.checked || []).filter((c) => c.visible === true).length
           if (!n) say(r.text || '没有需要复核的记录', 'good')
           else say(`复核完 ${n} 条：公开可见 ${vis} 条，其余「没查到」（可能还在审核 —— 看不到不等于没发出去）。结果也追加到今天的报告末尾了。`, vis ? 'good' : 'warn')
-          if (r.report) setReport(null)
         } catch (e) { say(String(e?.message ?? e), 'warn') } finally { setBusy('') }
       }
 
@@ -704,11 +593,9 @@ function WatchTab() {
             h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'🐳 大肥鱼管理中心'),
               h('div',{'data-bd-note':''},'成长经验审核、梗知识编辑／批准、限额聊天申请统一在宽屏页面管理，无需启动 18763 服务。')),
             h('button',{type:'button','data-bd-btn':'',onClick:async()=>{
-              // DSH 桌面设置页中的 <a target=_blank> 不一定交给系统浏览器。
-              // 复用插件已有 /open 宿主接口，让桌面端打开同源管理页面。
+              // 让宿主按实际 HTTP Host 构造绝对 URL；设置页可能运行在自定义 DSH scheme 下。
               try {
-                const u = new URL(API + '/manage', window.location.href).href
-                const result = await jpost('/open', { what: 'url', u })
+                const result = await jpost('/open', { what: 'manage' })
                 if (!result || result.ok !== true) throw new Error(result?.error || '宿主没有确认打开管理中心')
               } catch (e) {
                 window.alert('打开管理中心失败：' + String(e?.message || e))
@@ -874,49 +761,13 @@ function WatchTab() {
             h('option', {value:'always'}, '每条评论 @ 所有好友')),
           h('div', { 'data-bd-note': '' }, 'AI 按视频与情境决定，不使用固定概率。ai_select 可 @ 0、1、2 或多个名单内好友；ai 模式仍一次 @ 所有人。位置可在句首、句中或句尾。'),
           h('div', { 'data-bd-sep': '' }),
-          h('div', { 'data-bd-h': '' }, '今日 @ 诊断'),
-          h('div', { 'data-bd-note': '' }, 'AI 在生成顶层评论时可顺带填写「不 @ 的原因」，直接保存在本地；后台回复仍按程序规则记录。尝试 @ 不保证通知送达。'),
+          h('div', { 'data-bd-h': '' }, '详细诊断已移至管理中心'),
+          h('div', { 'data-bd-note': '' }, '今日 @ 诊断、梗图选取原因、每日报告、后台私信记录和最近评论集中在管理中心展示，避免设置页过长。'),
           h('div', { 'data-bd-row': '' },
-            h('div', { 'data-bd-grow': '' },
-              h('div', { 'data-bd-label': '' }, mentionDiagnostics?.ok
-                ? `已发表评论 ${mentionDiagnostics.total} 条 · 尝试 @ ${mentionDiagnostics.attempted} 条 · 未 @ ${mentionDiagnostics.notMentioned} 条`
-                : '今日 @ 数据：暂不可读取'),
-              mentionDiagnostics?.ok && mentionDiagnostics.failed ? h('div', { 'data-bd-note': '' }, `另有 ${mentionDiagnostics.failed} 次发送未成功（不计入已发表评论）`) : null)),
-          mentionDiagnostics?.ok && (mentionDiagnostics.recent || []).length
-            ? h('div', { 'data-bd-sub': '' },
-                h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
-                  h('span',{'data-bd-note':''},mentionHistoryExpanded ? '最近最多 12 条诊断（列表内滚动）' : '默认只显示最近 3 条'),
-                  (mentionDiagnostics.recent || []).length > 3
-                    ? h('button',{type:'button','data-bd-btn':'',onClick:()=>setMentionHistoryExpanded(v=>!v)},mentionHistoryExpanded?'收起':'展开最近 12 条') : null),
-                h('div',{style:{maxHeight:mentionHistoryExpanded?'220px':'none',overflowY:mentionHistoryExpanded?'auto':'visible',overflowWrap:'anywhere'}},
-                ...(mentionHistoryExpanded ? mentionDiagnostics.recent : mentionDiagnostics.recent.slice(0,3)).map((x, i) => {
-                  const reasonText = ({
-                    ai_declined:'AI 决定不 @', ai_selected_no_names:'AI 想 @，但没有选中名单内好友',
-                    no_mention_targets:'没有配置 @ 名单', mention_disabled:'@ 策略已关闭',
-                    mentioned_text_only_missing_uid:'已插入 @ 文字，但缺少有效 UID',
-                    mention_requested:'已按设置尝试 @，不保证通知送达',
-                    reply_no_group_mentions:'后台楼中楼回复不群发 @'
-                  })[x.reason] || '未识别的 @ 决策'
-                  const aiExplanation = x.success && x.reason === 'ai_declined'
-                    ? ` · AI说明：${x.ai_reason || '未填写具体原因'}` : ''
-                  return h('div', { key: (x.time || '') + ':' + i, 'data-bd-note': '' },
-                    `${x.bvid} · ${x.kind === 'reply' ? '楼中楼' : '顶层'} · ${x.success ? (x.mention_attempted ? '尝试 @' : '未 @') : '发送未成功'} · ${reasonText}${aiExplanation}`)
-                })))
-            : h('div', { 'data-bd-note': '' }, mentionDiagnostics?.ok ? '今天还没有新版诊断记录。' : ''),
-          h('div', { 'data-bd-sep': '' }),
-          h('div', { 'data-bd-h': '' }, '今日梗图诊断'),
-          h('div', { 'data-bd-note': '' }, 'AI 是否选图、选择原因和真实发送回执由本地记录，不依赖日报；接口接受不代表图片已公开展示。'),
-          h('div', { 'data-bd-label': '' }, memeDiagnostics?.ok
-            ? `顶层评论 ${memeDiagnostics.total} 条 · 尝试附图 ${memeDiagnostics.attempted} 条 · 未附图 ${memeDiagnostics.notAttached} 条`
-            : '今日附图诊断：暂不可读取'),
-          memeDiagnostics?.ok && memeDiagnostics.failed ? h('div',{'data-bd-note':''},`另有 ${memeDiagnostics.failed} 次评论未成功`) : null,
-          memeDiagnostics?.ok && memeDiagnostics.recent?.length ? h('div',{'data-bd-sub':''},
-            h('div',{'data-bd-row':''},h('span',{'data-bd-note':''},memeDiagExpanded?'最近最多 12 条（滚动查看）':'默认最近 3 条'),
-              memeDiagnostics.recent.length>3 ? h('button',{'data-bd-btn':'',onClick:()=>setMemeDiagExpanded(v=>!v)},memeDiagExpanded?'收起':'展开最近 12 条'):null),
-            h('div',{style:{maxHeight:memeDiagExpanded?'220px':'none',overflowY:memeDiagExpanded?'auto':'visible',overflowWrap:'anywhere'}},
-              ...(memeDiagExpanded?memeDiagnostics.recent:memeDiagnostics.recent.slice(0,3)).map((x,i)=>
-                h('div',{key:(x.time||'')+i,'data-bd-note':''},`${x.bvid} · ${x.success?'已评论':'评论未成功'} · ${x.status==='ai_declined'?'未选图':x.status==='submitted_unverified'?'尝试附图（展示未验证）':x.status} · ${x.image||''}${x.reason?' · AI说明：'+x.reason:''}`)))
-          ) : h('div',{'data-bd-note':''},memeDiagnostics?.ok?'今天还没有新版梗图诊断。':''),
+            h('button', { 'data-bd-btn': '', onClick: async () => {
+              try { const r = await jpost('/open', { what: 'manage' }); if (!r?.ok) throw new Error(r?.error || '打开失败') }
+              catch (e) { window.alert('打开管理中心失败：' + String(e?.message || e)) }
+            } }, '打开管理中心 ↗')),
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '私信内容 = 本轮每条的「标题 + 链接 + 一句话」，一轮合并成一条发。⚠️ 建议先让这个号和收件人互关：B站 对「陌生人私信」会限流，还可能不弹提醒。') : null,
 
           (dmMode === 'off' || dmMode === 'both') ? h('div', { 'data-bd-sep': '' }) : null,
@@ -1019,145 +870,33 @@ function WatchTab() {
             commentMemeList?.ok ? h('div',{'data-bd-note':''},(commentMemeList.categories||[]).map(x=>`${x.label} ${x.count}张`).join(' · ')) : null,
             commentMemeList?.ok ? h('div',{'data-bd-pre':'',style:{maxHeight:'180px',overflowY:'auto',whiteSpace:'normal',overflowWrap:'anywhere'}},(commentMemeList.names||[]).slice(0,30).join('、')||'文件夹暂时没有可用的图片') : null,
             h('div',{'data-bd-note':''},'界面仅展示前30个完整分类/名称，列表限高可滚动；用户图片按分类管理，不会自动识图。图片上传状态未验证时不会自动重试；动态暂不附图。')) : null,
-          h('div', { 'data-bd-note': '' }, '「跑一轮」只负责挑视频和发布原创顶层评论；回复观众评论与热门评论互动统一由下方「后台评论互动」控制。'),
+          h('div', { 'data-bd-note': '' }, '「跑一轮」只负责挑视频和发布原创顶层评论；回复观众评论与热门评论互动的详细设置、状态和记录已移至管理中心。'),
 
           h('div', { 'data-bd-sep': '' }),
+          h('div', { 'data-bd-h': '' }, '后台互动（详细配置在管理中心）'),
           h(ToggleRow, {
             label: '后台自动检查并回复私信',
-            note: '不必点击「跑一轮」；按间隔检查新私信。白名单可多轮聊天；陌生人自动回复需要单独开启。',
+            note: '这里只保留总开关；白名单、陌生人规则、申请额度、最近私信和错误状态请到管理中心管理。',
             on: Boolean(dmWatch),
             onChange: (v) => { setDmWatch(v); patch({ dmWatch: v }, '后台私信监听') },
           }),
-          dmWatch ? h('div', { 'data-bd-sub': '' },
-            h('div', { 'data-bd-label': '' }, '白名单 UID（每行一个，或用逗号分隔）'),
-            h('textarea', {
-              'data-bd-input': '', rows: 3,
-              value: dmWhitelist ?? '',
-              placeholder: '12345678\n87654321',
-              onChange: (e) => setDmWhitelist(e.target.value),
-            }),
-            h('div', { 'data-bd-note': '' }, '白名单用户可以一直和 AI 聊天（仍有防刷频率限制）。旧版设置的「私信收件人 UID / 只回谁的私信」也自动加入白名单。'),
-            h('button', { 'data-bd-btn': '', onClick: () => patch({ dmWhitelist: dmWhitelist ?? '', clear: ['dmWhitelist'] }, '私信白名单') }, '保存白名单'),
-            h(ToggleRow, {
-              label: '开启陌生人自动回复',
-              note: '默认关闭；每个陌生人最多回复指定次数，按 UID 持久记录。首次启用不追发历史消息。',
-              on: Boolean(cfg?.dmStrangerOnce),
-              onChange: (v) => patch({ dmStrangerOnce: v }, '陌生人自动回复'),
-            }),
-            cfg?.dmStrangerOnce ? h('div', { 'data-bd-sub': '' },
-              h('div', { 'data-bd-row': '' },
-                h('div', { 'data-bd-grow': '' },
-                  h('div', { 'data-bd-label': '' }, '每个陌生人最多回复几次（1–20）'),
-                  h('div', { 'data-bd-note': '' }, '白名单用户不受此次数限制；第二次起可以使用 AI。')),
-                h('input', { 'data-bd-input': '', 'data-bd-num': '', type:'number', min:1,max:20,
-                  value:dmStrangerMax ?? '',onChange:(e)=>setDmStrangerMax(e.target.value),
-                  onBlur:()=>{const n=Math.max(1,Math.min(20,Math.floor(Number(dmStrangerMax)||1)));setDmStrangerMax(String(n));patch({dmStrangerMaxReplies:n},'陌生人回复上限')} })),
-              h(ToggleRow, {label:'第一条使用固定欢迎语',
-                note:'打开：第一次固定文本（不花 Token），从第二次开始才调用 AI；关闭：从第一条开始交给 AI。',
-                on:cfg?.dmStrangerFirstFixed!==false,
-                onChange:(v)=>patch({dmStrangerFirstFixed:v},'首次固定欢迎语')}),
-              cfg?.dmStrangerFirstFixed!==false ? h('div', { 'data-bd-label': '' }, '陌生人固定欢迎语（最多 450 字）') : null,
-              cfg?.dmStrangerFirstFixed!==false ? h('div', null,
-              h('textarea', {
-                'data-bd-input': '', rows: 3,
-                value: dmStrangerText ?? '',
-                onChange: (e) => setDmStrangerText(e.target.value),
-              }),
-              h('button', { 'data-bd-btn': '',
-                onClick: () => patch({ dmStrangerText: dmStrangerText ?? '' }, '陌生人欢迎语'),
-              }, '保存欢迎语')) : null) : null,
-            h('div', { 'data-bd-sep': '' }),
-            h('div', { 'data-bd-label': '' }, '限额聊天申请（原始可信白名单永不限额）'),
-            h(ToggleRow,{label:'允许陌生人达到回复次数后申请继续聊天',
-              note:'先开启陌生人自动回复；大肥鱼在最后一次自动回复里提示对方发送暗号；收到暗号后只登记待审批，不会擅自通过。',
-              on:cfg?.dmApprovalEnabled===true,onChange:v=>patch({dmApprovalEnabled:v},'申请审批开关')}),
-            cfg?.dmApprovalEnabled ? h('div',{'data-bd-sub':''},
-              h('div',{'data-bd-label':''},'申请暗号（默认：白饭🍚）'),
-              h('input',{'data-bd-input':'',value:approvalPhrase??'',onChange:e=>setApprovalPhrase(e.target.value),
-                onBlur:()=>patch({dmApprovalPhrase:approvalPhrase||'白饭🍚'},'申请暗号')}),
-              h('div',{'data-bd-row':''},
-                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'审批白名单：总回复限额'),
-                  h('div',{'data-bd-note':''},'每个获批 UID 累计上限；旧可信白名单不受影响')),
-                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,value:approvedTotal??'',
-                  onChange:e=>setApprovedTotal(e.target.value),onBlur:()=>patch({dmApprovedTotalLimit:Math.max(1,Number(approvedTotal)||50)},'审批用户总限额')})),
-              h('div',{'data-bd-row':''},
-                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'审批白名单：每日回复限额')),
-                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,value:approvedDaily??'',
-                  onChange:e=>setApprovedDaily(e.target.value),onBlur:()=>patch({dmApprovedDailyLimit:Math.max(1,Number(approvedDaily)||10)},'审批用户每日限额')})),
-              h('button',{'data-bd-btn':'',onClick:async()=>{
-                try{const x=await jget('/dm-approvals');setApprovals(x.approvals||[])}catch(e){say('加载审批名单失败：'+e.message,'warn')}
-              }},'刷新审批名单'),
-              h('div',{'data-bd-note':''},'每个 UID 独立计数；“最信任白名单”继续保留原来的无限额规则。'),
-              ...approvals.map(a=>h('div',{key:a.uid,'data-bd-item':''},
-                h('div',{'data-bd-item-t':''},'UID '+a.uid+' · '+(a.status==='pending'?'待审批':a.status==='approved'?'已通过':'已拒绝')+' · 已回复 '+a.total+' 条'),
-                h('div',{'data-bd-note':''},a.lastText||''),
-                a.status==='pending' ? h('div',{'data-bd-row':''},
-                  ...['approve','reject'].map(act=>h('button',{'data-bd-btn':'',onClick:async()=>{
-                    try { const result=await jpost('/dm-approvals',{uid:a.uid,action:act});
-                      if(!result.ok)throw Error(result.error||'操作失败');
-                      const next=await jget('/dm-approvals');setApprovals(next.approvals||[]);
-                      say('审批操作已保存','good') }catch(e){say('审批失败：'+e.message,'warn')}
-                  }},act==='approve'?'通过并加入限额白名单':'拒绝'))) : null,
-                a.status==='approved' ? h('button',{'data-bd-btn':'',onClick:async()=>{
-                  try{const result=await jpost('/dm-approvals',{uid:a.uid,action:'revoke'});
-                    if(!result.ok)throw Error(result.error||'操作失败');
-                    const next=await jget('/dm-approvals');setApprovals(next.approvals||[])}catch(e){say('撤销失败：'+e.message,'warn')}
-                }},'撤销限额聊天权限') : null))) : null,
-            h('div', { 'data-bd-row': '' },
-              h('div', { 'data-bd-label': '' }, '检查间隔（分钟）'),
-              h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 120,
-                defaultValue: cfg?.dmWatchMinutes ?? 1,
-                onBlur: (e) => patch({ dmWatchMinutes: Math.max(1, Math.min(120, Number(e.target.value) || 1)) }, '私信检查间隔'),
-              })),
-            h('div', { 'data-bd-note': '' },
-              '后台状态：',
-              st.dmAutoReplyStatus?.lastError ? '错误：' + st.dmAutoReplyStatus.lastError
-                : st.dmAutoReplyStatus?.polling ? '正在检查'
-                  : st.dmAutoReplyStatus?.lastPollAt ? '上次检查 ' + new Date(st.dmAutoReplyStatus.lastPollAt).toLocaleString() : '等待首次检查'),
-          ) : null,
-          h('div', { 'data-bd-sep': '' }),
-          h('div', { 'data-bd-label': '' }, '后台评论互动（独立于「跑一轮」）'),
           h(ToggleRow, {
             label: '后台回复别人对我的评论',
-            note: '每3分钟读取评论回复通知；首次开启只记录旧通知，不追发。独立后台执行，不依赖「跑一轮」。',
+            note: '详细限额、状态和最近评论已移至管理中心。',
             on: Boolean(cfg?.commentWatchReplies),
             onChange: v => patch({commentWatchReplies:v}, '后台回复评论通知'),
           }),
           h(ToggleRow, {
             label: '主动参与近期视频的热门评论',
-            note: '每5分钟检查最近7天挑选的视频的前几条热门评论；优先大肥鱼、投喂、大米饭等玩梗。默认关闭。',
+            note: '详细限额、状态和最近评论已移至管理中心。',
             on: Boolean(cfg?.commentWatchTop),
             onChange: v => patch({commentWatchTop:v}, '主动参与热门评论'),
           }),
-          (cfg?.commentWatchReplies || cfg?.commentWatchTop) ? h('div', {'data-bd-sub':''},
-            cfg?.commentWatchTop ? h('div',null,
-              h('div',{'data-bd-row':''},
-                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每个视频查看前几条热评')),
-                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:20,
-                  value:commentTopCount ?? '',onChange:e=>setCommentTopCount(e.target.value),
-                  onBlur:()=>{const n=Math.max(1,Math.min(20,Number(commentTopCount)||5));setCommentTopCount(String(n));patch({commentTopCount:n},'查看热门评论数量')}})),
-              h('div',{'data-bd-row':''},
-                h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每轮查看最近几个视频')),
-                h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:6,
-                  value:commentTopVideoCount ?? '',onChange:e=>setCommentTopVideoCount(e.target.value),
-                  onBlur:()=>{const n=Math.max(1,Math.min(6,Number(commentTopVideoCount)||3));setCommentTopVideoCount(String(n));patch({commentTopVideoCount:n},'检查视频数')}})),
-              h(ToggleRow,{label:'也允许回复其他有趣的热门评论',
-                note:'关闭时仅尝试回应提到大肥鱼/鲸鱼/投喂等的热评；开启会增加 AI Token 消耗。',
-                on:Boolean(cfg?.commentAllowGeneralTop),
-                onChange:v=>patch({commentAllowGeneralTop:v},'热门评论拓展互动')})) : null,
-            h('div',{'data-bd-row':''},
-              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每次后台检查最多回复几条评论')),
-              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:5,
-                value:commentReplyPerPoll ?? '',onChange:e=>setCommentReplyPerPoll(e.target.value),
-                onBlur:()=>{const n=Math.max(1,Math.min(5,Number(commentReplyPerPoll)||1));setCommentReplyPerPoll(String(n));patch({commentReplyPerPoll:n},'每轮评论回复限制')}})),
-            h('div',{'data-bd-row':''},
-              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'近24小时最多自动回复评论')),
-              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:30,
-                value:commentReplyPerDay ?? '',onChange:e=>setCommentReplyPerDay(e.target.value),
-                onBlur:()=>{const n=Math.max(1,Math.min(30,Number(commentReplyPerDay)||5));setCommentReplyPerDay(String(n));patch({commentReplyPerDay:n},'每日评论回复限制')}})),
-            h('div',{'data-bd-note':''},'互动状态：',st.commentInteractStatus?.lastError ? '错误：'+st.commentInteractStatus.lastError :
-              st.commentInteractStatus?.lastPollAt ? '上次检查 '+new Date(st.commentInteractStatus.lastPollAt).toLocaleString() : '等待检查'),
-            h('div',{'data-bd-note':''},'不会强制每轮发评论；无值得回应的内容就不回复。')) : null,
+          h('div', { 'data-bd-row': '' }, h('button', { 'data-bd-btn': '', onClick: async () => {
+            try { const r = await jpost('/open', { what: 'manage' }); if (!r?.ok) throw new Error(r?.error || '打开失败') }
+            catch (e) { window.alert('打开管理中心失败：' + String(e?.message || e)) }
+          } }, '管理后台互动 ↗')),
+          h('div', { 'data-bd-sep': '' }),
           h(ToggleRow, {
             label: '本地转写没字幕的视频',
             note: '默认关；开了以后，没字幕的视频会在本机转写一遍（不花 API 钱）',
@@ -1179,91 +918,35 @@ function WatchTab() {
               h('div', { 'data-bd-note': '' }, st.asrInstalling ? '正在装转写依赖（进度）：' : '转写依赖的日志（末尾）—— 只有「没字幕的视频」用得到它：'),
               h('pre', { 'data-bd-pre': '' }, st.asrTail)) : null) : null),
 
-        /* ── 大肥鱼成长记忆：跟原生设置页绑定，无额外网页或 Node 服务。 ── */
+        /* 复杂内容管理统一进入管理中心；原设置页只保留少量基础开关。 */
         h('div',{'data-bd-sec':'','data-bd-group':'taste','data-bd-away':tab==='taste'?undefined:''},
           h('div',{'data-bd-h':''},'🐳 大肥鱼 · 成长记忆'),
-          h('div',{'data-bd-note':''},'核心人设、白饭、Token、Claude 小姐的关系始终由你决定。这里的经验必须人工批准才会影响下一轮；日报仅产生待审核兴趣，不会自动改变人设。'),
-          h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
-            h('div',{'data-bd-label':''},growth?.ok
-              ? `经验 ${growth.data?.entries?.length||0} 条 · 视频观察 ${growth.data?.observationCount||0} 条 · 修订 ${growth.data?.revision||0}`
-              : growth ? '成长记忆暂不可读取，请点刷新检查' : '正在载入成长记忆…'),
-            h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:loadGrowth},'刷新')),
-          h('div',{'data-bd-row':''},
-            h('select',{'data-bd-input':'',style:{width:'auto'},'aria-label':'成长经验类型',value:growthType,onChange:e=>setGrowthType(e.target.value)},
-              ...[['style','评论表达'],['interest','兴趣偏好'],['experience','经历经验'],['relationship','关系观察']].map(([v,l])=>h('option',{key:v,value:v},l))),
-            h('span',{'data-bd-note':''},'新增反馈先进入待审核状态')),
-          h('textarea',{'data-bd-input':'',rows:3,maxLength:230,style:{resize:'vertical',minHeight:'70px'},
-            placeholder:'例：大肥鱼自己被整活时，先寻找自然嘴硬或自嘲的切入点，不要只因「没知识点」而跳过。',
-            value:growthDraft,onChange:e=>setGrowthDraft(e.target.value)}),
-          h('div',{'data-bd-row':''},
-            h('button',{'data-bd-btn':'','data-primary':'',disabled:growthBusy||growthDraft.trim().length<6,
-              onClick:()=>growthAction('add',{type:growthType,text:growthDraft.trim()})},'添加待审核经验'),
-            h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('sync')},'从最近日报学习兴趣'),
-            h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('undo',{},'撤销最近一次成长库修改？')},'撤销最近修改')),
-          growthStatus ? h('div',{'data-bd-msg':''},growthStatus) : null,
-          h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
-            h('div',{'data-bd-label':''},'成长经验列表'),
-            (growth?.data?.entries||[]).length>4 ? h('button',{'data-bd-btn':'',onClick:()=>setGrowthExpanded(x=>!x)},growthExpanded?'收起':'展开全部') : null),
-          growth?.ok && growth.data?.entries?.length
-            ? h('div',{style:{maxHeight:growthExpanded?'360px':'300px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'8px',overflowWrap:'anywhere'}},
-                ...(growthExpanded?growth.data.entries.slice().reverse():growth.data.entries.slice(-4).reverse()).map(e=>
-                  h('div',{'data-bd-item':'',key:e.id},h('div',{'data-bd-item-body':''},
-                    h('div',{'data-bd-item-t':''},e.text),
-                    h('div',{'data-bd-note':''},`类型：${({style:'表达',interest:'兴趣',experience:'经历',relationship:'关系观察'})[e.type]||e.type} · ${({pending:'待审核',approved:'已批准',rejected:'已忽略'})[e.status]||e.status}`),
-                    e.evidence ? h('div',{'data-bd-note':''},e.evidence) : null,
-                    h('div',{'data-bd-row':''},
-                      e.status!=='approved' ? h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('approve',{id:e.id})},'批准') : null,
-                      e.status!=='rejected' ? h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('reject',{id:e.id})},'忽略') : null,
-                      h('button',{'data-bd-btn':'',disabled:growthBusy,onClick:()=>growthAction('delete',{id:e.id},'确定永久删除这条成长经验？')},'删除'))))))
-            : h('div',{'data-bd-note':''},growth?.ok?'还没有成长经验。可以从你的评论反馈开始添加。':'暂时没有可展示的数据。'),
-          h('div',{'data-bd-label':''},'下一轮实际注入的成长经验（只读预览）'),
-          h('pre',{'data-bd-pre':'',style:{maxHeight:'190px'}},growth?.ok?(growth.context||'当前没有已批准经验。'):'请先刷新数据。'),
-          h('div',{'data-bd-note':''},'保存在原有 .dsh/bili-duty/persona-growth/v1.json。已批准经验最多注入约1300字；独立旧管理页不再需要运行。')
-        ),
+          h('div',{'data-bd-note':''},'添加反馈、审批经验、从日报学习兴趣、撤销修改和预览下轮注入内容，都集中在管理中心。核心人设仍由你控制。'),
+          h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'','data-primary':'',onClick:async()=>{
+            try { const r=await jpost('/open',{what:'manage'}); if(!r?.ok)throw new Error(r?.error||'打开失败') }
+            catch(e){window.alert('打开管理中心失败：'+String(e?.message||e))}
+          }},'管理成长记忆 ↗'))),
 
-        /* ── 长期梗记忆：有来源、可查询、可删除，默认开启，不要求用户整理 JSON ── */
-        h('div', { 'data-bd-sec':'', 'data-bd-group':'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
-          h('div', { 'data-bd-h': '' }, '🧠 梗知识库 · 长期记忆'),
-          h(ToggleRow, {
-            label: '记住视频里的梗和角色',
-            note: '默认开启。跨轮记住文字梗、别名、出处 BV；不会重新识别已看过的画面，也不会额外调用 AI。关掉只暂停检索和写入，不删除历史。',
-            on: cfg.memeMemoryEnabled !== false,
-            onChange: v => patch({memeMemoryEnabled:v},'梗知识库'),
+        h('div',{'data-bd-sec':'','data-bd-group':'taste','data-bd-away':tab==='taste'?undefined:''},
+          h('div',{'data-bd-h':''},'🧠 梗知识库 · 长期记忆'),
+          h(ToggleRow,{
+            label:'记住视频里的梗和角色',
+            note:'关闭只暂停新记录和检索，不删除历史。梗的查询、释义修改、审核通过／拒绝和删除都在管理中心。',
+            on:cfg.memeMemoryEnabled!==false,
+            onChange:v=>patch({memeMemoryEnabled:v},'梗知识库'),
           }),
-          h('div',{'data-bd-row':'',style:{alignItems:'center'}},
+          h('div',{'data-bd-row':'','style':{alignItems:'center'}},
             h('div',{'data-bd-grow':''},
               h('div',{'data-bd-label':''},'知识库最多保存多少条梗'),
-              h('div',{'data-bd-note':''},'10–2000 条，默认 300。满额后不再新增，但同名梗可以继续补充来源。调低不会自动删除旧记录。')),
+              h('div',{'data-bd-note':''},'10–2000 条，默认 300。满额后不再新增；调低不会自动删除旧记录。')),
             h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:10,max:2000,
-              value:memeMaxEntriesDraft ?? '300',
-              onChange:e=>setMemeMaxEntriesDraft(e.target.value),
+              value:memeMaxEntriesDraft??'300',onChange:e=>setMemeMaxEntriesDraft(e.target.value),
               onBlur:()=>{const n=Number(memeMaxEntriesDraft);const value=Number.isFinite(n)?Math.max(10,Math.min(2000,Math.floor(n))):300;setMemeMaxEntriesDraft(String(value));patch({memeMemoryMaxEntries:value},'梗知识库保存上限')} })),
-          h('div',{'data-bd-note':''}, '需要视频文字证据或已实际识别的低清预览证据；视觉推断一律待核实。AI 的猜测可能有误，你可以在这里删除。'),
-          h('div',{'data-bd-row':''},
-            h('input',{'data-bd-input':'',placeholder:'查梗名称，例如 奶蛙',value:memeKeyword,
-              onChange:e=>setMemeKeyword(e.target.value),onKeyDown:e=>{if(e.key==='Enter')loadMemeMemory(memeKeyword)}}),
-            h('button',{'data-bd-btn':'',onClick:()=>loadMemeMemory(memeKeyword)},'查询 / 刷新')),
-          h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
-            h('span',{'data-bd-note':''},memeMemory?.ok
-              ? `已保存 ${memeMemory.total} / ${cfg.memeMemoryMaxEntries ?? 300} 条 · 本次匹配显示 ${memeMemory.entries?.length||0} 条（每次最多返回 30 条）`
-              : memeMemory ? '梗知识库暂时无法读取，可检查 Python 环境' : '加载中…'),
-            memeMemory?.ok && (memeMemory.entries||[]).length > 3
-              ? h('button',{type:'button','data-bd-btn':'',onClick:()=>setMemeHistoryExpanded(v=>!v)},
-                  memeHistoryExpanded?'收起':'展开查看更多') : null),
-          memeMemory?.ok && (memeMemory.entries||[]).length
-            ? h('div',{style:{maxHeight:memeHistoryExpanded?'320px':'260px',overflowY:'auto',overflowX:'hidden',
-                overscrollBehavior:'contain',display:'flex',flexDirection:'column',gap:'8px',overflowWrap:'anywhere'}},
-                ...(memeHistoryExpanded ? memeMemory.entries : memeMemory.entries.slice(0,3)).map(x=>h('div',{'data-bd-item':'',key:'meme-'+x.id},
-                  h('div',{'data-bd-item-body':''},
-                    h('div',{'data-bd-item-t':''},x.name, x.aliases ? `（${x.aliases}）`:''),
-                    h('div',{'data-bd-note':''},`类型：${x.kind} · ${x.confidence} · ${x.visual_status}`),
-                    h('div',{'data-bd-item-why':''},x.meaning),
-                    ...(x.sources||[]).slice(0,2).map(src=>h('div',{'data-bd-note':'',key:src.bvid},
-                      `来自 ${src.bvid} · ${src.evidence_type}：${src.evidence}`)),
-                    h('button',{'data-bd-btn':'',disabled:memeBusy,onClick:()=>deleteMeme(x.id)},'删除错误记忆')))))
-            : memeMemory?.ok ? h('div',{'data-bd-note':''},'还没有符合条件的梗记忆。') : null,
-
-        ),
+          h('div',{'data-bd-note':''},'新学到的梗先待审核；管理中心可搜索、修改名称／别名／释义、批准或拒绝，并查看来源证据。'),
+          h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'','data-primary':'',onClick:async()=>{
+            try { const r=await jpost('/open',{what:'manage'}); if(!r?.ok)throw new Error(r?.error||'打开失败') }
+            catch(e){window.alert('打开管理中心失败：'+String(e?.message||e))}
+          }},'管理梗知识库 ↗'))),
 
         /* ── 关注什么 / 在哪儿刷 ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
@@ -1496,14 +1179,14 @@ function WatchTab() {
             h('br'),
             `今天的报告：${st.report}`),
           h('div', { 'data-bd-row': '' },
-            h('button', { 'data-bd-btn': '', disabled: busy === 'report', onClick: onShowReport },
-              report !== null ? '收起报告' : '看今天的报告'),
+            h('button', { 'data-bd-btn': '', onClick: async () => {
+              try { const r = await jpost('/open', { what: 'manage' }); if (!r?.ok) throw new Error(r?.error || '打开失败') }
+              catch (e) { window.alert('打开管理中心失败：' + String(e?.message || e)) }
+            } }, '查看日报与最近评论 ↗'),
             h('button', { 'data-bd-btn': '', onClick: () => onOpenFolder('out') }, '打开报告文件夹'),
             h('button', { 'data-bd-btn': '', onClick: () => onOpenFolder('home') }, '打开家目录'),
-            h('button', { 'data-bd-btn': '', disabled: busy === 'verify', onClick: onVerify },
-              '复核评论'),
-            h('button', { 'data-bd-btn': '', onClick: () => copyText(st.report) }, '复制报告路径')),
-          report !== null ? h('pre', { 'data-bd-pre': '' }, report) : null),
+            h('button', { 'data-bd-btn': '', disabled: busy === 'verify', onClick: onVerify }, '复核评论'),
+            h('button', { 'data-bd-btn': '', onClick: () => copyText(st.report) }, '复制报告路径'))),
       )
     }
 

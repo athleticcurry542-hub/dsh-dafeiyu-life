@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtempSync,readFileSync,rmSync} from 'node:fs'
+import {mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs'
 import {join} from 'node:path'
 import {tmpdir} from 'node:os'
 import {Readable} from 'node:stream'
@@ -20,7 +20,7 @@ function fixture(){
    await handler(req,res)
    return {code,headers:headersOut,text:payload,json(){return JSON.parse(payload)}}
  }
- return {call,close:()=>rmSync(home,{recursive:true,force:true})}
+ return {home,call,close:()=>rmSync(home,{recursive:true,force:true})}
 }
 
 test('manage HTML and JS are served from same DSH route without extra port or process',async()=>{
@@ -33,13 +33,57 @@ test('manage HTML and JS are served from same DSH route without extra port or pr
    assert.match(h.text,/梗知识库/)
    assert.match(h.text,/限额聊天申请/)
    assert.match(h.text,/manage\.js/)
+   assert.match(h.text,/今日诊断/)
+   assert.match(h.text,/每日报告/)
+   assert.match(h.text,/后台私信/)
+   assert.match(h.text,/最近评论/)
+   assert.match(h.text,/测试私信接口连接/)
    const js=await fx.call('GET','manage.js')
    assert.equal(js.code,200)
    assert.match(js.headers['content-type'],/javascript/)
    assert.match(js.text,/meme-memory\/review/)
    assert.match(js.text,/dm-approvals/)
+   assert.match(js.text,/mention-diagnostics/)
+   assert.match(js.text,/meme-diagnostics/)
+   assert.match(js.text,/recent-comments/)
+   assert.match(js.text,/dm-recent/)
    assert.ok(!js.text.includes('.innerHTML ='))
    assert.ok(!h.text.includes('18763'))
+   const recentComments=await fx.call('GET','recent-comments?limit=20')
+   assert.equal(recentComments.code,200)
+   assert.equal(recentComments.json().ok,true)
+   assert.ok(Array.isArray(recentComments.json().rows))
+   const dmRecent=await fx.call('GET','dm-recent')
+   assert.equal(dmRecent.code,200)
+   assert.equal(dmRecent.json().ok,true)
+   assert.ok(Array.isArray(dmRecent.json().conversations))
+   const dmNetwork=await fx.call('POST','dm-network-check',{})
+   assert.equal(dmNetwork.code,200)
+   assert.equal(dmNetwork.json().ok,false)
+   assert.match(dmNetwork.json().error,/登录凭证/)
+   const client=await import('node:fs').then(m=>m.readFileSync(new URL('../client.js',import.meta.url),'utf8'))
+   assert.match(client,/jpost\('\/open', \{ what: 'manage' \}\)/)
+ }finally{fx.close()}
+})
+
+
+test('最近评论 API 只返回判重表中保存的 BV/rpid/时间/短摘要',async()=>{
+ const fx=fixture();try{
+   const seen=join(fx.home,'bili-duty','seen.md')
+   writeFileSync(seen,[
+     '# 视频判重表',
+     '## 评论记录',
+     '| BV | rpid | root | 时间 | 正文前20字 |',
+     '|---|---:|---:|---|---|',
+     '| BV1234567890 | 321798740304 | 0 | 2026-10-25T10:00:00 | 白米饭都拿出来了 |',
+     '## 看过的视频',
+   ].join('\n'),'utf8')
+   const res=await fx.call('GET','recent-comments?limit=10')
+   assert.equal(res.code,200)
+   assert.equal(res.json().rows.length,1)
+   assert.equal(res.json().rows[0].bvid,'BV1234567890')
+   assert.equal(res.json().rows[0].rpid,'321798740304')
+   assert.match(res.json().rows[0].snippet,/白米饭都拿出来了/)
  }finally{fx.close()}
 })
 

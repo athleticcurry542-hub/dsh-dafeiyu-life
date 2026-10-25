@@ -61,6 +61,8 @@ test('settings write and prompt endpoints, reject agent editing private profile'
 test('client UI has bounded per-friend controls and lore editor, server has generated prompt integration',()=>{
   const ui=readFileSync(new URL('../client.js',import.meta.url),'utf8')
   const server=readFileSync(new URL('../index.js',import.meta.url),'utf8')
-  for(const s of ['保存好友人设／兴趣','大肥鱼与 DeepSeek／模型拟人角色的关系设定','characterLore','mentionProfiles','今日梗图诊断']) assert.ok(ui.includes(s))
+  for(const s of ['保存好友人设／兴趣','大肥鱼与 DeepSeek／模型拟人角色的关系设定','characterLore','mentionProfiles']) assert.ok(ui.includes(s))
+  const consoleHtml=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
+  assert.ok(consoleHtml.includes('今日梗图诊断'))
   for(const s of ['buildMentionProfilePrompt','loreDoc','memeInventory','/api/bili-duty/meme-diagnostics']) assert.ok(server.includes(s))
 })

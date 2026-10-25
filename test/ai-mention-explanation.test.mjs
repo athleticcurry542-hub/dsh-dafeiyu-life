@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 const index=readFileSync(new URL('../index.js',import.meta.url),'utf8')
-const ui=readFileSync(new URL('../client.js',import.meta.url),'utf8')
+const ui=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8')
 const py=readFileSync(new URL('../vendor/bilibili-mcp/mcp_server.py',import.meta.url),'utf8')
 const charter=readFileSync(new URL('../prompts/duty.md',import.meta.url),'utf8')
 test('comment decision has AI-facing short explanation field in SAME tool call',()=>{
@@ -23,6 +23,7 @@ test('python persists only self-declared explanation for AI decline, never retur
 })
 test('settings shows reason in existing daily mention panel, no extra model calls',()=>{
   assert.match(ui,/AI说明：/)
-  assert.match(ui,/x\.ai_reason \|\| '未填写具体原因'/)
-  assert.match(ui,/今日 @ 诊断/)
+  assert.match(ui,/x\.reason==='ai_declined'&&x\.ai_reason/)
+  assert.match(ui,/mention-diagnostics/)
+  assert.match(ui,/今天还没有 @ 诊断记录/)
 })

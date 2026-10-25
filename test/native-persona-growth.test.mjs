@@ -9,6 +9,8 @@ import {buildGrowthContext, listGrowth} from '../lib/persona-growth.mjs'
 
 const client=readFileSync(new URL('../client.js',import.meta.url),'utf8')
 const host=readFileSync(new URL('../index.js',import.meta.url),'utf8')
+const managerHtml=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
+const managerJs=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8')
 
 function setup() {
   const home=mkdtempSync(join(tmpdir(),'dsh-growth-native-'))
@@ -72,13 +74,14 @@ test('growth API rejects unexpected actions and remote origins without altering 
   }finally{x.close()}
 })
 
-test('native DSH settings exposes the auto-served management hub with no extra port',()=>{
-  for (const keyword of ['🐳 大肥鱼 · 成长记忆','添加待审核经验','从最近日报学习兴趣','撤销最近修改','下一轮实际注入的成长经验','/persona-growth']) {
-    assert.ok(client.includes(keyword),keyword)
+test('native DSH settings exposes a compact entry and management center owns growth operations',()=>{
+  for (const keyword of ['新增成长反馈','从日报提取兴趣','撤销最近修改','下一轮会注入的人设经验','/persona-growth']) {
+    assert.ok((managerHtml+managerJs).includes(keyword),keyword)
   }
-  assert.ok(client.includes("'data-bd-group':'taste'"))
+  assert.ok(client.includes('成长经验审核、梗知识编辑／批准、限额聊天申请统一在宽屏页面管理'))
   assert.ok(host.includes("path === '/api/bili-duty/persona-growth'"))
   assert.ok(host.includes("+ growthDoc"))
-  assert.ok(client.includes("href:'/api/bili-duty/manage'"))
+  assert.ok(client.includes("what: 'manage'"))
+  assert.ok(host.includes("what === 'manage'"))
   assert.ok(host.includes("path === '/api/bili-duty/manage'"))
 })

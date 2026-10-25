@@ -2726,6 +2726,28 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return sendJson(res, 200, { ok: true, config: cfg, host })
     }
 
+    // 管理中心的手动连通性检查：只读会话列表，不调用模型、不发送私信。
+    if (req.method === 'POST' && path === '/api/bili-duty/dm-network-check') {
+      const cred = dmCred(stateDir)
+      if (!cred) return sendJson(res,200,{ok:false,error:'本机没有可用的 B站 登录凭证，请先扫码登录'})
+      const started = Date.now()
+      try {
+        const sessions = await dmList(cred)
+        const elapsedMs = Date.now() - started
+        log(`私信接口连通性测试：成功 host=api.vc.bilibili.com sessions=${sessions.length} elapsed=${elapsedMs}ms`)
+        return sendJson(res,200,{ok:true,host:'api.vc.bilibili.com',sessionCount:sessions.length,elapsedMs,checkedAt:new Date().toISOString()})
+      } catch (e) {
+        const error = String(e?.message || e).replace(/[\r\n\t]+/g,' ').slice(0,220)
+        log('私信接口连通性测试失败：' + error)
+        return sendJson(res,200,{ok:false,error})
+      }
+    }
+
+    if (req.method === 'GET' && path === '/api/bili-duty/dm-recent') {
+      try { return sendJson(res,200,{ok:true,conversations:await dmAutoreply.listRecentConversations(30)}) }
+      catch (e) { return sendJson(res,200,{ok:false,error:'读取最近私信记录失败：'+String(e?.message||e).slice(0,140),conversations:[]}) }
+    }
+
     if (req.method === 'GET' && path === '/api/bili-duty/dm-approvals') {
       return sendJson(res,200,{ok:true, approvals:await dmAutoreply.listApprovals()})
     }
@@ -2791,6 +2813,40 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     //    （设置页那个按钮、以及每轮结束 90 秒后自动跑一次，都走这里）
     if (req.method === 'POST' && path === '/api/bili-duty/verify') return sendJson(res, 200, await runVerify('manual'))
 
+    // 管理中心：最近公开评论记录。只读 seen.md 中已有的 BV/rpid/时间/短摘要，不读取任意路径。
+    if (req.method === 'GET' && path === '/api/bili-duty/recent-comments') {
+      const limit = Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 50))
+      const files = [seenFile]
+      const archiveDir = join(stateDir, 'seen')
+      try {
+        if (existsSync(archiveDir)) for (const name of readdirSync(archiveDir).filter(n => /^\d{4}-\d{2}\.md$/i.test(n)).slice(-24)) files.push(join(archiveDir, name))
+      } catch { /* 主表仍可读 */ }
+      const rows = []
+      const seenKeys = new Set()
+      for (const file of files) {
+        let text = ''
+        try { text = readFileSync(file, 'utf8') } catch { continue }
+        for (const line of text.split(/\r?\n/)) {
+          if (!line.trim().startsWith('|')) continue
+          const cells = line.split('|').map(x => x.trim()).slice(1, -1)
+          const bi = cells.findIndex(x => /^BV[0-9A-Za-z]{10}$/.test(x))
+          if (bi < 0) continue
+          const rpid = String(cells[bi + 1] || '')
+          if (!/^\d{6,30}$/.test(rpid)) continue
+          const key = cells[bi] + ':' + rpid
+          if (seenKeys.has(key)) continue
+          seenKeys.add(key)
+          const root = /^\d{1,30}$/.test(String(cells[bi + 2] || '')) ? String(cells[bi + 2]) : ''
+          const date = cells.slice(bi + 2).find(x => /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/.test(x)) || ''
+          const snippet = String(cells[cells.length - 1] || '').replace(/[\r\n]/g, ' ').slice(0, 120)
+          rows.push({ bvid: cells[bi], rpid, root, time: date, snippet,
+            url: 'https://www.bilibili.com/video/' + cells[bi] + '?comment=' + encodeURIComponent(rpid) })
+        }
+      }
+      rows.sort((a,b) => String(b.time).localeCompare(String(a.time)))
+      return sendJson(res, 200, {ok:true,total:rows.length,rows:rows.slice(0,limit),note:'内容仅包含判重表里保存的评论短摘要，不代表当前仍公开可见。'})
+    }
+
     // 「看今天的报告」：把报告的文本读出来给设置页显示（浏览器不能直接开本地文件 ✗）
     if (req.method === 'GET' && path === '/api/bili-duty/report') {
       const day = String(url.searchParams.get('day') || dayKey()).replace(/[^0-9-]/g, '') || dayKey()
@@ -2805,19 +2861,32 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (req.method === 'POST' && path === '/api/bili-duty/open') {
       const body = await readBody(req)
       const what = String(body?.what || 'out')
-      // ⭐ 2026-10-21：**打开一个网页**（桌面版里 <a target=_blank> 不一定交给系统浏览器 ⇒ 改成让宿主 shell 打开）
-      if (what === 'url') {
-        const u = String(body?.u || '')
-        const onlyHttp = /^https?:\/\//i.test(u)
-        if (!onlyHttp) return sendJson(res, 200, { ok: false, error: '只接受 http(s) 链接' })
+      // 管理中心必须由宿主构造绝对 HTTP URL：设置页所在的 DSH scheme 不是 http(s)，
+      // 直接 new URL(..., window.location.href) 会把自定义 scheme 传进来而被拒绝。
+      if (what === 'manage' || what === 'url') {
+        let u = ''
+        if (what === 'manage') {
+          const host = String(req.headers?.host || '')
+          if (!/^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d{1,5})?$/i.test(host))
+            return sendJson(res, 200, { ok: false, error: '管理中心只允许从本机 DSH 服务打开' })
+          u = `http://${host}/api/bili-duty/manage`
+        } else {
+          u = String(body?.u || '')
+          if (!/^https?:\/\//i.test(u)) return sendJson(res, 200, { ok: false, error: '只接受 http(s) 链接' })
+        }
         if (process.platform !== 'win32') {
           const opener = process.platform === 'darwin' ? 'open' : 'xdg-open'
-          spawn(opener, [u], { detached: true, stdio: 'ignore' }).on('error', () => {})
-          return sendJson(res, 200, { ok: true })
+          const child = spawn(opener, [u], { detached: true, stdio: 'ignore' })
+          child.on('error', e => log('打开网页失败：' + String(e?.message || e)))
+          child.unref?.()
+          log('打开网页：' + u)
+          return sendJson(res, 200, { ok: true, opened: u })
         }
-        spawn('cmd.exe', ['/c', 'start', '', u], { detached: true, stdio: 'ignore' }).on('error', () => {})
+        const child = spawn('cmd.exe', ['/c', 'start', '', u], { detached: true, stdio: 'ignore' })
+        child.on('error', e => log('打开网页失败：' + String(e?.message || e)))
+        child.unref?.()
         log('打开网页：' + u)
-        return sendJson(res, 200, { ok: true })
+        return sendJson(res, 200, { ok: true, opened: u })
       }
       const dir = what === 'home' ? stateDir : outDir
       if (process.platform !== 'win32') return sendJson(res, 200, { ok: false, error: '这个按钮目前只做了 Windows' })
