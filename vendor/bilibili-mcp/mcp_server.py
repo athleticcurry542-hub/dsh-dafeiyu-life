@@ -689,6 +689,15 @@ def _meme_lookup(query="", limit=8):
         conn.close()
 
 
+def _meme_capacity():
+    """插件传入的容量上限，独立于设置页最多返回的 30 条。"""
+    try:
+        n = int(os.environ.get('BILI_MEME_MAX_ENTRIES', '300'))
+    except (TypeError, ValueError):
+        n = 300
+    return max(10, min(2000, n))
+
+
 def _meme_save(name, meaning, bvid, evidence, aliases="", kind="梗", evidence_type="字幕", confidence="待核实"):
     nm=_meme_clean(name,48)
     if len(nm)<2: raise ValueError('梗名至少两个字')
@@ -712,7 +721,14 @@ def _meme_save(name, meaning, bvid, evidence, aliases="", kind="梗", evidence_t
     conn=_meme_conn()
     try:
         with conn:
+            # BEGIN IMMEDIATE 序列化不同 MCP 进程的写入与容量检查，避免同时新增超额。
+            conn.execute('BEGIN IMMEDIATE')
             old=conn.execute('SELECT id FROM memes WHERE key=?',(key,)).fetchone()
+            if not old:
+                count = conn.execute('SELECT COUNT(*) FROM memes').fetchone()[0]
+                cap = _meme_capacity()
+                if count >= cap:
+                    return {'ok':False,'status':'capacity_reached','error':f'梗知识库已达保存上限 {count}/{cap}，请在设置中调高上限或删除错误记忆；已有梗仍可追加来源', 'count':count,'limit':cap}
             if old:
                 mid=old['id']
                 # 已知释义不被无声覆盖；更新来自新视频的证据，避免 AI 来回改定义。

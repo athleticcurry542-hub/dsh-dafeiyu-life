@@ -26,3 +26,15 @@ test('设置页支持关闭梗记忆、检索、删除且仅访问固定库',()=
   assert.match(web,/梗知识库 · 长期记忆/)
   assert.match(web,/\/meme-memory\/delete/)
 })
+
+// Storage capacity is distinct from the 30-row UI page size.
+test('知识库保存上限独立配置并下发 Python，UI 的 30 仅为查询返回数',()=>{
+  assert.match(js,/memeMemoryMaxEntries: z\.natural\(\)\.default\(300\)/)
+  assert.match(js,/BILI_MEME_MAX_ENTRIES/)
+  assert.match(js,/if \('memeMemoryMaxEntries' in p\)/)
+  assert.match(web,/知识库最多保存多少条梗/)
+  assert.match(web,/memeMemoryMaxEntries/)
+  assert.match(py,/_meme_capacity\(/)
+  assert.match(py,/BEGIN IMMEDIATE/)
+  assert.match(py,/capacity_reached/)
+})

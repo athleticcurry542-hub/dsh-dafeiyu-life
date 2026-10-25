@@ -16,6 +16,7 @@ class PreviewTests(unittest.TestCase):
         for url in ['https://evil.invalid/sprite.jpg','http://i0.hdslb.com/x.jpg','https://i0.hdslb.com.evil.invalid/x.jpg']:
             with self.assertRaises(ValueError):pv._image_url(url)
         self.assertEqual(pv._image_url('//i0.hdslb.com/bfs/videoshot/x.jpg'),'https://i0.hdslb.com/bfs/videoshot/x.jpg')
+        self.assertEqual(pv._image_url('http://i0.hdslb.com/bfs/videoshot/x.jpg'),'https://i0.hdslb.com/bfs/videoshot/x.jpg')
 
     def test_high_energy(self):
         self.assertEqual(pv._pick_indices([0,10,20,30,40,50,60],2,[0,0,0,1,10,0,0],10),[2,4])
@@ -31,7 +32,7 @@ class PreviewTests(unittest.TestCase):
         buff=BytesIO();img.save(buff,format='JPEG');sheet=buff.getvalue()
         def api(url):
             if '/view?' in url:return {'cid':42}
-            if '/videoshot?' in url:return {'image':['//i0.hdslb.com/test.jpg'],'index':[0,0,10,20,30],'img_x_len':4,'img_y_len':1,'img_x_size':160,'img_y_size':90}
+            if '/videoshot?' in url:return {'image':['//i0.hdslb.com/bfs/videoshot/test.jpg'],'index':[0,0,10,20,30],'img_x_len':4,'img_y_len':1,'img_x_size':160,'img_y_size':90}
             raise AssertionError(url)
         def download(url,*a,**k):
             if 'pbp/data' in url:return json.dumps({'events':{'default':[1,4,8,1]},'step_sec':10}).encode()

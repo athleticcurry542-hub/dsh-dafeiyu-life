@@ -266,6 +266,8 @@ function WatchTab() {
       const [memeMemory, setMemeMemory] = React.useState(null)
       const [memeKeyword, setMemeKeyword] = React.useState('')
       const [memeBusy, setMemeBusy] = React.useState(false)
+      const [memeHistoryExpanded, setMemeHistoryExpanded] = React.useState(false)
+      const [memeMaxEntriesDraft, setMemeMaxEntriesDraft] = React.useState(null)
       const [visionBV,setVisionBV] = React.useState('')
       const [visionTest,setVisionTest] = React.useState(null)
       const [visionBusy,setVisionBusy] = React.useState(false)
@@ -335,6 +337,7 @@ function WatchTab() {
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && dailyPublicCommentLimit === null) setDailyPublicCommentLimit(String(cfg.commentDailyLimit ?? 10))
         if (cfg && dynamicDailyLimitDraft === null) setDynamicDailyLimitDraft(String(cfg.dynamicDailyLimit ?? 3))
+        if (cfg && memeMaxEntriesDraft === null) setMemeMaxEntriesDraft(String(cfg.memeMemoryMaxEntries ?? 300))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
         if (cfg && mentionMode === null) setMentionMode(cfg.mentionMode || 'ai')
@@ -1013,22 +1016,39 @@ function WatchTab() {
             on: cfg.memeMemoryEnabled !== false,
             onChange: v => patch({memeMemoryEnabled:v},'梗知识库'),
           }),
+          h('div',{'data-bd-row':'',style:{alignItems:'center'}},
+            h('div',{'data-bd-grow':''},
+              h('div',{'data-bd-label':''},'知识库最多保存多少条梗'),
+              h('div',{'data-bd-note':''},'10–2000 条，默认 300。满额后不再新增，但同名梗可以继续补充来源。调低不会自动删除旧记录。')),
+            h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:10,max:2000,
+              value:memeMaxEntriesDraft ?? '300',
+              onChange:e=>setMemeMaxEntriesDraft(e.target.value),
+              onBlur:()=>{const n=Number(memeMaxEntriesDraft);const value=Number.isFinite(n)?Math.max(10,Math.min(2000,Math.floor(n))):300;setMemeMaxEntriesDraft(String(value));patch({memeMemoryMaxEntries:value},'梗知识库保存上限')} })),
           h('div',{'data-bd-note':''}, '需要视频文字证据或已实际识别的低清预览证据；视觉推断一律待核实。AI 的猜测可能有误，你可以在这里删除。'),
           h('div',{'data-bd-row':''},
             h('input',{'data-bd-input':'',placeholder:'查梗名称，例如 奶蛙',value:memeKeyword,
               onChange:e=>setMemeKeyword(e.target.value),onKeyDown:e=>{if(e.key==='Enter')loadMemeMemory(memeKeyword)}}),
             h('button',{'data-bd-btn':'',onClick:()=>loadMemeMemory(memeKeyword)},'查询 / 刷新')),
-          h('div',{'data-bd-note':''},memeMemory?.ok
-            ? `已记住 ${memeMemory.total} 条 · 当前显示 ${memeMemory.entries?.length||0} 条（最多 30 条）`
-            : memeMemory ? '梗知识库暂时无法读取，可检查 Python 环境' : '加载中…'),
-          ...(memeMemory?.ok ? (memeMemory.entries||[]).map(x=>h('div',{'data-bd-item':'',key:'meme-'+x.id},
-            h('div',{'data-bd-item-body':''},
-              h('div',{'data-bd-item-t':''},x.name, x.aliases ? `（${x.aliases}）`:''),
-              h('div',{'data-bd-note':''},`类型：${x.kind} · ${x.confidence} · ${x.visual_status}`),
-              h('div',{'data-bd-item-why':''},x.meaning),
-              ...(x.sources||[]).slice(0,2).map(src=>h('div',{'data-bd-note':'',key:src.bvid},
-                `来自 ${src.bvid} · ${src.evidence_type}：${src.evidence}`)),
-              h('button',{'data-bd-btn':'',disabled:memeBusy,onClick:()=>deleteMeme(x.id)},'删除错误记忆')))) : []),
+          h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
+            h('span',{'data-bd-note':''},memeMemory?.ok
+              ? `已保存 ${memeMemory.total} / ${cfg.memeMemoryMaxEntries ?? 300} 条 · 本次匹配显示 ${memeMemory.entries?.length||0} 条（每次最多返回 30 条）`
+              : memeMemory ? '梗知识库暂时无法读取，可检查 Python 环境' : '加载中…'),
+            memeMemory?.ok && (memeMemory.entries||[]).length > 3
+              ? h('button',{type:'button','data-bd-btn':'',onClick:()=>setMemeHistoryExpanded(v=>!v)},
+                  memeHistoryExpanded?'收起':'展开查看更多') : null),
+          memeMemory?.ok && (memeMemory.entries||[]).length
+            ? h('div',{style:{maxHeight:memeHistoryExpanded?'320px':'260px',overflowY:'auto',overflowX:'hidden',
+                overscrollBehavior:'contain',display:'flex',flexDirection:'column',gap:'8px',overflowWrap:'anywhere'}},
+                ...(memeHistoryExpanded ? memeMemory.entries : memeMemory.entries.slice(0,3)).map(x=>h('div',{'data-bd-item':'',key:'meme-'+x.id},
+                  h('div',{'data-bd-item-body':''},
+                    h('div',{'data-bd-item-t':''},x.name, x.aliases ? `（${x.aliases}）`:''),
+                    h('div',{'data-bd-note':''},`类型：${x.kind} · ${x.confidence} · ${x.visual_status}`),
+                    h('div',{'data-bd-item-why':''},x.meaning),
+                    ...(x.sources||[]).slice(0,2).map(src=>h('div',{'data-bd-note':'',key:src.bvid},
+                      `来自 ${src.bvid} · ${src.evidence_type}：${src.evidence}`)),
+                    h('button',{'data-bd-btn':'',disabled:memeBusy,onClick:()=>deleteMeme(x.id)},'删除错误记忆')))))
+            : memeMemory?.ok ? h('div',{'data-bd-note':''},'还没有符合条件的梗记忆。') : null,
+
         ),
 
         /* ── 关注什么 / 在哪儿刷 ── */

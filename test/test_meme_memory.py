@@ -1,6 +1,8 @@
 """独立抽取 MCP 梗库辅助函数执行，不加载真实 B站 SDK，不联网。"""
 import ast
 import json
+import os
+from unittest.mock import patch
 import re
 import sqlite3
 import subprocess
@@ -13,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 text = (ROOT / 'vendor/bilibili-mcp/mcp_server.py').read_text(encoding='utf8')
 tree = ast.parse(text)
-wanted = {'_meme_clean','_meme_conn','_meme_lookup','_meme_save','_valid_bv'}
+wanted = {'_meme_clean','_meme_conn','_meme_lookup','_meme_save','_meme_capacity','_valid_bv'}
 mod = ast.Module(body=[n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted],type_ignores=[])
 compiled = compile(mod,'<meme_memory>','exec')
 
@@ -21,7 +23,7 @@ class MemeMemoryTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
         self.home=Path(self.tmp.name)
-        self.scope={'sqlite3':sqlite3,'re':re,'datetime':datetime,'Path':Path,
+        self.scope={'sqlite3':sqlite3,'re':re,'datetime':datetime,'Path':Path,'os':os,
                     '_DUTY_HOME':self.home,'_MEME_DB_NAME':'meme-memory.sqlite3',
                     '_MEME_FORBIDDEN':re.compile(r'(?i)(?:api[_-]?key|token|cookie|password|sessdata|https?://|[A-Za-z]:[\\/]|\.dsh[/\\]|-----BEGIN)'),
                     '_BV_PATTERN':re.compile(r'^BV[0-9A-Za-z]{10}$')}
@@ -56,6 +58,25 @@ class MemeMemoryTests(unittest.TestCase):
         self.assertEqual(entry['confidence'],'待核实')
         self.assertEqual(len(entry['sources']),2)
         self.assertEqual(self.find()['count'],1)
+
+    def test_storage_capacity_does_not_delete_existing_or_block_source_updates(self):
+        with patch.dict(os.environ, {'BILI_MEME_MAX_ENTRIES':'10'}):
+            for i in range(10):
+                res=self.save(f'新梗{i:02d}','有字幕记录',self.bvid,'视频字幕里有梗')
+                self.assertTrue(res['saved'])
+            r=self.save('第十一条梗','有字幕记录',self.bvid,'有证据')
+            self.assertFalse(r['ok'])
+            self.assertEqual(r['status'],'capacity_reached')
+            self.assertEqual(self.find()['count'],10)
+            r=self.save('新梗00','应该不覆盖原文','BV1sTHP66E5j','另一个视频的证据')
+            self.assertTrue(r['ok'])
+            self.assertEqual(len(self.find('新梗00')['entries'][0]['sources']),2)
+        with patch.dict(os.environ, {'BILI_MEME_MAX_ENTRIES':'15'}):
+            self.assertTrue(self.save('第十一条梗','有字幕记录',self.bvid,'有证据')['ok'])
+        self.assertEqual(self.find()['count'],11)
+        with patch.dict(os.environ, {'BILI_MEME_MAX_ENTRIES':'10'}):
+            self.assertEqual(self.find()['count'],11)
+            self.assertFalse(self.save('第十二条梗','有字幕记录',self.bvid,'有证据')['ok'])
 
     def test_bad_bv_secret_and_empty_evidence_rejected(self):
         for args in [

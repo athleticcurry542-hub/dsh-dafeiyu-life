@@ -31,6 +31,7 @@ PROMPT = (
 def _safe_api_get(url, max_bytes=3_000_000, image=False):
     host = urllib.parse.urlsplit(url).hostname or ''
     if image:
+        url = _image_url(url)
         if not IMAGE_HOST_RE.fullmatch(host):
             raise ValueError('拒绝非 B站预览图域名')
     elif host not in ('api.bilibili.com', 'bvc.bilivideo.com'):
@@ -42,6 +43,8 @@ def _safe_api_get(url, max_bytes=3_000_000, image=False):
             nxt = urllib.parse.urlsplit(newurl)
             if nxt.scheme != 'https' or (not IMAGE_HOST_RE.fullmatch(nxt.hostname or '') if image else nxt.hostname not in ('api.bilibili.com','bvc.bilivideo.com')):
                 raise ValueError('预览接口重定向到非白名单地址')
+            if image:
+                _image_url(newurl)  # 重定向后的图片也必须留在官方 videoshot 目录
             return super().redirect_request(req,fp,code,msg,headers,newurl)
     req = urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.bilibili.com/'})
     with urllib.request.build_opener(SecureRedirect()).open(req, timeout=10) as resp:
@@ -62,13 +65,27 @@ def _json_api(url):
 
 
 def _image_url(s):
-    if not isinstance(s, str):
+    """规范化 B站官方 videoshot 图片：老接口可能返回 http:// 或 //。
+
+    从不向 HTTP 下载图；只有固定域名+固定视频快照目录通过后才升级为 HTTPS。
+    """
+    if not isinstance(s, str) or len(s) > 2048:
         raise ValueError('预览图地址格式错误')
-    s = 'https:'+s if s.startswith('//') else s
+    if s.startswith('//'):
+        s = 'https:' + s
     p = urllib.parse.urlsplit(s)
-    if p.scheme != 'https' or not IMAGE_HOST_RE.fullmatch(p.hostname or ''):
-        raise ValueError('非法的 B站预览图片地址')
-    return s
+    host = (p.hostname or '').lower()
+    if not IMAGE_HOST_RE.fullmatch(host):
+        raise ValueError('非法的 B站预览图片地址：图片主机不在安全名单（主机：' + host[:80] + '）')
+    if p.scheme not in ('http', 'https') or p.username or p.password or p.port not in (None, 80, 443) or p.fragment:
+        raise ValueError('非法的 B站预览图片地址：协议或地址格式不安全')
+    # 仅允许 videoshot 拼图，不接受任意站内图片或携带脚本的路径。
+    if not re.fullmatch(r'/bfs/videoshot/[A-Za-z0-9_./-]+\.(?:jpe?g|png|webp)', p.path, re.I):
+        raise ValueError('非法的 B站预览图片地址：不是受支持的视频预览拼图')
+    # B站旧接口会返回 http://i0.hdslb.com/bfs/videoshot/....jpg；只把合法图片升级为 HTTPS。
+    if p.scheme == 'http':
+        p = p._replace(scheme='https', netloc=host)
+    return urllib.parse.urlunsplit(p)
 
 
 def _pick_indices(times, count, scores=None, step=1):
