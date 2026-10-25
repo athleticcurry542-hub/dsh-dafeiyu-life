@@ -39,7 +39,7 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <p id="report-meta" class="muted">报告只从本机 out 目录读取，不会重新调用模型。</p><pre id="report-content" class="output">选择日期后读取。</pre>
 </section>
 <section id="panel-comments" hidden>
-<div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><h3>后台评论互动设置</h3><button id="comments-refresh">刷新状态与记录</button></div><p id="comments-status" class="muted">正在读取状态…</p>
+<div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><h3>后台评论互动设置</h3><button id="comments-refresh">刷新状态与记录</button></div><p id="comments-status" class="muted">正在读取状态…</p><p id="comments-usage" class="muted">近24小时回复计数读取中…</p>
 <div class="fields">
 <div class="checkline"><input id="comment-watch-replies" type="checkbox"><label for="comment-watch-replies">后台回复别人对我的评论</label></div>
 <div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>
@@ -47,10 +47,12 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div><label for="comment-top-count">每视频查看热评数（1–20）</label><input id="comment-top-count" type="number" min="1" max="20" value="5"></div>
 <div><label for="comment-top-videos">每轮检查视频数（1–6）</label><input id="comment-top-videos" type="number" min="1" max="6" value="3"></div>
 <div><label for="comment-per-poll">每轮最多回复（1–5）</label><input id="comment-per-poll" type="number" min="1" max="5" value="1"></div>
-<div><label for="comment-per-day">近24小时最多回复（1–30）</label><input id="comment-per-day" type="number" min="1" max="30" value="5"></div>
-</div><div class="actions"><button id="comments-settings-save" class="primary">保存评论互动设置</button></div></div>
+<div><label for="comment-per-day">后台公开评论近24小时最多回复（1–1000）</label><input id="comment-per-day" type="number" min="1" max="1000" value="5"></div>
+<div><label for="comment-own-top-per-user">我的顶层评论下：同一人近24小时最多回复（1–1000）</label><input id="comment-own-top-per-user" type="number" min="1" max="1000" value="5"></div>
+<div><label for="comment-own-nested-per-user">我的楼中楼回复下：同一人近24小时最多回复（1–1000）</label><input id="comment-own-nested-per-user" type="number" min="1" max="1000" value="3"></div>
+</div><p class="muted">仅对能从本地评论账本及发送回执确认的我的评论启用优先回复；按 UID 分别计数，超过上限不再自动回复。所有后台回复仍受“每轮上限”和“公开评论全局每日硬上限”约束。非必要不回复刷屏、广告或攻击性内容。</p><div class="actions"><button id="comments-settings-save" class="primary">保存评论互动设置</button></div></div>
 <div class="toolbar"><h2 style="margin:0">最近公开评论记录</h2><label for="comments-day">日期</label><input id="comments-day" type="date" title="留空显示全部日期"><button id="comments-day-clear">全部日期</button><select id="comments-limit"><option value="20">每页20条</option><option value="50" selected>每页50条</option><option value="100">每页100条</option><option value="200">每页200条</option></select><button id="comments-load">刷新记录</button></div>
-<p class="muted">合并本地判重表与发送工具诊断日志。成功回执不代表 B站 当前公开可见；正文摘要只在原判重表保存过时显示。</p>
+<p class="muted">这里只读取评论主判重表 seen.md 及月度归档，不从诊断日志实时拼接。成功回执不代表 B站 当前公开可见；正文摘要只显示原本实际保存的内容。</p>
 <p id="comments-summary" class="muted" role="status">读取中…</p><div id="recent-comments-list" class="records"></div>
 <div class="toolbar"><button id="comments-prev">上一页</button><span id="comments-page-info" class="muted"></span><button id="comments-next">下一页</button></div>
 </section>
@@ -65,7 +67,8 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div class="checkline"><input id="dm-stranger-enabled" type="checkbox"><label for="dm-stranger-enabled">允许陌生人自动回复</label></div>
 <div><label for="dm-whitelist">白名单 UID（换行或逗号分隔）</label><textarea id="dm-whitelist" maxlength="5000" placeholder="12345678&#10;87654321"></textarea></div>
 <div><label for="dm-interval">检查间隔（分钟，1–120）</label><input id="dm-interval" type="number" min="1" max="120" value="1"></div>
-<div><label for="dm-reply-per-day">每日自动回复上限（0=不限，最大1000）</label><input id="dm-reply-per-day" type="number" min="0" max="1000" value="0"></div>
+<div><label for="dm-reply-per-day">每日自动私信回复上限（0=不限，最大1000；不包含公开评论）</label><input id="dm-reply-per-day" type="number" min="0" max="1000" value="0"></div>
+<div><label for="dm-context-messages">私信上下文条数（0–80，0=不读取历史）</label><input id="dm-context-messages" type="number" min="0" max="80" value="40"></div>
 <div><label for="dm-stranger-max">每个陌生人最多回复次数（1–20）</label><input id="dm-stranger-max" type="number" min="1" max="20" value="1"></div>
 <div class="checkline"><input id="dm-first-fixed" type="checkbox"><label for="dm-first-fixed">陌生人第一条使用固定欢迎语</label></div>
 <div><label for="dm-welcome">陌生人固定欢迎语（最多450字）</label><textarea id="dm-welcome" maxlength="450"></textarea></div>

@@ -41,7 +41,7 @@ import { listActiveVideoWishes } from './lib/video-wishes.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
 import { createCommentInteract } from './lib/comment-interact.mjs'
-import { recentComments, migrateCommentReceipts } from './lib/recent-comments.mjs'
+import { recentComments, migrateCommentReceipts, ownCommentTargets } from './lib/recent-comments.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { listCommentMemes } from './lib/comment-meme-library.mjs'
@@ -156,6 +156,7 @@ export const Config = !z ? undefined : z.object({
   dmWatchMinutes: z.natural().default(1).extra('volatile', true),
   /** 私信回复每天最多几条（防刷） */
   dmReplyPerDay: z.natural().default(0).extra('volatile', true),
+  dmContextMessages: z.natural().default(40).extra('volatile', true),
   /** 兼容老版：原指定的私信聊天 UID */
   dmOwnerUid: z.natural().default(0).extra('volatile', true),
   /** 允许无限多轮 AI 对话的用户 UID，多行或逗号分隔；不设总轮数上限，但限速 */
@@ -177,6 +178,8 @@ export const Config = !z ? undefined : z.object({
   commentAllowGeneralTop: z.boolean().default(false).extra('volatile', true),
   commentReplyPerPoll: z.natural().default(1).extra('volatile', true),
   commentReplyPerDay: z.natural().default(5).extra('volatile', true),
+  commentOwnTopPerUser: z.natural().default(5).extra('volatile', true),
+  commentOwnNestedPerUser: z.natural().default(3).extra('volatile', true),
   workspace: z.string().default('').extra('volatile', true),
   /** 日报形态：full=完整（现状）· brief=每条一两行 · off=不写报告（只发评论） */
   reportLevel: z.string().default('full').extra('volatile', true),
@@ -317,12 +320,12 @@ function reportMeta() {
    */
   const DEFAULTS = {
     masterEnabled: true,
-    dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmOwnerUid: 0,
+    dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmContextMessages: 40, dmOwnerUid: 0,
     dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
     dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10, dmWishMentionLimit: 3,
     videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '',
     commentWatchReplies: false, commentWatchTop: false, commentTopCount: 5, commentTopVideoCount: 3,
-    commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5,
+    commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: '', characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
@@ -389,6 +392,7 @@ function reportMeta() {
     if ('dmWatch' in p) p.dmWatch = Boolean(p.dmWatch)
     if ('dmWatchMinutes' in p) p.dmWatchMinutes = Math.max(1, Math.min(120, Number(p.dmWatchMinutes) || 1))
     if ('dmReplyPerDay' in p) p.dmReplyPerDay = Math.max(0, Math.min(1000, Math.floor(Number(p.dmReplyPerDay) || 0)))
+    if ('dmContextMessages' in p) p.dmContextMessages = Math.max(0,Math.min(80,Math.floor(Number(p.dmContextMessages)||0)))
     if ('dmOwnerUid' in p) p.dmOwnerUid = Math.max(0, Number(p.dmOwnerUid) || 0)
     if ('dmWhitelist' in p) p.dmWhitelist = String(p.dmWhitelist || '').slice(0, 2500)
     if ('dmStrangerOnce' in p) p.dmStrangerOnce = p.dmStrangerOnce === true
@@ -401,12 +405,12 @@ function reportMeta() {
     if ('dmApprovedDailyLimit' in p) p.dmApprovedDailyLimit = Math.max(1,Math.min(1000,Math.floor(Number(p.dmApprovedDailyLimit)||10)))
     if ('dmWishMentionLimit' in p) p.dmWishMentionLimit = Math.max(1,Math.min(10,Math.floor(Number(p.dmWishMentionLimit)||3)))
     for (const k of ['commentWatchReplies', 'commentWatchTop', 'commentAllowGeneralTop']) if(k in p) p[k] = p[k] === true
-    for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,30,5]]) {
+    for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,1000,5],['commentOwnTopPerUser',1,1000,5],['commentOwnNestedPerUser',1,1000,3]]) {
       if(k in p) p[k] = Math.max(min, Math.min(max, Math.floor(Number(p[k]) || def)))
     }
     if ('commentSyncDynamic' in p) p.commentSyncDynamic = p.commentSyncDynamic === true
     if ('dynamicDailyLimit' in p) p.dynamicDailyLimit = Math.max(0, Math.min(30, Math.floor(Number(p.dynamicDailyLimit) || 0)))
-    if ('commentDailyLimit' in p) p.commentDailyLimit = Math.max(0, Math.min(100, Math.floor(Number(p.commentDailyLimit) || 0)))
+    if ('commentDailyLimit' in p) p.commentDailyLimit = Math.max(0, Math.min(1000, Math.floor(Number(p.commentDailyLimit) || 0)))
     if ('favFolderId' in p) p.favFolderId = Math.max(0, Math.floor(Number(p.favFolderId) || 0))
     if ('commentPerRound' in p) p.commentPerRound = Math.max(0, Math.floor(Number(p.commentPerRound) || 0))
     return p
@@ -1745,7 +1749,7 @@ function reportMeta() {
       maxPerPoll: 3, maxPerHour: 40,
       maxPerDay: cfg.dmReplyPerDay,
       whitelistCooldownSeconds: 15,
-      historyLimit: 40,
+      historyLimit: cfg.dmContextMessages,
     }
   }
   const ownerInfo = () => {
@@ -1862,10 +1866,12 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         watchTop: cfg.masterEnabled === true && cfg.commentWatchTop === true,
         topCount: cfg.commentTopCount, topVideoCount: cfg.commentTopVideoCount,
         replyPerPoll: cfg.commentReplyPerPoll, replyPerDay: cfg.commentReplyPerDay,
+        ownTopPerUser:cfg.commentOwnTopPerUser, ownNestedPerUser:cfg.commentOwnNestedPerUser,
         allowGeneralTop: cfg.commentAllowGeneralTop === true,
       }
     },
     getNotifications: () => call('bili_received_replies', {}),
+    getOwnComments: () => ownCommentTargets(stateDir),
     getVideos: async () => {
       // 只看最近7天筛选过的视频，绝不去任意视频批量搭讪。
       const cutoff = dayKey(new Date(Date.now()-7*86400_000))
@@ -1879,7 +1885,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       if (!(cfg.masterEnabled && (cfg.commentWatchReplies || cfg.commentWatchTop))) return {ok:false,error:'后台评论回复已关闭'}
       const r = await call('bili_reply', {bvid: req.bvid || '', aid: Number(req.aid)||0,
         rpid: Number(req.rpid), root: Number(req.root)||0, text:String(req.text).slice(0,130)})
-      return r?.success === true ? {ok:true} : {ok:false,error:String(r?.error||r?.message||'评论未确认成功')}
+      return r?.success === true ? {ok:true,rpid:String(r?.rpid_str||r?.rpid||'')} : {ok:false,error:String(r?.error||r?.message||'评论未确认成功')}
     },
     logger: {warn: (msg) => log('评论互动警告：'+msg),error:(msg)=>log('评论互动错误：'+msg)},
   })
@@ -2773,8 +2779,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
         'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
-        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
-        'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'favFolderId']) {
+        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
+        'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，

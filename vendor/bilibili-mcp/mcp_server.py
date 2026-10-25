@@ -930,7 +930,7 @@ def _reserve_comment_quota() -> tuple[bool, str]:
     限制基于尝试次数；网络异常也不自动返还额度，以防超时导致重复发布。
     """
     try:
-        limit = max(0, min(100, int(os.environ.get("BILI_COMMENT_DAILY_LIMIT", "10"))))
+        limit = max(0, min(1000, int(os.environ.get("BILI_COMMENT_DAILY_LIMIT", "10"))))
     except (ValueError, TypeError):
         limit = 10
     if limit == 0:

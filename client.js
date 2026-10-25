@@ -800,10 +800,10 @@ function WatchTab() {
               h('div', { 'data-bd-label': '' }, '公开评论全局每日上限（跑一轮＋后台互动共用）'),
               h('div', { 'data-bd-note': '' }, '含刷视频原创评论和后台评论回复，按发送尝试计数；0 = 完全禁发。默认 10。'),
               h('div', { 'data-bd-note': '' }, commentQuota?.ok ? `今日已用 ${commentQuota.used} / ${commentQuota.limit} 次` : '今日已用：暂不可读取')),
-            h('input', { 'data-bd-input': '', 'data-bd-num': '', type:'number', min:0, max:100,
+            h('input', { 'data-bd-input': '', 'data-bd-num': '', type:'number', min:0, max:1000,
               value: dailyPublicCommentLimit ?? '10',
               onChange: e => setDailyPublicCommentLimit(e.target.value),
-              onBlur: () => { const n=Math.max(0,Math.min(100,Math.floor(Number(dailyPublicCommentLimit)||0)));setDailyPublicCommentLimit(String(n));patch({commentDailyLimit:n}, '评论每日硬上限') }
+              onBlur: () => { const n=Math.max(0,Math.min(1000,Math.floor(Number(dailyPublicCommentLimit)||0)));setDailyPublicCommentLimit(String(n));patch({commentDailyLimit:n}, '评论每日硬上限') }
             })),
           (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h('div', {},
             h('div', { 'data-bd-row': '' },
