@@ -703,7 +703,17 @@ function WatchTab() {
           h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
             h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'🐳 大肥鱼管理中心'),
               h('div',{'data-bd-note':''},'成长经验审核、梗知识编辑／批准、限额聊天申请统一在宽屏页面管理，无需启动 18763 服务。')),
-            h('a',{href:'/api/bili-duty/manage',target:'_blank',rel:'noopener noreferrer','data-bd-btn':'',style:{display:'inline-block',textDecoration:'none'}},'打开管理中心 ↗'))),
+            h('button',{type:'button','data-bd-btn':'',onClick:async()=>{
+              // DSH 桌面设置页中的 <a target=_blank> 不一定交给系统浏览器。
+              // 复用插件已有 /open 宿主接口，让桌面端打开同源管理页面。
+              try {
+                const u = new URL(API + '/manage', window.location.href).href
+                const result = await jpost('/open', { what: 'url', u })
+                if (!result || result.ok !== true) throw new Error(result?.error || '宿主没有确认打开管理中心')
+              } catch (e) {
+                window.alert('打开管理中心失败：' + String(e?.message || e))
+              }
+            }},'打开管理中心 ↗'))),
 
         /* ── 大肥鱼总开关：永久展示，不隐藏设置，不清除历史 ── */
         h('div', { 'data-bd-sec': '', style: {padding:'12px',border:'1px solid var(--dsw-alias-bg-layer-3,rgba(127,127,127,.24))',borderRadius:'12px'} },
