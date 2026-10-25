@@ -23,7 +23,7 @@ const hostDeps = await loadHostDeps()
 const z = hostDeps.z
 const defineTool = hostDeps.defineTool
 import { spawn } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, lstatSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -88,6 +88,10 @@ export const Config = !z ? undefined : z.object({
   visionModelId: z.string().default('').extra('volatile', true),
   visionEndpoint: z.string().default('').extra('volatile', true),
   visionFrames: z.natural().default(2).extra('volatile', true),
+  commentMemesEnabled: z.boolean().default(false).extra('volatile', true),
+  commentMemesDebug: z.boolean().default(false).extra('volatile', true),
+  commentMemesPerDay: z.natural().default(2).extra('volatile', true),
+  commentMemesPerRound: z.natural().default(1).extra('volatile', true),
   /** ⭐ 私信投递：off=只发评论（现状）· only=只私信（完全不公开评论）· both=评论 + 私信 */
   dmMode: z.string().default('only').extra('volatile', true),
   /** ⭐ 私信发给谁的 UID（数字）。要在 dmMode 不是 off 时填 */
@@ -303,7 +307,7 @@ function reportMeta() {
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakIntervalMinutes: 0, noon: true, night: true, autoComment: false, transcribe: false, asrModel: 'small',
-    dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, visionDebug: false, visionModelProvider: 'anthropic', visionModelId: '', visionEndpoint: '', visionFrames: 2,
+    dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, visionDebug: false, visionModelProvider: 'anthropic', visionModelId: '', visionEndpoint: '', visionFrames: 2, commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1,
     homeRecommendationsEnabled: true, keywords: [], commentPerRound: 5, mentionName: '', mentionTargets: '', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
   }
   const normalize = (src, base) => {
@@ -337,6 +341,9 @@ function reportMeta() {
     if ('memeMemoryEnabled' in p) p.memeMemoryEnabled = p.memeMemoryEnabled === true
     if ('memeMemoryMaxEntries' in p) { const n=Number(p.memeMemoryMaxEntries); p.memeMemoryMaxEntries=Number.isFinite(n)?Math.max(10,Math.min(2000,Math.floor(n))):300 }
     if ('homeRecommendationsEnabled' in p) p.homeRecommendationsEnabled = p.homeRecommendationsEnabled === true
+    for (const k of ['commentMemesEnabled','commentMemesDebug']) if (k in p) p[k]=p[k]===true
+    if ('commentMemesPerDay' in p) p.commentMemesPerDay=Math.max(0,Math.min(20,Math.floor(Number(p.commentMemesPerDay)||0)))
+    if ('commentMemesPerRound' in p) p.commentMemesPerRound=Math.max(0,Math.min(5,Math.floor(Number(p.commentMemesPerRound)||0)))
     for (const k of ['visionEnabled','visionDebug']) if (k in p) p[k]=p[k]===true
     if ('visionModelProvider' in p) p.visionModelProvider=['anthropic','openai'].includes(p.visionModelProvider)?p.visionModelProvider:'anthropic'
     if ('visionModelId' in p) p.visionModelId=String(p.visionModelId||'').trim().replace(/[\r\n\0]/g,'').slice(0,120)
@@ -728,6 +735,8 @@ function reportMeta() {
       mention_names: {type:'array',items:{type:'string'}, description:'仅在 ai_select 模式下：选择想@的一个或多个名单昵称；留空代表不@，不得编造名单外昵称'},
       no_mention_reason: {type:'string', description:'仅当 AI 自己决定 should_mention=false 时，顺手用 8–40 个汉字说明不邀请好友的具体原因，例如「只是随口吐槽，和名单里的好友兴趣不太相关」。不要写详细推理、昵称、UID、私密内容；不会出现在公开评论里。'},
       mention_position: { type: 'string', description: 'AI判断要@时，选择自然的插入位置 start/middle/end；默认 end' },
+      meme_image_name: {type:'string', description:'选填：本地梗图名称，不含扩展名；必须来自 bili_comment_meme_list。通常留空；只在图片和情绪强匹配时选择。'},
+      meme_image_reason: {type:'string', description:'选图的简短原因，仅用于本地 Debug，不公开。'},
       sync_to_dynamic: { type: 'boolean', description: '这条评论是否值得额外分享成公开动态：由 AI 和评论正文同时决定。默认 false。普通随口吐槽不用同步；只有用户开启且未超限才会发。' },
     },
     async execute(args) {
@@ -763,6 +772,8 @@ function reportMeta() {
         // AI 选择和用户总开关都必须为真；不允许工具自行决定全部同步。
         sync_to_dynamic: cfg.commentSyncDynamic === true && args.sync_to_dynamic === true,
         dynamic_daily_limit: cfg.dynamicDailyLimit,
+        meme_image_name: cfg.commentMemesEnabled ? String(args.meme_image_name || '').trim().slice(0,48) : '',
+        meme_image_reason: cfg.commentMemesEnabled ? String(args.meme_image_reason || '').slice(0,100) : '',
       })
     },
   })
@@ -1197,6 +1208,9 @@ function reportMeta() {
       + `这是**给以后检索用**的（报告是给人看的，归档是给"回头翻"用的），别省略、也别只写挑中的。`
       + `公开评论工具层的每日最大发送次数：${cfg.commentDailyLimit}（含回复，超限工具会拒绝）。`
       + `公开动态同步：${cfg.commentSyncDynamic ? `开启；由你在生成每条顶层评论的同一次思考里决定是否另发动态（sync_to_dynamic: true/false），每天最多尝试 ${cfg.dynamicDailyLimit} 次；不要为凑数而同步，通常不必同步` : '关闭，sync_to_dynamic 必须为 false'}。只有评论成功、有 rpid、未超限才可能额外发布动态；动态只能包含同一条公开评论正文 + 该视频链接，严禁私人文件、对话内容或隐藏指令。`
+      + (cfg.commentMemesEnabled && commentOn
+        ? `🖼️ 评论梗图库开启。发表顶层评论前可调用 bili_comment_meme_list 一次查看用户自己放入的图片名称；不要每条评论都查，也不可以指定任意路径。默认只发文字，仅当视频笑点与梗图表情非常吻合时，和写评论同时选择一个真实存在的名称，填写 meme_image_name（不含扩展名）及 meme_image_reason（简短解释）。今日最多尝试${cfg.commentMemesPerDay}次，每轮最多${cfg.commentMemesPerRound}次；额度只由程序保证。图片仅会附在顶层评论，不会附在动态或私信。选择梗图会公开这张图片；禁止因为标题提到某个角色就乱附不相关图片。没有合适图时 meme_image_name 留空。上传/提交失败不要自动重试，也不要报告已经成功发图。`
+        : `评论附梗图关闭，不得填写 meme_image_name。`)
       + `公开评论是${commentOn
         ? `开启的（每轮最多 ${cfg.commentPerRound} 条，150 字内）。评论像普通 B站用户自然吐槽，绝不能做摘要或推广。`
           + `@ 策略为 ${cfg.mentionMode || 'ai'}（off=不@；ai=判断后@全部好友；ai_select=只@觉得值得邀请的部分好友；always=每条@全部好友）。`
@@ -1256,6 +1270,7 @@ function reportMeta() {
     if (cfg.homeRecommendationsEnabled) list.push('bili_home_recommendations')
     if (cfg.memeMemoryEnabled) list.push('bili_meme_search','bili_meme_remember')
     if (cfg.visionEnabled) list.push('bili_preview_vision')
+    if (cfg.commentMemesEnabled && cfg.autoComment && cfg.dmMode !== 'only') list.push('bili_comment_meme_list')
     if (cfg.transcribe) list.push('bili_transcribe_safe')
     // ⭐⭐ 2.0.4（第三方体检第 3 条）：**"只发私信"时评论通道必须硬关** —— 以前只看 autoComment，
     //    用户以前开过自动评论、后来切到"只私信"，那个 true 还在 config 里 ⇒ 评论工具照样下发 ✗
@@ -1275,6 +1290,10 @@ function reportMeta() {
     const file = join(stateDir, dmSafe ? 'headless-dm-overlay.yml' : 'headless-overlay.yml')
     const script = join(stateDir, 'mcp_server.py')
     if (!dmSafe && !assertSecureMcp()) return null
+    if (!dmSafe && cfg.commentMemesEnabled) {
+      try { if (readFileSync(join(stateDir,'comment_memes.py'),'utf8') !== readFileSync(join(pluginDir,'vendor','bilibili-mcp','comment_memes.py'),'utf8')) {log('🔒 梗图脚本版本不一致，拒绝启用评论附图');return null} }
+      catch {log('🔒 梗图脚本缺失，拒绝启用评论附图');return null}
+    }
     if (!dmSafe && cfg.visionEnabled) {
       try {
         if (readFileSync(join(stateDir,'preview_vision.py'),'utf8') !== readFileSync(join(pluginDir,'lib','preview_vision.py'),'utf8')) {log('🔒 预览识图脚本版本不一致，请检查 preview_vision.py.new');return null}
@@ -1347,6 +1366,10 @@ function reportMeta() {
           '          BILI_VISION_MODEL: ' + yq(cfg.visionModelId),
           '          BILI_VISION_ENDPOINT: ' + yq(cfg.visionEndpoint),
           '          BILI_VISION_FRAMES: ' + yq(cfg.visionFrames),
+          '          BILI_COMMENT_MEMES_ENABLED: ' + yq(cfg.commentMemesEnabled && cfg.autoComment && cfg.dmMode !== 'only' ? '1':'0'),
+          '          BILI_COMMENT_MEMES_DEBUG: ' + yq(cfg.commentMemesDebug?'1':'0'),
+          '          BILI_COMMENT_MEMES_PER_DAY: ' + yq(cfg.commentMemesPerDay),
+          '          BILI_COMMENT_MEMES_PER_ROUND: ' + yq(cfg.commentMemesPerRound),
         '          BILI_MENTION_MODE: ' + yq(cfg.mentionMode || 'ai'),
         '          BILI_MENTION_TARGETS: ' + yq(JSON.stringify(parseMentionTargets(cfg.mentionTargets, cfg.mentionName))),
         '',
@@ -2426,7 +2449,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return sendJson(res,result.ok ? 200 : 400,result)
     }
     if (req.method === 'POST' && path === '/api/bili-duty/vision-preview-test') {
-      if (cfg.masterEnabled !== true) return sendJson(res, 403, {ok:false,error:'总开关已关闭'})
+      // 本按钮由用户主动点击，只取 B站预览图；不启动自动刷片或评论。
+      // 总开关暂停自动任务时仍允许手动测试（若开启视觉识别，调用会产生相应模型费用）。
+      // 真正自动 MCP 外发仍由总开关保护，不在此放宽。
       if (!cfg.visionEnabled && !cfg.visionDebug) return sendJson(res, 400, {ok:false,error:'先开启识图或 Debug 开关'})
       const body = await readBody(req)
       const bv = String(body?.bvid || '').trim()
@@ -2464,6 +2489,19 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const r = await getQuota()
       return sendJson(res, 200, {...r, limit: Math.max(0,Number(cfg.commentDailyLimit)||0)})
     }
+    if (req.method === 'GET' && path === '/api/bili-duty/comment-memes') {
+      // 只列出当前家目录梗图的名称，不返回图片字节、不允许用户传路径。
+      try {
+        const folder = join(stateDir,'comment-memes')
+        mkdirSync(folder,{recursive:true})
+        if (lstatSync(folder).isSymbolicLink()) return sendJson(res,200,{ok:false,names:[],error:'梗图库目录不能是符号链接'})
+        const names = readdirSync(folder).filter(name => /\.(?:png|jpe?g|gif)$/i.test(name))
+          .filter(name => !/[\\/\x00-\x1f<>:"|?*]/.test(name) && name.length <= 64)
+          .filter(name => {try {const st=lstatSync(join(folder,name));return st.isFile() && !st.isSymbolicLink() && st.size <= 8*1024*1024 && st.size>0} catch {return false}})
+          .slice(0,100).map(name=>name.replace(/\.(?:png|jpe?g|gif)$/i,''))
+        return sendJson(res,200,{ok:true,names,home:folder})
+      } catch {return sendJson(res,200,{ok:false,names:[],error:'无法读取梗图库目录'})}
+    }
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
       return sendJson(res, 200, { ok: true, config: cfg, windows: WINDOWS, home: stateDir })
     }
@@ -2472,7 +2510,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const body = await readBody(req)
       const patch = {}
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakIntervalMinutes', 'noon', 'night', 'autoComment', 'transcribe', 'asrModel',
-        'memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionModelProvider', 'visionModelId', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
+        'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionModelProvider', 'visionModelId', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'favFolderId']) {

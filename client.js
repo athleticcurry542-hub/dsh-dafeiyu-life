@@ -35,9 +35,15 @@ window.__ModuleLoader__.load({
     /* ⚠️ 原来 jget/jpost 直接 .json()、从不看 res.ok ⇒ HTTP 500 的 {ok:false,error}
      *    会被调用方当成「已保存 / 成功」，绿色提示把故障盖掉。（2026-10-16 审查修） */
     const asJson = async (res) => {
+      // 服务端 403 可能来自“总开关已关”、本机同源校验，不能一概说成宿主拦截。
+      // 只读取本插件返回的简短 error，不回显响应体或敏感信息。
       if (res.ok) return res.json()
-      const why = res.status === 401 ? '（未登录 / 没权限）' : res.status === 403 ? '（被宿主拦了）' : ''
-      throw new Error('HTTP ' + res.status + why)
+      let reason = ''
+      try {
+        const detail = await res.json()
+        if (detail && typeof detail.error === 'string') reason = detail.error.slice(0, 160)
+      } catch { /* 不是 JSON 时保留明确 HTTP 状态 */ }
+      throw new Error('HTTP ' + res.status + (reason ? '：' + reason : '（本地接口拒绝，原因未返回）'))
     }
     const jget = async (p) => asJson(await fetch(API + p, { credentials: 'same-origin' }))
     const jpost = async (p, body) => asJson(await fetch(API + p, {
@@ -268,6 +274,9 @@ function WatchTab() {
       const [memeBusy, setMemeBusy] = React.useState(false)
       const [memeHistoryExpanded, setMemeHistoryExpanded] = React.useState(false)
       const [memeMaxEntriesDraft, setMemeMaxEntriesDraft] = React.useState(null)
+      const [commentMemeList,setCommentMemeList] = React.useState(null)
+      const [memeImageDailyDraft,setMemeImageDailyDraft] = React.useState(null)
+      const [memeImageRoundDraft,setMemeImageRoundDraft] = React.useState(null)
       const [visionBV,setVisionBV] = React.useState('')
       const [visionTest,setVisionTest] = React.useState(null)
       const [visionBusy,setVisionBusy] = React.useState(false)
@@ -337,6 +346,8 @@ function WatchTab() {
         if (cfg && perRound === null) setPerRound(String(cfg.commentPerRound ?? 5))
         if (cfg && dailyPublicCommentLimit === null) setDailyPublicCommentLimit(String(cfg.commentDailyLimit ?? 10))
         if (cfg && dynamicDailyLimitDraft === null) setDynamicDailyLimitDraft(String(cfg.dynamicDailyLimit ?? 3))
+        if (cfg && memeImageDailyDraft === null) setMemeImageDailyDraft(String(cfg.commentMemesPerDay ?? 2))
+        if (cfg && memeImageRoundDraft === null) setMemeImageRoundDraft(String(cfg.commentMemesPerRound ?? 1))
         if (cfg && memeMaxEntriesDraft === null) setMemeMaxEntriesDraft(String(cfg.memeMemoryMaxEntries ?? 300))
         if (cfg && mention === null) setMention(cfg.mentionName || '')
         if (cfg && mentionTargets === null) setMentionTargets(cfg.mentionTargets || '')
@@ -847,6 +858,24 @@ function WatchTab() {
               })),
             h('div', { 'data-bd-note': '' }, 'AI 没选中：不会发布、不占额度；同 BV 同日最多尝试一次，接口接受不保证动态公开可见。')
           ) : null,
+          h('div', { 'data-bd-sep': '' }),
+          h(ToggleRow, {label:'AI 自主给顶层评论附梗图（试验）',
+            note:'默认关闭。仅使用你自己放入 comment-memes 文件夹的 PNG/JPG/GIF 图片。AI 在写评论时看情绪决定是否附图；真实上传和发送需要 B站接口许可。',
+            on:sw('commentMemesEnabled'),onChange:v=>patch({commentMemesEnabled:v},'评论附梗图')}),
+          h(ToggleRow, {label:'Debug：记录 AI 选择的梗图',
+            note:'保存 BV号、梗图名、选择原因和发送状态到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
+            on:sw('commentMemesDebug'),onChange:v=>patch({commentMemesDebug:v},'梗图 Debug')}),
+          sw('commentMemesEnabled') ? h('div',{'data-bd-sub':''},
+            ...[['commentMemesPerDay',memeImageDailyDraft,setMemeImageDailyDraft,20,'每日最多尝试附图几次'],
+                ['commentMemesPerRound',memeImageRoundDraft,setMemeImageRoundDraft,5,'每轮最多尝试附图几次']].map(([key,draft,setter,max,label])=>h('div',{'data-bd-row':'',key},
+              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},label)),
+              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:0,max,value:draft??'',
+                onChange:e=>setter(e.target.value),onBlur:()=>{const n=Math.max(0,Math.min(max,Math.floor(Number(draft)||0)));setter(String(n));patch({[key]:n},label)}}))),
+            h('div',{'data-bd-note':''},'梗图库（永久保存在插件数据目录）：.dsh/bili-duty/comment-memes/ · 文件名即梗图名称，例如 奶龙大笑.png。每张最大8MB；名称不要重复。'),
+            h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'',onClick:()=>jget('/comment-memes').then(setCommentMemeList).catch(e=>setCommentMemeList({ok:false,error:String(e)}))},'刷新梗图库'),
+              h('span',{'data-bd-note':''},commentMemeList?commentMemeList.ok?`已识别 ${commentMemeList.names?.length||0} 张`:commentMemeList.error:'请放入图片后点击刷新')),
+            commentMemeList?.ok ? h('div',{'data-bd-pre':''},(commentMemeList.names||[]).slice(0,30).join('、')||'文件夹暂时没有可用的图片') : null,
+            h('div',{'data-bd-note':''},'图片列表最多预览前30个名字，不会不断增长。图片上传状态未验证时，不会自动重试；动态暂不附图。')) : null,
           h('div', { 'data-bd-note': '' }, '「跑一轮」只负责挑视频和发布原创顶层评论；回复观众评论与热门评论互动统一由下方「后台评论互动」控制。'),
 
           h('div', { 'data-bd-sep': '' }),

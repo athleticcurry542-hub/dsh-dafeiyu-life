@@ -1093,6 +1093,40 @@ async def _send_video_comment_with_mentions(bvid, aid, text, credential, mention
     return await asyncio.to_thread(post)
 
 
+# v2.4.15：评论本地梗图库。开关在 host + MCP 两处执行，不允许任意读取路径。
+_COMMENT_MEME_ROUND_USED = set()
+
+
+def _comment_meme_config():
+    enabled = os.environ.get('BILI_COMMENT_MEMES_ENABLED') == '1'
+    day = max(0, min(20, int(os.environ.get('BILI_COMMENT_MEMES_PER_DAY','2'))))
+    run = max(0, min(5, int(os.environ.get('BILI_COMMENT_MEMES_PER_ROUND','1'))))
+    return enabled, day, run
+
+
+def _comment_meme_debug(bvid, name, reason, status):
+    if os.environ.get('BILI_COMMENT_MEMES_DEBUG') != '1':
+        return
+    try:
+        from comment_memes import debug_event
+        debug_event(_DUTY_HOME, {'bvid': _valid_bv(bvid), 'image':name, 'reason':reason, 'status':status})
+    except Exception as exc:
+        print('梗图 Debug 写入失败：'+str(exc)[:80], file=sys.stderr)
+
+
+@tool()
+async def bili_comment_meme_list() -> str:
+    """获取用户在 comment-memes 目录手动放入的梗图文件名（最多100张）。只返回名称，不读取其他本地文件。"""
+    if (deny := _guard('bili_comment_meme_list')): return deny
+    if not _comment_meme_config()[0]:
+        return json.dumps({'ok':False,'error':'评论附梗图已关闭'},ensure_ascii=False)
+    try:
+        from comment_memes import list_names
+        return json.dumps({'ok':True,'names':list_names(_DUTY_HOME)},ensure_ascii=False)
+    except Exception:
+        return json.dumps({'ok':False,'error':'本地梗图库读取失败'},ensure_ascii=False)
+
+
 # ========== Tool 6: 回复评论 ==========
 
 @tool()
@@ -1100,7 +1134,8 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
                      should_mention: bool = False, mention_position: str = "end",
                      mention_mode: str = "ai", mention_targets: list[dict] | None = None,
                      mention_names: list[str] | None = None, sync_to_dynamic: bool = False,
-                     dynamic_daily_limit: int = 3, no_mention_reason: str = "") -> str:
+                     dynamic_daily_limit: int = 3, no_mention_reason: str = "",
+                     meme_image_name: str = "", meme_image_reason: str = "") -> str:
     """
     在B站视频下发表评论或回复某条评论
 
@@ -1117,6 +1152,8 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         no_mention_reason: AI 同时生成评论时，主动选择不 @ 的一句简短解释；只保存本地给用户看
         sync_to_dynamic: AI 生成评论时同步判断，是否值得额外公开一条动态（默认 false）
         dynamic_daily_limit: 宿主设置的每日最多尝试次数；headless 会被环境变量中的用户设置覆盖
+        meme_image_name: 可选的本地梗图名称（无路径、无扩展名），来自 bili_comment_meme_list
+        meme_image_reason: AI 选择梗图的简短情境理由，只供用户 Debug，不公开发送
     
     Returns:
         发表结果
@@ -1174,6 +1211,56 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         quota_ok, quota_error = _reserve_comment_quota()
         if not quota_ok:
             return _comment_result({"success": False, "blocked": True, "error": quota_error}, bvid, rpid, mention_diagnostic)
+        # 图片上传必须是用户启用、AI 指名、顶层评论三者同时满足。
+        # 不支持的配置、已达额度、错误文件均明确返回，不默默按“已附图”计数。
+        meme_name = str(meme_image_name or '').strip()
+        meme_reason = _safe_line(meme_image_reason, 90)
+        meme_img = None
+        if meme_name and rpid == 0:
+            if not _comment_meme_config()[0]:
+                return _comment_result({'success':False,'blocked':True,'error':'评论附梗图开关关闭'},bvid,rpid,mention_diagnostic)
+            try:
+                from comment_memes import select_image, reserve_attempt
+                meme_img = select_image(_DUTY_HOME, meme_name)
+                _, cap_day, cap_round = _comment_meme_config()
+                reserved=reserve_attempt(_DUTY_HOME, cap_day, cap_round, _COMMENT_MEME_ROUND_USED)
+                if reserved != 'reserved':
+                    _comment_meme_debug(bvid,meme_name,meme_reason,reserved)
+                    return _comment_result({'success':False,'blocked':True,'error':'梗图发送额度已满',
+                                            'meme_image':{'status':reserved}},bvid,rpid,mention_diagnostic)
+            except Exception as exc:
+                _comment_meme_debug(bvid,meme_name,meme_reason,'invalid_image')
+                return _comment_result({'success':False,'error':'梗图准备失败：'+str(exc)[:140]},bvid,rpid,mention_diagnostic)
+        if meme_img is not None:
+            try:
+                from comment_memes import upload_image, send_with_image
+                uploaded = await asyncio.to_thread(upload_image, meme_img, cred)
+                # 有 UID 的 @ 和图同时带上；缺 UID 时仍可能只有文字 @，不保证通知。
+                use_uid_mapping = mentioned and all(item.get('uid') for item in mentioned)
+                raw = await asyncio.to_thread(send_with_image,bvid,aid,text,cred,uploaded,
+                                               mentioned if use_uid_mapping else None)
+                if raw.get('code') != 0:
+                    _comment_meme_debug(bvid,meme_name,meme_reason,'comment_rejected')
+                    return _comment_result({'success':False,'error':'B站带图评论拒绝：'+str(raw.get('code'))[:24],
+                                            'meme_image':{'status':'comment_rejected'}},bvid,rpid,mention_diagnostic)
+                data = raw.get('data') or {}
+                if not isinstance(data,dict) or data.get('need_captcha') or not (data.get('rpid') or data.get('rpid_str')):
+                    _comment_meme_debug(bvid,meme_name,meme_reason,'receipt_unverified')
+                    return _comment_result({'success':False,'error':'带图评论回执未包含评论 ID，可能需人工复核，禁止自动重试',
+                                            'meme_image':{'status':'receipt_unverified'}},bvid,rpid,mention_diagnostic)
+                out={'success':True,'message':'B站接受带图评论（图片展示未核实）',
+                     'meme_image':{'name':meme_name,'status':'submitted_unverified'},
+                     'mention_delivery':'uid_mapping_submitted_unverified' if use_uid_mapping else ('text_only_unverified' if mentioned else 'none')}
+                for k in ('rpid','rpid_str','root','parent'):
+                    if data.get(k):out[k]=data[k]
+                _comment_meme_debug(bvid,meme_name,meme_reason,'submitted_unverified')
+                out['dynamic_sync']=await _dynamic_after_comment(bvid,text,cred,requested=sync_to_dynamic,daily_limit=dynamic_daily_limit)
+                return _comment_result(out,bvid,rpid,mention_diagnostic)
+            except Exception as exc:
+                # 上传可能已完成，评论发出状态无法由网络超时证明；严禁自动重试。
+                _comment_meme_debug(bvid,meme_name,meme_reason,'uncertain_no_retry')
+                return _comment_result({'success':False,'error':'带图评论发送结果不确定，禁止自动重试，请人工核查',
+                                        'meme_image':{'status':'uncertain_no_retry'}},bvid,rpid,mention_diagnostic)
         # 全部 UID 都由用户显式提供时，才尝试带映射的评论接口。
         # 没有 UID 时会正常发送文字 @，但不会将它称为“真实通知成功”。
         if rpid == 0 and mentioned and all(item["uid"] for item in mentioned):

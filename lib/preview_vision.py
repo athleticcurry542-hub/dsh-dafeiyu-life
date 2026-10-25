@@ -18,7 +18,7 @@ import urllib.request
 from urllib.error import HTTPError
 
 BV_RE = re.compile(r'^BV[0-9A-Za-z]{10}$')
-IMAGE_HOST_RE = re.compile(r'^(?:i\d+\.hdslb\.com|i\d+\.bilivideo\.com)$', re.I)
+IMAGE_HOST_RE = re.compile(r'^(?:i\d+\.hdslb\.com|i\d+\.bilivideo\.com|bimp\.hdslb\.com)$', re.I)
 PROMPT = (
     '你正在看B站视频的低清播放器预览快照，不是完整视频。'
     '按时间顺序描述每张图能确认的画面、角色轮廓、可辨认的文字以及明显变化；'
@@ -29,9 +29,10 @@ PROMPT = (
 
 
 def _safe_api_get(url, max_bytes=3_000_000, image=False):
-    host = urllib.parse.urlsplit(url).hostname or ''
     if image:
         url = _image_url(url)
+    host = urllib.parse.urlsplit(url).hostname or ''
+    if image:
         if not IMAGE_HOST_RE.fullmatch(host):
             raise ValueError('拒绝非 B站预览图域名')
     elif host not in ('api.bilibili.com', 'bvc.bilivideo.com'):
@@ -47,14 +48,23 @@ def _safe_api_get(url, max_bytes=3_000_000, image=False):
                 _image_url(newurl)  # 重定向后的图片也必须留在官方 videoshot 目录
             return super().redirect_request(req,fp,code,msg,headers,newurl)
     req = urllib.request.Request(url, headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.bilibili.com/'})
-    with urllib.request.build_opener(SecureRedirect()).open(req, timeout=10) as resp:
-        size = resp.headers.get('Content-Length')
-        if size and int(size) > max_bytes:
-            raise ValueError('预览响应超过大小限制')
-        data = resp.read(max_bytes+1)
-        if len(data) > max_bytes:
-            raise ValueError('预览响应超过大小限制')
-        return data
+    try:
+        with urllib.request.build_opener(SecureRedirect()).open(req, timeout=10) as resp:
+            size = resp.headers.get('Content-Length')
+            if size and int(size) > max_bytes:
+                raise ValueError('预览响应超过大小限制')
+            data = resp.read(max_bytes+1)
+            if len(data) > max_bytes:
+                raise ValueError('预览响应超过大小限制')
+            return data
+    except HTTPError as exc:
+        # 区分 B站接口 / 图片 CDN 拒绝，别误报为 DSH“宿主拦截”。
+        # 不向 UI 回显完整 URL、响应体或 Cookie。
+        target = 'B站预览图片 CDN' if image else 'B站视频/快照接口'
+        message = f'{target} 返回 HTTP {exc.code}'
+        if exc.code == 403:
+            message += '（服务器拒绝访问，可能是防盗链、权限或风控）'
+        raise ValueError(message) from None
 
 
 def _json_api(url):
