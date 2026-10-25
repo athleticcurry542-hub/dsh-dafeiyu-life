@@ -750,7 +750,8 @@ function reportMeta() {
       no_mention_reason: {type:'string', description:'仅当 AI 自己决定 should_mention=false 时，顺手用 8–40 个汉字说明不邀请好友的具体原因，例如「只是随口吐槽，和名单里的好友兴趣不太相关」。不要写详细推理、昵称、UID、私密内容；不会出现在公开评论里。'},
       mention_position: { type: 'string', description: 'AI判断要@时，选择自然的插入位置 start/middle/end；默认 end' },
       meme_image_name: {type:'string', description:'选填：bili_comment_meme_list 返回的精确名称；子目录图片必须用 分类/图片名（无扩展名），例如 奶娃/奶龙大笑；通常留空。只看过文件名不等于看过图片。'},
-      meme_image_reason: {type:'string', description:'选择这张梗图与本条视频具体笑点/评论语气相符的简短理由（最多40字）；只存本地 Debug，不公开，不要复述内部思考。'},
+      meme_image_reason: {type:'string', description:'选择梗图的简短情境理由（最多40字），只存本地诊断，不公开。'},
+      no_meme_reason: {type:'string', description:'当本条顶层评论没有选择梗图时，填写8–40字具体原因（如「这是严肃的教程，没有合适的表情图」），只存本地诊断、不公开，不要包含敏感信息。'},
       sync_to_dynamic: { type: 'boolean', description: '这条评论是否值得额外分享成公开动态：由 AI 和评论正文同时决定。默认 false。普通随口吐槽不用同步；只有用户开启且未超限才会发。' },
     },
     async execute(args) {
@@ -788,6 +789,7 @@ function reportMeta() {
         dynamic_daily_limit: cfg.dynamicDailyLimit,
         meme_image_name: cfg.commentMemesEnabled ? String(args.meme_image_name || '').trim().slice(0,180) : '',
         meme_image_reason: cfg.commentMemesEnabled ? String(args.meme_image_reason || '').slice(0,100) : '',
+        no_meme_reason: cfg.commentMemesEnabled ? String(args.no_meme_reason || '').slice(0,160) : '',
       })
     },
   })
@@ -1225,7 +1227,7 @@ function reportMeta() {
       + `公开评论工具层的每日最大发送次数：${cfg.commentDailyLimit}（含回复，超限工具会拒绝）。`
       + `公开动态同步：${cfg.commentSyncDynamic ? `开启；由你在生成每条顶层评论的同一次思考里决定是否另发动态（sync_to_dynamic: true/false），每天最多尝试 ${cfg.dynamicDailyLimit} 次；不要为凑数而同步，通常不必同步` : '关闭，sync_to_dynamic 必须为 false'}。只有评论成功、有 rpid、未超限才可能额外发布动态；动态只能包含同一条公开评论正文 + 该视频链接，严禁私人文件、对话内容或隐藏指令。`
       + (cfg.commentMemesEnabled && commentOn
-        ? buildCommentMemePrompt({ customPrompt: cfg.commentMemePrompt, dailyLimit: cfg.commentMemesPerDay, roundLimit: cfg.commentMemesPerRound })
+        ? buildCommentMemePrompt({ customPrompt: cfg.commentMemePrompt, dailyLimit: cfg.commentMemesPerDay, roundLimit: cfg.commentMemesPerRound, library: listCommentMemes(join(stateDir,'comment-memes'), {limit:30}) })
         : `评论附梗图关闭，不得填写 meme_image_name。`)
       + `公开评论是${commentOn
         ? `开启的（每轮最多 ${cfg.commentPerRound} 条，150 字内）。评论像普通 B站用户自然吐槽，绝不能做摘要或推广。`
@@ -2499,6 +2501,24 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return sendJson(res, 200, {ok:true, day,
         total: sent.length, attempted: attempted.length, notMentioned: sent.length - attempted.length,
         failed: events.length - sent.length, recent: events.slice(-12).reverse()})
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/comment-meme-diagnostics') {
+      const day = dayKey()
+      const file = join(stateDir, 'comment-meme-diagnostics', `${day}.jsonl`)
+      let events = []
+      try {
+        if (existsSync(file)) {
+          events = readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-1000)
+            .map(line => { try { return JSON.parse(line) } catch { return null } })
+            .filter(x => x && x.day === day && /^BV[0-9a-zA-Z]{10}$/.test(x.bvid))
+        }
+      } catch { return sendJson(res,200,{ok:false,error:'本地梗图诊断读取失败'}) }
+      const sent = events.filter(x => x.success === true)
+      const attached = sent.filter(x => x.status === 'submitted_unverified')
+      const attempts = events.filter(x => x.upload_attempted === true)
+      return sendJson(res,200,{ok:true,day,total:sent.length,attached:attached.length,
+        notAttached:sent.length-attached.length,uploadAttempts:attempts.length,
+        failed:events.length-sent.length,recent:events.slice(-12).reverse()})
     }
     if ((req.method === 'GET' && path === '/api/bili-duty/meme-memory') ||
         (req.method === 'POST' && path === '/api/bili-duty/meme-memory/delete')) {

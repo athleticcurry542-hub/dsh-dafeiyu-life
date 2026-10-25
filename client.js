@@ -268,6 +268,8 @@ function WatchTab() {
       const [dynamicDailyLimitDraft, setDynamicDailyLimitDraft] = React.useState(null)
       const [commentQuota, setCommentQuota] = React.useState(null)
       const [mentionDiagnostics, setMentionDiagnostics] = React.useState(null)
+      const [memeDiagnostics, setMemeDiagnostics] = React.useState(null)
+      const [memeDiagnosticsExpanded, setMemeDiagnosticsExpanded] = React.useState(false)
       const [mentionHistoryExpanded, setMentionHistoryExpanded] = React.useState(false)
       const [memeMemory, setMemeMemory] = React.useState(null)
       const [memeKeyword, setMemeKeyword] = React.useState('')
@@ -401,6 +403,14 @@ function WatchTab() {
         tick()
         const timer = setInterval(tick, 10000)
         return () => { alive = false; clearInterval(timer) }
+      }, [])
+
+      React.useEffect(() => {
+        let alive = true
+        const tick = () => jget('/comment-meme-diagnostics').then(r => { if(alive) setMemeDiagnostics(r) }).catch(() => { if(alive) setMemeDiagnostics({ok:false}) })
+        tick()
+        const timer = setInterval(tick, 10000)
+        return () => {alive = false; clearInterval(timer)}
       }, [])
 
       const win = { ...DEFAULT_WINDOWS, ...(st?.windows || {}) }
@@ -871,8 +881,30 @@ function WatchTab() {
             note:'默认关闭。仅使用你自己放入 comment-memes 文件夹的 PNG/JPG/GIF/WebP 图片（WebP 发送时转换为静态 PNG）。AI 在写评论时看情绪决定是否附图；真实上传和发送需要 B站接口许可。',
             on:sw('commentMemesEnabled'),onChange:v=>patch({commentMemesEnabled:v},'评论附梗图')}),
           h(ToggleRow, {label:'Debug：记录 AI 选择的梗图',
-            note:'保存 BV号、梗图名、选择原因和发送状态到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
+            note:'除自动生成的「今日梗图诊断」外，额外记录已选梗图的发送调试数据到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
             on:sw('commentMemesDebug'),onChange:v=>patch({commentMemesDebug:v},'梗图 Debug')}),
+          h('div',{'data-bd-sub':''},
+            h('div',{'data-bd-h':''},'今日梗图诊断'),
+            h('div',{'data-bd-note':''},'AI 发评论时顺带说明不附图的原因，程序直接记录；接口接受带图评论不代表 B站已公开显示图片。'),
+            h('div',{'data-bd-label':''},memeDiagnostics?.ok
+              ? `已发表评论 ${memeDiagnostics.total} 条 · 带图已提交 ${memeDiagnostics.attached} 条 · 未附图 ${memeDiagnostics.notAttached} 条`
+              : '今日梗图数据：暂不可读取'),
+            memeDiagnostics?.ok && memeDiagnostics.failed
+              ? h('div',{'data-bd-note':''},`另有 ${memeDiagnostics.failed} 次发送未成功；实际图片上传尝试 ${memeDiagnostics.uploadAttempts} 次`) : null,
+            memeDiagnostics?.ok && memeDiagnostics.recent?.length
+              ? h('div',null,
+                  h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
+                    h('span',{'data-bd-note':''},memeDiagnosticsExpanded?'最近最多12条（内部滚动）':'默认显示最近3条'),
+                    memeDiagnostics.recent.length>3?h('button',{'data-bd-btn':'',onClick:()=>setMemeDiagnosticsExpanded(x=>!x)},memeDiagnosticsExpanded?'收起':'展开最近12条'):null),
+                  h('div',{style:{maxHeight:memeDiagnosticsExpanded?'220px':'none',overflowY:memeDiagnosticsExpanded?'auto':'visible',overflowWrap:'anywhere'}},
+                    ...(memeDiagnosticsExpanded?memeDiagnostics.recent:memeDiagnostics.recent.slice(0,3)).map((x,i)=>{
+                      const what=({ai_skipped:'AI 未选图',disabled:'未开启附图',submitted_unverified:'带图已提交（未验证公开展示）',
+                        quota_reached:'附图额度已满',not_sent:'选图但发送失败',not_verified:'图片结果未验证',
+                        comment_rejected:'B站拒绝带图评论',receipt_unverified:'评论回执未核实',uncertain_no_retry:'发送不确定，禁止重试'})[x.status]||'图片状态未知'
+                      return h('div',{key:(x.time||'')+i,'data-bd-note':''},
+                        `${x.bvid} · ${x.success?'已发送':'发送未成功'} · ${what}${x.image?' · '+x.image:''}${x.ai_reason?' · AI说明：'+x.ai_reason:(x.status==='ai_skipped'?' · AI未填写原因':'')}`)
+                    })))
+                : h('div',{'data-bd-note':''},memeDiagnostics?.ok?'今天还没有新版诊断记录。':'')),
           sw('commentMemesEnabled') ? h('div',{'data-bd-sub':''},
             ...[['commentMemesPerDay',memeImageDailyDraft,setMemeImageDailyDraft,10000,'每日最多尝试附图几次'],
                 ['commentMemesPerRound',memeImageRoundDraft,setMemeImageRoundDraft,5,'每轮最多尝试附图几次']].map(([key,draft,setter,max,label])=>h('div',{'data-bd-row':'',key},
@@ -880,7 +912,7 @@ function WatchTab() {
               h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:0,max,value:draft??'',
                 onChange:e=>setter(e.target.value),onBlur:()=>{const n=Math.max(0,Math.min(max,Math.floor(Number(draft)||0)));setter(String(n));patch({[key]:n},label)}}))),
             h('div',{'data-bd-note':''},'每日附图尝试次数可设 0–10000（0 表示不附图）；每轮最多 5 次仍单独限制。AI 只有选择合适梗图时才使用额度。'),
-            h('div',{'data-bd-note':''},'梗图库支持分类子文件夹：comment-memes/奶娃/奶龙大笑.webp、comment-memes/其他/无语.png。AI 按视频桥段和评论情绪判断是否附图（默认不附），选图时使用「分类/图片名」，同一目录勿放同名不同格式。每张最大8MB；WebP 动图只取首帧。'),
+            h('div',{'data-bd-note':''},'梗图库支持分类子文件夹：comment-memes/奶娃/奶龙大笑.webp、comment-memes/其他/无语.png。AI 每轮先看到最多30个真实梗图名，再按视频桥段与评论情绪选择；不强制附图，选图时使用「分类/图片名」，同一目录勿放同名不同格式。每张最大8MB；WebP 动图只取首帧。'),
             h('div',{'data-bd-row':''},
               h('div',{'data-bd-grow':''},
                 h('div',{'data-bd-label':''},'AI 选图提示词（可自定义）'),

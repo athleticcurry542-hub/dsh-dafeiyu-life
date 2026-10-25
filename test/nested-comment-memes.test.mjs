@@ -54,7 +54,7 @@ test('选图提示词强调完整分类名称、保守选图、不凭名字声�
  const prompt=readFileSync(new URL('../lib/comment-meme-prompt.mjs',import.meta.url),'utf8')
  assert.match(index,/buildCommentMemePrompt/)
  assert.match(prompt,/分类\/图片名/)
- assert.match(prompt,/默认只发文字/)
+ assert.match(prompt,/不为省事一概拒绝/)
  assert.match(prompt,/不能声称已亲眼看到画面/)
  assert.match(prompt,/不懂笑点就不附图/)
  assert.match(prompt,/meme_image_reason/)
