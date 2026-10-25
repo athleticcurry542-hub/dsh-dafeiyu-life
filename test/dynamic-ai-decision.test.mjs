@@ -16,6 +16,17 @@ test('daily cap is part of settings, overlay, status and UI',()=>{
   for(const x of ['dynamicDailyLimit: z.natural().default(3)','BILI_DYNAMIC_DAILY_LIMIT','dynamicSyncUsage','dynamicDailyLimit']) assert.ok(index.includes(x),x)
   for(const x of ['每日最多同步几条动态','今日已尝试','dynamicDailyLimitDraft']) assert.ok(client.includes(x),x)
 })
+test('dynamic prompt actively evaluates shareability and records a short local reason',()=>{
+  assert.match(index,/sync_dynamic_reason: \{ type: 'string'/)
+  assert.match(index,/sync_dynamic_ai_decision: args\.sync_to_dynamic === true/)
+  assert.match(index,/鲜明笑点\/反差、实用发现、容易共鸣的观察/)
+  assert.doesNotMatch(index,/通常不必同步|一般随手吐槽设 false/)
+  assert.match(charter,/不要把“只是随口吐槽”当成一概不发的理由/)
+  assert.match(index,/动态同步开关当前关闭：本轮 sync_to_dynamic 必须为 false/)
+  assert.match(index,/动态同步已开启：同一次 bili_reply 调用必须明确填写/)
+  assert.match(python,/\"dynamic_status\"/)
+  assert.match(python,/\"dynamic_reason\"/)
+})
 test('no random sync, safe atomic quota',()=>{
   assert.doesNotMatch(python,/randbelow|random\.random/)
   assert.match(python,/BEGIN IMMEDIATE/)

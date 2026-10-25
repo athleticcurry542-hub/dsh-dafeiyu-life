@@ -818,7 +818,7 @@ function WatchTab() {
               }))) : null,
           (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h(ToggleRow, {
             label: 'AI 决定是否将评论同步到动态',
-            note: '默认关闭。由 AI 在写顶层评论时同步决定是否额外发布动态；不是每条评论必发，也不会增加一次模型调用。动态正文=评论原文+视频链接，非B站客户端内置勾选。',
+            note: '默认关闭。开启后 AI 会逐条认真判断：有鲜明笑点、反差、实用发现或共鸣点且单独发动态也自然时，应积极考虑同步；不是每条必发，也不是默认不发。动态正文=评论原文+视频链接，不增加模型调用。',
             on: sw('commentSyncDynamic'),
             onChange: (v) => patch({ commentSyncDynamic: v }, '评论同步动态'),
           }) : null,
@@ -1047,6 +1047,13 @@ function WatchTab() {
           h('div', { 'data-bd-h': '' }, '选片来源'),
           h(ToggleRow, {label:'加入首页推荐视频', note:'默认开启；与关键词搜索混合选片。每轮首页推荐最多读取一次、最多12个候选，过滤直播与广告。是否挑中仍由大肥鱼判断，共用原有额度。',
             on:sw('homeRecommendationsEnabled'),onChange:v=>patch({homeRecommendationsEnabled:v},'首页推荐选片来源')}),
+          h('div', { 'data-bd-h': '' }, '入选视频热度门槛'),
+          h('div', { 'data-bd-note': '' }, 'AI 仍负责挑内容，但入选前必须核实详情中的播放、点赞和评论数；三项分别达标才入选。0 表示关闭该项。顶层评论发送前会再次校验，网络读取失败则不发。'),
+          ...[['minVideoViews','最低播放量',1000],['minVideoLikes','最低点赞数',10],['minVideoReplies','最低评论数',3]].map(([key,label,fallback])=>
+            h('div',{'data-bd-row':'',key},h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},label)),
+              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:0,max:100000000,
+                defaultValue:cfg?.[key]??fallback,
+                onBlur:e=>{const x=Number(e.target.value);const n=Number.isFinite(x)?Math.max(0,Math.min(100000000,Math.floor(x))):fallback;e.target.value=String(n);patch({[key]:n},label)}}))),
           h('div', { 'data-bd-h': '' }, '关注什么（关键词搜索）'),
           h('textarea', {
             'data-bd-input': '', rows: 5, placeholder: '一行一个关键词；留空用内置那几组',
@@ -1060,8 +1067,8 @@ function WatchTab() {
           }),
           h('div', { 'data-bd-note': '' },
             (st.personaFromWs && String(persona || '').trim() === '')
-              ? '你现在还是用「工作区」里那份 AGENTS.md 说话的（照旧生效）。想把它搬到这儿改，就把上面的路径填成本机那个目录。'
-              : '改完点下面「保存」；下一轮就按这个说话。'),
+              ? '你现在还是用「工作区」里那份 AGENTS.md 说话的（照旧生效）。想把它搬到这儿改，就把上面的路径填成本机那个目录。这里只保存核心人设，不包含成长系统附加经验；已批准经验仅在实际调用模型时按场景临时拼接。'
+              : '改完点下面「保存」；下一轮就按这个说话。这里只保存核心人设，不包含成长系统的附加经验；已批准经验只会在实际调用模型时按场景临时拼接。'),
           h('div', { 'data-bd-row': '' },h('div',{'data-bd-grow':''},
             h('div',{'data-bd-label':''},'大肥鱼与 DeepSeek／模型拟人角色的关系设定'),
             h('div',{'data-bd-note':''},'默认内置角色背景；可改为你自己的世界观，和上面的人设一起生效。')), 

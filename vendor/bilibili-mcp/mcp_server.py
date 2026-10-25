@@ -965,7 +965,7 @@ def _public_no_mention_reason(value):
     return result
 
 
-def _record_mention_event(payload, bvid, target_rpid, diagnostic):
+def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_decision=False, dynamic_authorized=False, dynamic_reason=''):
     """由发送工具本地记录 @ 结果，不依赖 Agent 在日报里复述；不保存评论正文或好友 UID。"""
     if diagnostic is None:
         return
@@ -976,6 +976,19 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic):
         success = payload.get("success") is True
         attempted = success and delivery in ("uid_mapping_submitted_unverified", "text_only_unverified")
         raw_id = payload.get("rpid_str") or payload.get("rpid")
+        dynamic_payload = payload.get("dynamic_sync")
+        if isinstance(dynamic_payload, dict) and dynamic_payload.get("status"):
+            dynamic_status = str(dynamic_payload.get("status") or "")[:60]
+        elif int(target_rpid or 0) != 0:
+            dynamic_status = "not_applicable"
+        elif not success:
+            dynamic_status = "comment_failed"
+        elif dynamic_ai_decision and not dynamic_authorized:
+            dynamic_status = "blocked_by_setting"
+        elif dynamic_ai_decision:
+            dynamic_status = "receipt_unverified"
+        else:
+            dynamic_status = "not_requested"
         event = {
             "time": now.isoformat(timespec="seconds"),
             "day": day,
@@ -994,6 +1007,10 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic):
             # 属于程序判定，不把 AI 自述错误地归因给它们。
             "ai_reason": _public_no_mention_reason(diagnostic.get("ai_reason"))
                 if success and not attempted and diagnostic.get("reason") == "ai_declined" else "",
+            "dynamic_ai_decision": bool(dynamic_ai_decision) if int(target_rpid or 0) == 0 else False,
+            "dynamic_authorized": bool(dynamic_authorized) if int(target_rpid or 0) == 0 else False,
+            "dynamic_status": dynamic_status,
+            "dynamic_reason": _public_no_mention_reason(dynamic_reason) if int(target_rpid or 0) == 0 else "",
         }
         if not success:
             # 不写原始异常：网络错误有时夹带 URL/query，可能泄露凭证。
@@ -1085,10 +1102,10 @@ def _record_comment_in_ledger(payload, bvid, target_rpid, comment_text="", root=
         print("评论判重记录写入失败：" + str(exc)[:120], file=sys.stderr)
 
 
-def _comment_result(payload, bvid, target_rpid, diagnostic=None, comment_text="", root=0):
-    """发送成功统一自动写判重表，诊断文件仍只用于技术排错。"""
+def _comment_result(payload, bvid, target_rpid, diagnostic=None, comment_text="", root=0, dynamic_ai_decision=False, dynamic_authorized=False, dynamic_reason=""):
+    """发送成功统一自动写判重表；动态决策诊断只存简短理由和回执状态。"""
     _record_comment_in_ledger(payload, bvid, target_rpid, comment_text, root)
-    _record_mention_event(payload, bvid, target_rpid, diagnostic)
+    _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_decision, dynamic_authorized, dynamic_reason)
     return json.dumps(payload, ensure_ascii=False)
 
 # ========== 顶层评论可选同步动态（独立公开动态，而非客户端原生勾选链路） ==========
@@ -1280,6 +1297,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
                      should_mention: bool = False, mention_position: str = "end",
                      mention_mode: str = "ai", mention_targets: list[dict] | None = None,
                      mention_names: list[str] | None = None, sync_to_dynamic: bool = False,
+                     sync_dynamic_ai_decision: bool = False, sync_dynamic_reason: str = "",
                      dynamic_daily_limit: int = 3, no_mention_reason: str = "",
                      meme_image_name: str = "", meme_image_reason: str = "",
                      no_meme_image_reason: str = "",
@@ -1298,7 +1316,9 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
         mention_targets: 宿主调用传配置名单；headless 从环境变量读取可信名单
         mention_names: ai_select 模式下 AI 选择的名单内昵称；空列表表示不 @
         no_mention_reason: AI 同时生成评论时，主动选择不 @ 的一句简短解释；只保存本地给用户看
-        sync_to_dynamic: AI 生成评论时同步判断，是否值得额外公开一条动态（默认 false）
+        sync_to_dynamic: 经宿主设置闸门允许的动态同步决定；只有 true 才可能发布
+        sync_dynamic_ai_decision: 原始 AI 决策，用于本地诊断区分 AI 未选与被设置阻止
+        sync_dynamic_reason: 简短的用户可读理由，仅存本地诊断，不保存详细思维链
         dynamic_daily_limit: 宿主设置的每日最多尝试次数；headless 会被环境变量中的用户设置覆盖
         meme_image_name: bili_comment_meme_list 中存在的分类/梗图名（无扩展名），不可自行拼路径
         meme_image_reason: AI 选择梗图的简短情境理由，只供用户 Debug，不公开发送
@@ -1329,7 +1349,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
                 print('临时@计数保存失败：'+str(exc)[:100],file=sys.stderr)
         _record_meme_event(payload, posted_bvid, reply_to_rpid, meme_image_name,
                            meme_image_reason, no_meme_image_reason)
-        return _comment_result(payload, posted_bvid, reply_to_rpid, mention_diag, text, root)
+        return _comment_result(payload, posted_bvid, reply_to_rpid, mention_diag, text, root, sync_dynamic_ai_decision, sync_to_dynamic, sync_dynamic_reason)
     cred = get_cred()
     if not aid:
         v = video.Video(bvid=bvid, credential=cred)
