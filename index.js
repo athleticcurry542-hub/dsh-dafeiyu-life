@@ -15,7 +15,7 @@ import { buildGrowthContext, syncReportsToGrowth, listGrowth, proposeGrowth, upd
  * 这样凭证 `bili_credential.json` 落在家里而不是插件包里）/ `duty.md` / `out/` / `duty.log`。
  * ============================================================================
  */
-import { growthSuggestionPrompt, parseGrowthSuggestion } from './lib/growth-suggestion.mjs'
+import { growthSuggestionPrompt, parseGrowthSuggestion, growthSuggestionIssue } from './lib/growth-suggestion.mjs'
 import { loadHostDeps } from './lib/hostdeps.mjs'
 
 // ⭐ 这两样从**宿主那棵树**里取（拿不到就退到自己的依赖；再拿不到，defineTool 用本地等价实现）。
@@ -2723,11 +2723,26 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           try {
             const relevant = listGrowth(stateDir).entries.filter(e => e.status === 'approved' && e.type === current.type)
               .map(e => e.approvedText || e.text).slice(-10)
-            const promptText = growthSuggestionPrompt({feedback:current.text,type:current.type,existing:relevant})
+            // 只传本插件中主人明确配置的人设和角色背景；不读取其他 DSH 会话、私密文件。
+            refreshCfg()
+            const roleReference = {
+              personaPrompt: String(cfg.personaPrompt || '').slice(0, 6000),
+              characterLore: normalizeCharacterLore(cfg.characterLore),
+              defaultCharacterLore: DEFAULT_CHARACTER_LORE,
+            }
             // 使用现有 DSH headless 模型，但不挂载 B站 MCP 或发送工具。
             // 人工维护成长建议即便总开关暂时关闭也能进行；模型失败保持 pending。
-            const modelOutput = await invokeInteractionPrompt(promptText, 32000, {requireMasterEnabled:false})
-            const modelSuggestion = parseGrowthSuggestion(modelOutput)
+            let rejectedSuggestion = ''
+            let modelSuggestion
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const promptText = growthSuggestionPrompt({feedback:current.text,type:current.type,existing:relevant,...roleReference,rejectedSuggestion})
+              const modelOutput = await invokeInteractionPrompt(promptText, 32000, {requireMasterEnabled:false})
+              modelSuggestion = parseGrowthSuggestion(modelOutput)
+              const issue = growthSuggestionIssue({feedback:current.text,type:current.type,suggestion:modelSuggestion.suggestion})
+              if (!issue) break
+              rejectedSuggestion = modelSuggestion.suggestion
+              if (attempt === 1) throw Error('大模型连续生成与主人反馈矛盾的建议：' + issue + '。原反馈仍保留，稍后可重试。')
+            }
             result = updateGrowthSuggestion(stateDir,id,{...modelSuggestion,expectedText:current.text,origin:'model'})
           } finally { growthGenerating.delete(id) }
         }
