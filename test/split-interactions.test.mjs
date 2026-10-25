@@ -61,5 +61,6 @@ test('v2.4.2 总开关与今日评论硬配额仍保留',()=>{
   const mcp=readFileSync(new URL('../vendor/bilibili-mcp/mcp_server.py',import.meta.url),'utf8')
   assert.match(mcp,/public-comment-quota/)
   assert.match(client,/大肥鱼总开关/)
-  assert.match(client,/今日已用/)
+  const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
+  assert.match(html,/公开评论全局每日硬上限/)
 })

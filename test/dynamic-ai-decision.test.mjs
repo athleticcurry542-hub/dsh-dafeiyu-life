@@ -14,7 +14,9 @@ test('one AI decision per bili_reply, not unconditional auto sync',()=>{
 })
 test('daily cap is part of settings, overlay, status and UI',()=>{
   for(const x of ['dynamicDailyLimit: z.natural().default(3)','BILI_DYNAMIC_DAILY_LIMIT','dynamicSyncUsage','dynamicDailyLimit']) assert.ok(index.includes(x),x)
-  for(const x of ['每日最多同步几条动态','今日已尝试','dynamicDailyLimitDraft']) assert.ok(client.includes(x),x)
+  const manager=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
+  for(const x of ['每天最多同步动态','quota-dynamic-daily']) assert.ok(manager.includes(x),x)
+  assert.match(client,/动态今日已尝试/)
 })
 test('dynamic prompt actively evaluates shareability and records a short local reason',()=>{
   assert.match(index,/sync_dynamic_reason: \{ type: 'string'/)

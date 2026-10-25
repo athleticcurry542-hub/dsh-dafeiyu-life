@@ -34,11 +34,13 @@ test('配置读取、保存、恢复默认接口和页面均接入',()=>{
   assert.match(server,/p\.commentMemePrompt=normalizeCommentMemePrompt/)
   assert.match(server,/comment-meme-prompt-default/)
   assert.match(server,/'commentMemePrompt','visionPrompt','memeMemoryEnabled'/)
-  assert.match(client,/AI 选图提示词（可自定义）/)
-  assert.match(client,/保存选图提示词/)
-  assert.match(client,/恢复默认选图提示词/)
-  assert.match(client,/clear:\['commentMemePrompt'\]/)
-  assert.match(client,/maxLength:4000/)
+  const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
+  const manager=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8')
+  assert.match(html,/AI 选图提示词/)
+  assert.match(html,/保存选图提示词/)
+  assert.match(html,/meme-prompt-reset/)
+  assert.match(manager,/commentMemePrompt/)
+  assert.match(html,/maxlength="4000"/)
 })
 
 test('AI 不可修改用户提示词，且日志不打印编辑正文',()=>{

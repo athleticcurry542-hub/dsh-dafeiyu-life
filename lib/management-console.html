@@ -17,10 +17,12 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
 <body><main class="wrap">
-<header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">今日诊断 · 每日报告 · 后台私信 · 最近评论 · 成长记忆 · 梗知识｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
+<header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">运行控制 · 次数与额度 · 人设与好友 · 诊断与互动记录｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
 <nav class="tabs" aria-label="管理分类">
 <button data-tab="diagnostics" aria-selected="true">今日诊断</button>
 <button data-tab="reports" aria-selected="false">每日报告</button>
+<button data-tab="quotas" aria-selected="false">次数与额度</button>
+<button data-tab="persona" aria-selected="false">人设与好友</button>
 <button data-tab="dm" aria-selected="false">后台私信 <span id="dm-count" class="queue-badge" hidden></span></button>
 <button data-tab="comments" aria-selected="false">最近评论</button>
 <button data-tab="growth" aria-selected="false">成长记忆 <span id="growth-count" class="queue-badge" hidden></span></button>
@@ -36,6 +38,47 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <article class="card"><h3>今日梗图诊断</h3><p class="muted">显示 AI 是否选图、附图回执与本地原因；工具接受不等于图片一定公开展示。</p><div id="meme-summary" class="muted">正在读取…</div><div id="meme-diag-list" class="records"></div></article>
 </div>
 </section>
+<section id="panel-quotas" hidden>
+<div class="toolbar"><h2 style="margin:0">次数与额度</h2><button id="quota-refresh">重新读取</button></div>
+<p class="muted">所有次数集中设置，各种时间窗口不会互相替代。只有点击「保存次数与额度」才会写入；读取不改变历史账本。公开评论每日额度和后台回复的滚动 24 小时额度彼此独立，生效时取更严格的限制。</p>
+<div class="card" style="margin-bottom:13px"><h3>今日公开评论用量</h3><p id="quota-usage-summary" class="muted">正在读取…</p><p class="muted">这表示调用 B 站发布接口的尝试次数，不保证真实公开可见；旧版本记录按旧口径保留。</p></div>
+<div class="settings-stack">
+<div class="settings-section"><h4>选片 · 按轮／按天</h4><div class="fields" id="quota-fields-pick">
+<div><label for="quota-per-day">每天最多挑视频（0=不挑）</label><input id="quota-per-day" type="number" min="0"></div>
+<div><label for="quota-pick-round">每轮最多挑视频（1–50）</label><input id="quota-pick-round" type="number" min="1" max="50"></div>
+</div></div>
+<div class="settings-section"><h4>公开评论与动态 · 自然日</h4><div class="fields" id="quota-fields-public">
+<div><label for="quota-comment-daily">公开评论全局每日硬上限（0–1000）</label><input id="quota-comment-daily" type="number" min="0" max="1000"></div>
+<div><label for="quota-comment-round">跑一轮最多发顶层评论（0–20）</label><input id="quota-comment-round" type="number" min="0" max="20"></div>
+<div><label for="quota-dynamic-daily">每天最多同步动态（0–30）</label><input id="quota-dynamic-daily" type="number" min="0" max="30"></div>
+</div><p class="muted">主动顶层评论与后台楼中楼共用全局硬上限；动态有自己的计数。</p></div>
+<div class="settings-section"><h4>后台评论互动 · 滚动24小时与每轮</h4><div class="fields" id="quota-fields-comment"></div></div>
+<div class="settings-section"><h4>私信 · 每日与每位用户</h4><div class="fields" id="quota-fields-dm"></div></div>
+<div class="settings-section"><h4>梗图、梗知识和视觉</h4><div class="fields" id="quota-fields-meme">
+<div><label for="quota-meme-day">每天最多附图尝试（0–10000）</label><input id="quota-meme-day" type="number" min="0" max="10000"></div>
+<div><label for="quota-meme-round">每轮最多附图尝试（0–5）</label><input id="quota-meme-round" type="number" min="0" max="5"></div>
+<div><label for="quota-meme-max">梗知识保存上限（10–2000）</label><input id="quota-meme-max" type="number" min="10" max="2000"></div>
+<div><label for="quota-vision-frames">每个视频预览取图张数（1–3）</label><input id="quota-vision-frames" type="number" min="1" max="3"></div>
+</div></div>
+<div class="settings-section"><h4>视频入选门槛 · 数量</h4><div class="fields" id="quota-fields-heat">
+<div><label for="quota-min-views">最低播放量（0=不限制）</label><input id="quota-min-views" type="number" min="0" max="100000000"></div>
+<div><label for="quota-min-likes">最低点赞数（0=不限制）</label><input id="quota-min-likes" type="number" min="0" max="100000000"></div>
+<div><label for="quota-min-replies">最低评论数（0=不限制）</label><input id="quota-min-replies" type="number" min="0" max="100000000"></div>
+</div></div>
+</div>
+<div class="toolbar" style="margin-top:16px"><button id="quota-save" class="primary">保存次数与额度</button><span class="muted">离开页面前先保存；只提交此处的数值字段。</span></div>
+</section>
+<section id="panel-persona" hidden>
+<div class="toolbar"><h2 style="margin:0">人设与好友</h2><button id="persona-refresh">重新读取</button></div>
+<p class="muted">默认提示词是第一次安装的官方规则；此前保存的自定义提示词不会自动覆盖。恢复默认只清除这一项的自定义，不清理成长记忆、好友画像或历史。</p>
+<div class="settings-stack">
+<div class="settings-section"><h4>🐳 大肥鱼人设</h4><p class="muted">用于刷视频、公开评论和私信的角色语气。空配置使用内置默认；不在公开评论里发布提示词原文。</p><textarea id="persona-text" maxlength="8000" rows="13"></textarea><div class="toolbar"><button id="persona-save" class="primary">保存大肥鱼人设</button><button id="persona-reset">恢复默认</button><span id="persona-status" class="muted"></span></div></div>
+<div class="settings-section"><h4>AI 选图提示词</h4><p class="muted">决定什么时候给顶层评论配梗图；硬限额与真实文件校验不会被提示词修改。</p><textarea id="meme-prompt-text" maxlength="4000" rows="12"></textarea><div class="toolbar"><button id="meme-prompt-save" class="primary">保存选图提示词</button><button id="meme-prompt-reset">恢复默认</button><span id="meme-prompt-status" class="muted"></span></div></div>
+<div class="settings-section"><h4>视觉识图提示词</h4><p class="muted">判断何时需要识图和如何描述真实预览帧，不会绕过图片来源安全检查。</p><textarea id="vision-prompt-text" maxlength="4000" rows="10"></textarea><div class="toolbar"><button id="vision-prompt-save" class="primary">保存识图提示词</button><button id="vision-prompt-reset">恢复默认</button><span id="vision-prompt-status" class="muted"></span></div></div>
+<div class="settings-section"><h4>虚构角色背景与关系</h4><p class="muted">单独补充世界观；与主人自定义人设共同生效。</p><textarea id="lore-text" maxlength="4000" rows="8"></textarea><div class="toolbar"><button id="lore-save" class="primary">保存角色背景</button><button id="lore-reset">恢复默认</button><span id="lore-status" class="muted"></span></div></div>
+<div class="settings-section"><h4>公开评论 @ 好友</h4><p class="muted">每行一个「昵称|UID」。好友画像仅供 AI 判断是否自然 @，不公开展示。私信推荐接收人 UID 在 DSH 设置中单独配置。</p><div class="fields"><div><label for="friends-targets">@ 好友名单</label><textarea id="friends-targets" rows="5" placeholder="长条动物|12345678"></textarea></div><div><label for="friends-mode">@ 策略</label><select id="friends-mode"><option value="ai_select">AI 挑选部分好友（推荐）</option><option value="ai">AI 判断是否 @ 全部好友</option><option value="off">永不 @</option><option value="always">每次 @ 全部好友</option></select><p class="muted">最多编辑 8 位好友画像；名单里的昵称应唯一。</p></div></div><div class="toolbar"><button id="friends-generate">根据名单编辑画像</button><button id="friends-save" class="primary">保存 @ 名单与好友画像</button></div><div id="friends-editor" class="settings-stack"></div></div>
+</div>
+</section>
 <section id="panel-reports" hidden>
 <div class="toolbar"><h2 style="margin:0">每日报告</h2><input id="report-day" type="date"><button id="report-load" class="primary">读取报告</button><button id="report-copy">复制报告文本</button></div>
 <p id="report-meta" class="muted">报告只从本机 out 目录读取，不会重新调用模型。</p><pre id="report-content" class="output">选择日期后读取。</pre>
@@ -44,7 +87,7 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div class="card" style="margin-bottom:14px"><div class="row" style="justify-content:space-between"><h3>后台评论互动设置</h3><button id="comments-refresh">刷新状态与记录</button></div><p id="comments-status" class="muted">正在读取状态…</p>
 <div class="grid" style="margin:12px 0">
 <div class="settings-section"><h4>后台互动回复额度（滚动24小时）</h4><p id="comments-usage" class="muted">近24小时回复计数读取中…</p><p id="comments-send-stats" class="muted">正在读取发送结果分类…</p><p id="comments-history-note" class="muted"></p></div>
-<div class="settings-section"><h4>公开评论全局硬上限（自然日）</h4><p id="global-comment-quota" class="muted">正在读取今日全局额度…</p><p id="global-comment-quota-note" class="muted">该上限由「设置 → 刷B站 → 互动」中的公开评论每日上限配置。</p></div>
+<div class="settings-section"><h4>公开评论全局硬上限（自然日）</h4><p id="global-comment-quota" class="muted">正在读取今日全局额度…</p><p id="global-comment-quota-note" class="muted">可在管理中心「次数与额度」里修改。</p></div>
 </div><p class="muted">重要区别：接口返回成功、本地评论账本有记录，都不等于评论当前一定对其他用户公开可见。此处不会把未向 B 站核验的记录标成“平台可见”。</p>
 <div class="settings-stack">
 <div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
@@ -54,12 +97,12 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div><label for="comment-top-videos">每轮检查视频数（1–6）</label><input id="comment-top-videos" type="number" min="1" max="6" value="3"></div>
 <div><label for="comment-per-poll">每轮最多回复（1–5）</label><input id="comment-per-poll" type="number" min="1" max="5" value="1"></div>
 <div><label for="comment-per-day">后台公开评论回复近24小时总上限（1–1000）</label><input id="comment-per-day" type="number" min="1" max="1000" value="5"></div>
-</div><p class="muted">每轮上限限制单次检查能发多少条；近24小时总上限限制滚动24小时内后台公开回复总量。二者独立，并且都不等于公开评论全局自然日硬上限。</p></div>
+</div><p class="muted">详细次数请到「次数与额度」修改。每轮、滚动24小时及全局自然日上限均生效，不代表同一个计数。</p></div>
 <div class="settings-section"><h4>优先回复别人对大肥鱼自己评论的留言</h4><div class="fields">
 <div class="checkline"><input id="comment-watch-replies" type="checkbox"><label for="comment-watch-replies">后台回复别人对我的评论</label></div>
 <div><label for="comment-own-top-per-user">我的顶层评论下：同一人近24小时最多回复（1–1000）</label><input id="comment-own-top-per-user" type="number" min="1" max="1000" value="5"></div>
 <div><label for="comment-own-nested-per-user">我的楼中楼回复下：同一人近24小时最多回复（1–1000）</label><input id="comment-own-nested-per-user" type="number" min="1" max="1000" value="3"></div>
-</div><p class="muted">这两项只限制同一 UID 在对应评论场景中的回复次数，与上面的“每轮最多回复”不是同一概念。能确认属于大肥鱼本人评论的留言会优先处理；仍受每轮、近24小时总上限和公开评论全局自然日硬上限约束。广告、刷屏、恶意攻击等仍可跳过。</p></div>
+</div><p class="muted">同一 UID 在不同评论场景中的限额，已移至「次数与额度」。能确认属于大肥鱼本人评论的留言会优先处理；仍受每轮、近24小时总上限和公开评论全局自然日硬上限约束。广告、刷屏、恶意攻击等仍可跳过。</p></div>
 </div><div class="actions"><button id="comments-settings-save" class="primary">保存评论互动设置</button></div></div>
 <div class="toolbar"><h2 style="margin:0">最近公开评论记录</h2><label for="comments-day">日期</label><input id="comments-day" type="date" title="留空显示全部日期"><button id="comments-day-clear">全部日期</button><select id="comments-limit"><option value="20">每页20条</option><option value="50" selected>每页50条</option><option value="100">每页100条</option><option value="200">每页200条</option></select><button id="comments-load">刷新记录</button></div>
 <p class="muted">这里只读取评论主判重表 seen.md 及月度归档，不从诊断日志实时拼接。成功回执不代表 B站 当前公开可见；正文摘要只显示原本实际保存的内容。</p>
@@ -79,7 +122,7 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div><label for="dm-whitelist">白名单 UID（换行或逗号分隔）</label><textarea id="dm-whitelist" maxlength="5000" placeholder="12345678&#10;87654321"></textarea></div>
 <div><label for="dm-interval">检查间隔（分钟，1–120）</label><input id="dm-interval" type="number" min="1" max="120" value="1"></div>
 </div></div>
-<div class="settings-section"><h4>私信额度与上下文</h4><p class="muted">这里的额度只统计自动发送的私信，不包含公开评论或楼中楼回复。全局私信每日总上限与“获批用户每日私信回复上限”同时生效；公开评论额度请到「最近评论」或 DSH 设置里的公开评论上限查看。</p><div class="fields">
+<div class="settings-section"><h4>私信额度与上下文</h4><p class="muted">私信额度独立于公开评论；请到管理中心「次数与额度」集中设置每日、每人及上下文条数。</p><div class="fields">
 <div><label for="dm-reply-per-day">每日自动私信回复上限（0=不限，最大1000）</label><input id="dm-reply-per-day" type="number" min="0" max="1000" value="0"></div>
 <div><label for="dm-context-messages">每次回复读取的私信上下文条数（0–80，0=不读历史）</label><input id="dm-context-messages" type="number" min="0" max="80" value="40"></div>
 <div><label for="dm-total">获批用户累计私信回复上限（1–10000）</label><input id="dm-total" type="number" min="1" max="10000" value="50"></div>

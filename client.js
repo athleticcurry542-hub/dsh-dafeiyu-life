@@ -582,7 +582,7 @@ function WatchTab() {
 
       const onSaveText = async () => {
         const list = String(kws || '').split('\n').map((s) => s.trim()).filter(Boolean)
-        await patch({ keywords: list, personaPrompt: String(persona || '').trim() }, '关键词 / 人设 / 工作区')
+        await patch({ keywords: list, clear: list.length ? [] : ['keywords'] }, '关注关键词')
       }
 
       if (!cfg) {
@@ -647,7 +647,7 @@ function WatchTab() {
             h('button', { key: v, 'data-bd-tab': '', 'aria-selected': tab === v ? 'true' : 'false', onClick: () => setTab(v) }, label))),
 
         h('div', { 'data-bd-row': '' },
-          h('button', { 'data-bd-btn': '', 'data-primary': '', disabled: Boolean(busy), onClick: onSaveText }, '保存'),
+          h('button', { 'data-bd-btn': '', 'data-primary': '', disabled: Boolean(busy), onClick: onSaveText }, '保存关键词'),
           msg ? h('div', { 'data-bd-msg': '', 'data-good': msgTone === 'good' ? '' : undefined, 'data-warn': msgTone === 'warn' ? '' : undefined }, msg) : null),
 
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },
@@ -685,35 +685,10 @@ function WatchTab() {
               })
             )) : null),
 
-        /* ── 一轮挑几条 ── */
-        h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },
-          h('div', { 'data-bd-h': '' }, '一轮挑几条'),
-          h('div', { 'data-bd-row': '' },
-            h('div', { 'data-bd-grow': '' },
-              h('div', { 'data-bd-label': '' }, '每天最多挑几条'),
-              h('div', { 'data-bd-note': '' }, '填 0 = 今天不再挑选视频（即使手动启动也不会挑新视频）')),
-            h('input', {
-              'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0,
-              value: perDay ?? '',
-              onChange: (e) => setPerDay(e.target.value),
-              onBlur: () => { const n = Math.max(0, Math.floor(Number(perDay) || 0)); setPerDay(String(n)); patch({ perDay: n }, '每天挑几条') },
-            })),
-          h('div', { 'data-bd-row': '' },
-            h('div', { 'data-bd-grow': '' },
-              h('div', { 'data-bd-label': '' }, '每轮最多挑几条'),
-              h('div', { 'data-bd-note': '' }, '每次点「现在跑一轮」或自动执行时的上限（1～50）；实际不能超过今日剩余额度')),
-            h('input', {
-              'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 50, step: 1,
-              value: pickPerRound ?? '',
-              onChange: (e) => setPickPerRound(e.target.value),
-              onBlur: () => {
-                const n = Math.max(1, Math.min(50, Math.floor(Number(pickPerRound) || 5)))
-                setPickPerRound(String(n))
-                patch({ pickPerRound: n }, '每轮最多挑几条')
-              },
-            })),
-          h('div', { 'data-bd-note': '' }, `按当前配置，这一轮最多还能挑 ${st.canPickThisRound ?? Math.max(0, Math.min(Number(cfg.pickPerRound) || 5, (Number(cfg.perDay) || 0) - (Number(st.pickedToday) || 0)))} 条`),
-          st.lastRunAt ? h('div', { 'data-bd-note': '' }, `上次跑：${new Date(st.lastRunAt).toLocaleString('zh-CN')}`) : null),
+        /* 数量配额现在统一在管理中心，避免过期草稿覆盖编辑。 */
+        h('div', { 'data-bd-sec':'', 'data-bd-group':'daily', 'data-bd-away':tab==='daily'?undefined:'' },
+          h('div',{'data-bd-h':''},'选片数量'),
+          h('div',{'data-bd-note':''},`每天最多 ${cfg.perDay} 条 · 每轮最多 ${cfg.pickPerRound} 条。本轮最多还可挑 ${st.canPickThisRound??0} 条。修改请前往管理中心 → 次数与额度。`)),
 
         /* ── 发言与转写 ── */
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'social', 'data-bd-away': tab === 'social' ? undefined : '' },
@@ -742,42 +717,8 @@ function WatchTab() {
           }) : null,
           (dmMode && dmMode !== 'off') ? h('div', { 'data-bd-note': '' }, '这里的 UID 只控制刷视频报告发给谁，不是白名单，也不是公开评论 @ 对象。') : null,
           h('div', { 'data-bd-sep': '' }),
-          h('div', { 'data-bd-label': '' }, '公开评论 @ 名单（每行一个 昵称|UID）'),
-          h('textarea', {
-            'data-bd-input': '', value: mentionTargets ?? '', rows: 3,
-            placeholder: '长条动物|12345678\n另一个好友|87654321',
-            onChange: (e) => setMentionTargets(e.target.value),
-            onBlur: () => {const t=String(mentionTargets??'').trim();patch(t?{mentionTargets:t}:{mentionTargets:'',clear:['mentionTargets']}, '@好友名单')},
-          }),
-          h('div', { 'data-bd-note': '' }, '名单为空会继承旧 mentionName。填写正确的 UID 能尝试 B站原生 @；真实提醒是否推送仍由平台决定。'),
-          h('div',{'data-bd-row':''},
-            h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'每位 @ 好友的人设与兴趣'),h('div',{'data-bd-note':''},'按昵称分别配置；仅供 AI 判断是否邀请，不公开。')),
-            h('button',{'data-bd-btn':'',onClick:()=>setFriendProfilesExpanded(v=>!v)},friendProfilesExpanded?'收起好友画像':'编辑好友画像')),
-          friendProfilesExpanded ? h('div', { 'data-bd-sub': '', style:{maxHeight:'380px',overflowY:'auto',overflowWrap:'anywhere'} },
-            h('div', { 'data-bd-label': '' }, '每位 @ 好友的角色关系与兴趣（独立保存）'),
-            h('div', { 'data-bd-note': '' }, '先在上方填写昵称|UID，再为每位好友补充关系、喜欢的话题和邀请偏好。仅传给刷视频 Agent 判断适合邀请谁；不公开。最多 8 人。'),
-            ...String(mentionTargets || cfg?.mentionTargets || mention || cfg?.mentionName || '').split(/[\r\n,，;；]+/).map(x=>x.split('|')[0].trim().replace(/^@/,'')).filter((x,i,a)=>x && x.length<=40 && a.indexOf(x)===i).slice(0,8).map(name=>{
-              const v=(friendProfiles||{})[name]||{}
-              const update=(field,value)=>setFriendProfiles(old=>({...old,[name]:{...(old?.[name]||{}),[field]:value}}))
-              return h('div',{key:name,'data-bd-sub':'',style:{margin:'3px 0'}},
-                h('div',{'data-bd-label':''},name),
-                ...[['relationship','与大肥鱼是什么关系','如：老朋友、经常一起玩游戏（人设设定）'],
-                    ['interests','喜欢什么内容','如：DeepSeek、AI娘化、奶龙整活、游戏'],
-                    ['preferences','什么时候适合邀请','如：遇到反差搞笑或视觉梗时可邀请；普通新闻别@']].map(([key,label,placeholder])=>
-                      h('div',{key},h('div',{'data-bd-note':''},label),h('input',{'data-bd-input':'',value:v[key]||'',placeholder,
-                        maxLength:key==='interests'?400:key==='preferences'?240:100,
-                        onChange:e=>update(key,e.target.value)})))
-              )
-            }),
-            h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'','data-primary':'',disabled:Boolean(busy),onClick:()=>patch({mentionProfiles:JSON.stringify(friendProfiles||{})},'每位好友的@画像')},'保存好友人设／兴趣')),
-            h('div',{'data-bd-note':''},'AI 根据真实视频内容与画像匹配，不会保证每条评论都@。修改后请点保存；自定义资料不会替代 UID 校验。')) : null,
-          h('div', { 'data-bd-label': '' }, '公开评论 @ 策略'),
-          h('select', { 'data-bd-input': '', value: mentionMode ?? 'ai', onChange:(e)=>{setMentionMode(e.target.value);patch({mentionMode:e.target.value}, '@ 策略')} },
-            h('option', {value:'ai'}, '视情况 @ 所有好友（旧版兼容）'),
-            h('option', {value:'ai_select'}, '视情况只 @ 想邀请的某些好友（推荐）'),
-            h('option', {value:'off'}, '永远不 @（只评论）'),
-            h('option', {value:'always'}, '每条评论 @ 所有好友')),
-          h('div', { 'data-bd-note': '' }, 'AI 按视频与情境决定，不使用固定概率。ai_select 可 @ 0、1、2 或多个名单内好友；ai 模式仍一次 @ 所有人。位置可在句首、句中或句尾。'),
+          h('div', { 'data-bd-note': '' }, '公开评论 @ 名单及每位好友的画像（关系、兴趣、邀请偏好），现统一在管理中心 → 人设与好友中编辑。'),
+          h('div', { 'data-bd-note': '' }, '公开评论 @ 策略：'+({ai_select:'AI 选择部分好友',ai:'AI 判断是否 @ 全部好友',off:'永不 @',always:'每次 @ 全部好友'}[cfg.mentionMode]||'AI 决定')+'；在管理中心「人设与好友」里调整。'),
           h('div', { 'data-bd-sep': '' }),
           h('div', { 'data-bd-h': '' }, '详细诊断已移至管理中心'),
           h('div', { 'data-bd-note': '' }, '今日 @ 诊断、梗图选取原因、每日报告、后台私信记录和最近评论集中在管理中心展示，避免设置页过长。'),
@@ -795,46 +736,17 @@ function WatchTab() {
             on: sw('autoComment'),
             onChange: (v) => patch({ autoComment: v }, '自动评论'),
           }) : null,
-          h('div', { 'data-bd-row': '' },
-            h('div', { 'data-bd-grow': '' },
-              h('div', { 'data-bd-label': '' }, '公开评论全局每日上限（跑一轮＋后台互动共用）'),
-              h('div', { 'data-bd-note': '' }, '含刷视频原创评论和后台评论回复，按发送尝试计数；0 = 完全禁发。默认 10。'),
-              h('div', { 'data-bd-note': '' }, commentQuota?.ok ? `今日已用 ${commentQuota.used} / ${commentQuota.limit} 次` : '今日已用：暂不可读取')),
-            h('input', { 'data-bd-input': '', 'data-bd-num': '', type:'number', min:0, max:1000,
-              value: dailyPublicCommentLimit ?? '10',
-              onChange: e => setDailyPublicCommentLimit(e.target.value),
-              onBlur: () => { const n=Math.max(0,Math.min(1000,Math.floor(Number(dailyPublicCommentLimit)||0)));setDailyPublicCommentLimit(String(n));patch({commentDailyLimit:n}, '评论每日硬上限') }
-            })),
-          (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h('div', {},
-            h('div', { 'data-bd-row': '' },
-              h('div', { 'data-bd-grow': '' },
-                h('div', { 'data-bd-label': '' }, '每轮最多主动发几条评论（跑一轮）'),
-                h('div', { 'data-bd-note': '' }, '只限制刷视频这一轮主动评论；填 0 = 本轮不主动评论。仍受上方每日公开评论上限约束。')),
-              h('input', {
-                'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0,
-                value: perRound ?? '',
-                onChange: (e) => setPerRound(e.target.value),
-                onBlur: () => { const n = Math.max(0, Math.floor(Number(perRound) || 0)); setPerRound(String(n)); patch({ commentPerRound: n }, '每轮发几条评论') },
-              }))) : null,
+          h('div', { 'data-bd-note': '' }, commentQuota?.ok
+            ? `公开评论今日全局已占用 ${commentQuota.used} / ${commentQuota.limit} 次；次数请到管理中心 → 次数与额度编辑。`
+            : '公开评论全局额度及每轮上限已移至管理中心 → 次数与额度。'),
           (dmMode === 'off' || dmMode === 'both') && sw('autoComment') ? h(ToggleRow, {
             label: 'AI 决定是否将评论同步到动态',
             note: '默认关闭。开启后 AI 会逐条认真判断：有鲜明笑点、反差、实用发现或共鸣点且单独发动态也自然时，应积极考虑同步；不是每条必发，也不是默认不发。动态正文=评论原文+视频链接，不增加模型调用。',
             on: sw('commentSyncDynamic'),
             onChange: (v) => patch({ commentSyncDynamic: v }, '评论同步动态'),
           }) : null,
-          (dmMode === 'off' || dmMode === 'both') && sw('autoComment') && sw('commentSyncDynamic') ? h('div', { 'data-bd-sub': '' },
-            h('div', { 'data-bd-row': '' },
-              h('div', { 'data-bd-grow': '' },
-                h('div', { 'data-bd-label': '' }, '每日最多同步几条动态'),
-                h('div', { 'data-bd-note': '' }, '由 AI 自主决定是否同步；0 = 禁止发送，范围 0–30。计数按实际发送尝试，失败也占额度。'),
-                h('div', { 'data-bd-note': '' }, `今日已尝试 ${st?.dynamicSyncUsage?.used ?? 0} / ${st?.dynamicSyncUsage?.limit ?? cfg.dynamicDailyLimit ?? 3} 次`)),
-              h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 0, max: 30,
-                value: dynamicDailyLimitDraft ?? '3',
-                onChange: e => setDynamicDailyLimitDraft(e.target.value),
-                onBlur: () => { const n = Math.max(0, Math.min(30, Math.floor(Number(dynamicDailyLimitDraft) || 0))); setDynamicDailyLimitDraft(String(n)); patch({ dynamicDailyLimit: n }, '动态每日上限') },
-              })),
-            h('div', { 'data-bd-note': '' }, 'AI 没选中：不会发布、不占额度；同 BV 同日最多尝试一次，接口接受不保证动态公开可见。')
-          ) : null,
+          (dmMode === 'off' || dmMode === 'both') && sw('autoComment') && sw('commentSyncDynamic')
+            ? h('div',{'data-bd-note':''},`动态今日已尝试 ${st?.dynamicSyncUsage?.used??0} 次；每日额度在管理中心调整。`):null,
           h('div', { 'data-bd-sep': '' }),
           h(ToggleRow, {label:'AI 自主给顶层评论附梗图（试验）',
             note:'默认关闭。仅使用你自己放入 comment-memes 文件夹的 PNG/JPG/GIF/WebP 图片（WebP 发送时转换为静态 PNG）。AI 在写评论时看情绪决定是否附图；真实上传和发送需要 B站接口许可。',
@@ -842,52 +754,8 @@ function WatchTab() {
           h(ToggleRow, {label:'Debug：记录 AI 选择的梗图',
             note:'保存 BV号、梗图名、选择原因和发送状态到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
             on:sw('commentMemesDebug'),onChange:v=>patch({commentMemesDebug:v},'梗图 Debug')}),
-          sw('commentMemesEnabled') ? h('div',{'data-bd-sub':''},
-            ...[['commentMemesPerDay',memeImageDailyDraft,setMemeImageDailyDraft,10000,'每日最多尝试附图几次'],
-                ['commentMemesPerRound',memeImageRoundDraft,setMemeImageRoundDraft,5,'每轮最多尝试附图几次']].map(([key,draft,setter,max,label])=>h('div',{'data-bd-row':'',key},
-              h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},label)),
-              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:0,max,value:draft??'',
-                onChange:e=>setter(e.target.value),onBlur:()=>{const n=Math.max(0,Math.min(max,Math.floor(Number(draft)||0)));setter(String(n));patch({[key]:n},label)}}))),
-            h('div',{'data-bd-note':''},'每日附图尝试次数可设 0–10000（0 表示不附图）；每轮最多 5 次仍单独限制。AI 只有选择合适梗图时才使用额度。'),
-            h('div',{'data-bd-note':''},'梗图库支持分类子文件夹：comment-memes/奶娃/奶龙大笑.webp、comment-memes/其他/无语.png。AI 按视频桥段和评论情绪判断是否附图（默认不附），选图时使用「分类/图片名」，同一目录勿放同名不同格式。每张最大8MB；WebP 动图只取首帧。'),
-            h('div',{'data-bd-row':''},
-              h('div',{'data-bd-grow':''},
-                h('div',{'data-bd-label':''},'AI 选图提示词（可自定义）'),
-                h('div',{'data-bd-note':''},cfg.commentMemePrompt ? '当前：使用你保存的选图策略' : '当前：使用内置默认选图策略')),
-              h('button',{'data-bd-btn':'',disabled:memePromptLoading,onClick:async()=>{
-                if(memePromptExpanded){setMemePromptExpanded(false);return}
-                setMemePromptLoading(true)
-                try {
-                  let defaultText=memePromptDefault
-                  if(defaultText===null){const x=await jget('/comment-meme-prompt-default');if(!x?.ok)throw new Error('无法加载默认提示词');defaultText=x.prompt||'';setMemePromptDefault(defaultText)}
-                  setMemePromptDraft(String(cfg.commentMemePrompt||defaultText))
-                  setMemePromptExpanded(true)
-                }catch(e){say('读取选图提示词失败：'+String(e?.message||e),'warn')}
-                finally{setMemePromptLoading(false)}
-              }},memePromptExpanded?'收起编辑':'查看／编辑')),
-            memePromptExpanded ? h('div',{'data-bd-sub':''},
-              h('div',{'data-bd-note':''},'修改后点“保存选图提示词”才会生效，仅影响下一轮生成评论时的选图方式；不影响评论人设和视觉识图提示词。硬额度、路径校验和不重试规则不可修改。'),
-              h('textarea',{'data-bd-input':'',rows:9,maxLength:4000,style:{minHeight:'144px',resize:'vertical'},
-                value:memePromptDraft??'',onChange:e=>setMemePromptDraft(e.target.value)}),
-              h('div',{'data-bd-row':''},
-                h('span',{'data-bd-note':''},`${(memePromptDraft||'').length} / 4000 字符`),
-                h('button',{'data-bd-btn':'','data-primary':'',disabled:Boolean(busy)||!String(memePromptDraft||'').trim(),
-                  onClick:async()=>{
-                    const next=String(memePromptDraft||'').trim()
-                    if(next===memePromptDefault) await patch({commentMemePrompt:'',clear:['commentMemePrompt']},'AI 选图提示词（内置默认）')
-                    else await patch({commentMemePrompt:next},'AI 选图提示词')
-                  }},'保存选图提示词'),
-                h('button',{'data-bd-btn':'',disabled:Boolean(busy),onClick:async()=>{
-                  setMemePromptDraft(memePromptDefault||'')
-                  await patch({commentMemePrompt:'',clear:['commentMemePrompt']},'恢复默认选图提示词')
-                }},'恢复默认')),
-              h('div',{'data-bd-note':''},'“恢复默认”会清除自定义内容；默认规则仍然包含“不硬配图、只选图库已存在的名称”。不会删除本地图片或梗知识库。')) : null,
-
-            h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'',onClick:()=>jget('/comment-memes').then(setCommentMemeList).catch(e=>setCommentMemeList({ok:false,error:String(e)}))},'刷新梗图库'),
-              h('span',{'data-bd-note':''},commentMemeList?commentMemeList.ok?`已识别 ${commentMemeList.total??commentMemeList.names?.length??0} 张${commentMemeList.truncated?'（仅显示部分）':''}`:commentMemeList.error:'请放入图片后点击刷新')),
-            commentMemeList?.ok ? h('div',{'data-bd-note':''},(commentMemeList.categories||[]).map(x=>`${x.label} ${x.count}张`).join(' · ')) : null,
-            commentMemeList?.ok ? h('div',{'data-bd-pre':'',style:{maxHeight:'180px',overflowY:'auto',whiteSpace:'normal',overflowWrap:'anywhere'}},(commentMemeList.names||[]).slice(0,30).join('、')||'文件夹暂时没有可用的图片') : null,
-            h('div',{'data-bd-note':''},'界面仅展示前30个完整分类/名称，列表限高可滚动；用户图片按分类管理，不会自动识图。图片上传状态未验证时不会自动重试；动态暂不附图。')) : null,
+          sw('commentMemesEnabled') ? h('div',{'data-bd-note':''},
+            '梗图的每轮／每日次数、AI 选图提示词已移至管理中心；梗图素材继续保存在 comment-memes 文件夹。') : null,
           h('div', { 'data-bd-note': '' }, '「跑一轮」只负责挑视频和发布原创顶层评论；回复观众评论与热门评论互动的详细设置、状态和记录已移至管理中心。'),
 
           h('div', { 'data-bd-sep': '' }),
@@ -900,13 +768,13 @@ function WatchTab() {
           }),
           h(ToggleRow, {
             label: '后台回复别人对我的评论',
-            note: '详细限额、状态和最近评论已移至管理中心。',
+            note: '详细限额在管理中心「次数与额度」，状态和记录在「最近评论」。',
             on: Boolean(cfg?.commentWatchReplies),
             onChange: v => patch({commentWatchReplies:v}, '后台回复评论通知'),
           }),
           h(ToggleRow, {
             label: '主动参与近期视频的热门评论',
-            note: '详细限额、状态和最近评论已移至管理中心。',
+            note: '详细限额在管理中心「次数与额度」，状态和记录在「最近评论」。',
             on: Boolean(cfg?.commentWatchTop),
             onChange: v => patch({commentWatchTop:v}, '主动参与热门评论'),
           }),
@@ -953,13 +821,7 @@ function WatchTab() {
             on:cfg.memeMemoryEnabled!==false,
             onChange:v=>patch({memeMemoryEnabled:v},'梗知识库'),
           }),
-          h('div',{'data-bd-row':'','style':{alignItems:'center'}},
-            h('div',{'data-bd-grow':''},
-              h('div',{'data-bd-label':''},'知识库最多保存多少条梗'),
-              h('div',{'data-bd-note':''},'10–2000 条，默认 300。满额后不再新增；调低不会自动删除旧记录。')),
-            h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:10,max:2000,
-              value:memeMaxEntriesDraft??'300',onChange:e=>setMemeMaxEntriesDraft(e.target.value),
-              onBlur:()=>{const n=Number(memeMaxEntriesDraft);const value=Number.isFinite(n)?Math.max(10,Math.min(2000,Math.floor(n))):300;setMemeMaxEntriesDraft(String(value));patch({memeMemoryMaxEntries:value},'梗知识库保存上限')} })),
+          h('div',{'data-bd-note':''},'知识库最多保存条数在管理中心 → 次数与额度中设置。'),
           h('div',{'data-bd-note':''},'新学到的梗先待审核；管理中心可搜索、修改名称／别名／释义、批准或拒绝，并查看来源证据。'),
           h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'','data-primary':'',onClick:async()=>{
             try { const r=await jpost('/open',{what:'manage'}); if(!r?.ok)throw new Error(r?.error||'打开失败') }
@@ -973,39 +835,7 @@ function WatchTab() {
             on:sw('visionEnabled'),onChange:v=>patch({visionEnabled:v},'预览识图总开关')}),
           h(ToggleRow, {label:'Debug：保存实际预览图', note:'默认关闭；开启后把送去识图的 JPEG 保存到插件数据目录 vision-debug/BV号/，方便自己查看。',
             on:sw('visionDebug'),onChange:v=>patch({visionDebug:v},'预览图调试保存')}),
-          h('div',{'data-bd-sub':''},
-            h('div',{'data-bd-row':''},
-              h('div',{'data-bd-grow':''},
-                h('div',{'data-bd-label':''},'视频视觉识图提示词（可自定义）'),
-                h('div',{'data-bd-note':''},cfg.visionPrompt ? '当前：使用自定义识图重点' : '当前：使用内置识图规则（与 AI 选梗图提示词不同）')),
-              h('button',{'data-bd-btn':'',disabled:visionPromptLoading,onClick:async()=>{
-                if(visionPromptExpanded){setVisionPromptExpanded(false);return}
-                setVisionPromptLoading(true)
-                try {
-                  let defaultText=visionPromptDefault
-                  if(defaultText===null){const x=await jget('/vision-prompt-default');if(!x?.ok)throw new Error('无法加载默认识图提示词');defaultText=x.prompt||'';setVisionPromptDefault(defaultText)}
-                  setVisionPromptDraft(String(cfg.visionPrompt||defaultText))
-                  setVisionPromptExpanded(true)
-                }catch(e){say('读取识图提示词失败：'+String(e?.message||e),'warn')}
-                finally{setVisionPromptLoading(false)}
-              }},visionPromptExpanded?'收起编辑':'查看／编辑')),
-            visionPromptExpanded ? h('div',{'data-bd-sub':''},
-              h('div',{'data-bd-note':''},'控制何时值得识图、识图后关注哪些画面线索；同时用于复用视频模型和独立 DSH 视觉模型。程序权限、识图次数、真实图片验证不可修改。保存后下一轮生效。'),
-              h('textarea',{'data-bd-input':'',rows:9,maxLength:4000,style:{minHeight:'144px',resize:'vertical'},
-                value:visionPromptDraft??'',onChange:e=>setVisionPromptDraft(e.target.value)}),
-              h('div',{'data-bd-row':''},
-                h('span',{'data-bd-note':''},`${(visionPromptDraft||'').length} / 4000 字符`),
-                h('button',{'data-bd-btn':'','data-primary':'',disabled:Boolean(busy)||!String(visionPromptDraft||'').trim(),
-                  onClick:async()=>{
-                    const next=String(visionPromptDraft||'').trim()
-                    if(next===visionPromptDefault) await patch({visionPrompt:'',clear:['visionPrompt']},'视觉识图提示词（内置默认）')
-                    else await patch({visionPrompt:next},'视觉识图提示词')
-                  }},'保存识图提示词'),
-                h('button',{'data-bd-btn':'',disabled:Boolean(busy),onClick:async()=>{
-                  setVisionPromptDraft(visionPromptDefault||'')
-                  await patch({visionPrompt:'',clear:['visionPrompt']},'恢复默认识图提示词')
-                }},'恢复默认')),
-              h('div',{'data-bd-note':''},'只是改变 AI 的分析重点，不能让模型凭空看见图像；预览图必须真实进入视觉模型上下文。')) : null),
+          h('div',{'data-bd-note':''},'视觉识图提示词已移至管理中心 → 人设与好友。'),
           (cfg.visionEnabled||cfg.visionDebug) ? h('div',{'data-bd-sub':''},
             h('div',{'data-bd-label':''},'识图方式'),
             h('div',{'data-bd-row':''},
@@ -1025,11 +855,7 @@ function WatchTab() {
                     onChange:e=>setVisionDraft(old=>({...old,[key]:e.target.value})),
                     onBlur:()=>patch({[key]:(visionDraft||{})[key]||''},label)}))),
               h('div',{'data-bd-note':''},'留空时优先继承刷视频模型的相应配置。独立视觉 Agent 与主视频 Agent 是两次 DSH 模型会话，但不走旧的 API Key/DPAPI 接口。')):null,
-            h('div',{'data-bd-row':''},h('div',{'data-bd-grow':''},
-              h('div',{'data-bd-label':''},'每条最多取几张预览图'),h('div',{'data-bd-note':''},'1–3 张，默认 2；优先高能弹幕时间点，失败则均匀取帧。')),
-              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:1,max:3,value:(visionDraft||{}).visionFrames??2,
-                onChange:e=>setVisionDraft(old=>({...old,visionFrames:e.target.value})),
-                onBlur:()=>patch({visionFrames:Math.max(1,Math.min(3,Number((visionDraft||{}).visionFrames)||2))},'预览帧数量')})),
+            h('div',{'data-bd-note':''},`每条取图 ${cfg.visionFrames??2} 张；可在管理中心 → 次数与额度调整。`),
             h('div',{'data-bd-note':''},'不再需要视觉 API Key。旧版本本地可能保存过 DPAPI 加密文件，升级不会读取或上传它；如需清理，可删除 bili-duty 目录中的 .vision-api-key.dpapi。'),
             h('div',{'data-bd-row':''},
               h('input',{'data-bd-input':'',placeholder:'输入一个 BV 号，测试预览图片',style:{flex:1,minWidth:'180px'},value:visionBV,
@@ -1047,44 +873,13 @@ function WatchTab() {
           h('div', { 'data-bd-h': '' }, '选片来源'),
           h(ToggleRow, {label:'加入首页推荐视频', note:'默认开启；与关键词搜索混合选片。每轮首页推荐最多读取一次、最多12个候选，过滤直播与广告。是否挑中仍由大肥鱼判断，共用原有额度。',
             on:sw('homeRecommendationsEnabled'),onChange:v=>patch({homeRecommendationsEnabled:v},'首页推荐选片来源')}),
-          h('div', { 'data-bd-h': '' }, '入选视频热度门槛'),
-          h('div', { 'data-bd-note': '' }, 'AI 仍负责挑内容，但入选前必须核实详情中的播放、点赞和评论数；三项分别达标才入选。0 表示关闭该项。顶层评论发送前会再次校验，网络读取失败则不发。'),
-          ...[['minVideoViews','最低播放量',1000],['minVideoLikes','最低点赞数',10],['minVideoReplies','最低评论数',3]].map(([key,label,fallback])=>
-            h('div',{'data-bd-row':'',key},h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},label)),
-              h('input',{'data-bd-input':'','data-bd-num':'',type:'number',min:0,max:100000000,
-                defaultValue:cfg?.[key]??fallback,
-                onBlur:e=>{const x=Number(e.target.value);const n=Number.isFinite(x)?Math.max(0,Math.min(100000000,Math.floor(x))):fallback;e.target.value=String(n);patch({[key]:n},label)}}))),
+          h('div', { 'data-bd-note':'' }, `当前入选门槛：播放 ${cfg.minVideoViews??1000}、点赞 ${cfg.minVideoLikes??10}、评论 ${cfg.minVideoReplies??3}。到管理中心 → 次数与额度修改。`),
           h('div', { 'data-bd-h': '' }, '关注什么（关键词搜索）'),
           h('textarea', {
             'data-bd-input': '', rows: 5, placeholder: '一行一个关键词；留空用内置那几组',
             value: kws ?? '', onChange: (e) => setKws(e.target.value),
           }),
-          h('div', { 'data-bd-label': '' }, '它按什么说话（人设提示词，可留空）'),
-          h('textarea', {
-            'data-bd-input': '', rows: 6,
-            placeholder: '想让它怎么说话就写在这儿 —— 比如「叫我某某，说话简短点，别用 emoji」。也可以直接填一个文件路径（如 D:\\deepseek\\AGENTS.md，或它所在的那个目录），每次运行都会重新读那个文件。留空 = 按中性说话（不扮演任何人）。',
-            value: persona ?? '', onChange: (e) => setPersona(e.target.value),
-          }),
-          h('div', { 'data-bd-note': '' },
-            (st.personaFromWs && String(persona || '').trim() === '')
-              ? '你现在还是用「工作区」里那份 AGENTS.md 说话的（照旧生效）。想把它搬到这儿改，就把上面的路径填成本机那个目录。这里只保存核心人设，不包含成长系统附加经验；已批准经验仅在实际调用模型时按场景临时拼接。'
-              : '改完点下面「保存」；下一轮就按这个说话。这里只保存核心人设，不包含成长系统的附加经验；已批准经验只会在实际调用模型时按场景临时拼接。'),
-          h('div', { 'data-bd-row': '' },h('div',{'data-bd-grow':''},
-            h('div',{'data-bd-label':''},'大肥鱼与 DeepSeek／模型拟人角色的关系设定'),
-            h('div',{'data-bd-note':''},'默认内置角色背景；可改为你自己的世界观，和上面的人设一起生效。')), 
-            h('button',{'data-bd-btn':'',onClick:async()=>{
-              if(loreExpanded){setLoreExpanded(false);return}
-              try{let def=loreDefault;if(def===null){const r=await jget('/character-lore-default');def=r.prompt||'';setLoreDefault(def)}
-                setLoreDraft(cfg.characterLore||def);setLoreExpanded(true)}catch(e){say('读取角色背景失败：'+String(e?.message||e),'warn')}
-            }},loreExpanded?'收起':'查看／编辑')),
-          loreExpanded ? h('div',{'data-bd-sub':''},
-            h('textarea',{'data-bd-input':'',rows:9,maxLength:4000,style:{minHeight:'144px',resize:'vertical'},
-              value:loreDraft??'',onChange:e=>setLoreDraft(e.target.value)}),
-            h('div',{'data-bd-row':''},
-              h('span',{'data-bd-note':''},`${(loreDraft||'').length}/4000`),
-              h('button',{'data-bd-btn':'','data-primary':'',onClick:()=>patch({characterLore:(loreDraft||'')===loreDefault?'':loreDraft,clear:(loreDraft||'')===loreDefault?['characterLore']:[]},'大肥鱼角色关系设定')},'保存关系设定'),
-              h('button',{'data-bd-btn':'',onClick:async()=>{setLoreDraft(loreDefault||'');await patch({characterLore:'',clear:['characterLore']},'恢复默认角色背景')}},'恢复默认')),
-            h('div',{'data-bd-note':''},'这是虚构角色关系，不代表真实品牌或UP主的授权与关系；不会自动改写你已有的人设。')):null,
+          h('div', { 'data-bd-note':'' }, '大肥鱼人设、模型角色关系及各类自定义提示词已统一在管理中心 → 人设与好友中编辑。保存关键词不会覆盖人设。'),
           h('div', { 'data-bd-label': '' }, '日报写多细'),
           h('select', {
             'data-bd-input': '', value: rl ?? 'full',

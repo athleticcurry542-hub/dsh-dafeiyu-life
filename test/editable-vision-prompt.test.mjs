@@ -27,10 +27,12 @@ test('配置端到端：schema、校验、API、UI、日志脱敏和本轮 promp
   assert.match(js,/buildVisionPrompt\(cfg\.visionPrompt\)/)
   assert.match(js,/if \('visionPrompt' in args\.patch\) return \{ok:false, blocked:true/)
   assert.match(js,/visionPrompt: '\[识图提示词已更新\]'/)
-  assert.match(client,/视频视觉识图提示词（可自定义）/)
-  assert.match(client,/保存识图提示词/)
-  assert.match(client,/恢复默认识图提示词/)
-  assert.match(client,/clear:\['visionPrompt'\]/)
+  const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
+  const manager=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8')
+  assert.match(html,/视觉识图提示词/)
+  assert.match(html,/保存识图提示词/)
+  assert.match(html,/vision-prompt-reset/)
+  assert.match(manager,/visionPrompt/)
 })
 
 test('独立 DSH 识图模型收到用户观察重点，提示词更改会使缓存失效',()=>{

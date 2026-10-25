@@ -25,5 +25,6 @@ test('发送工具确实在 bili_reply 前复核，选片提示要求详情核�
  assert.match(index,/必须在决定写入日报的 ### BV 入选段落/);
  assert.match(index,/不要为了凑每轮名额降低标准/);
  const client=readFileSync(new URL('../client.js',import.meta.url),'utf8');
- assert.match(client,/最低播放量/);assert.match(client,/最低点赞数/);assert.match(client,/最低评论数/);
+ const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8');
+ assert.match(html,/最低播放量/);assert.match(html,/最低点赞数/);assert.match(html,/最低评论数/);
 });

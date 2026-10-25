@@ -47,6 +47,7 @@ import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { listCommentMemes } from './lib/comment-meme-library.mjs'
 import { DEFAULT_COMMENT_MEME_PROMPT, buildCommentMemePrompt, normalizeCommentMemePrompt } from './lib/comment-meme-prompt.mjs'
+import { DEFAULT_PERSONA_PROMPT, effectivePersonaPrompt } from './lib/persona-default.mjs'
 import { buildBalancedMemeInventory } from './lib/meme-inventory-prompt.mjs'
 import { DEFAULT_VISION_PROMPT, buildVisionPrompt, normalizeVisionPrompt } from './lib/vision-prompt.mjs'
 import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
@@ -151,8 +152,8 @@ export const Config = !z ? undefined : z.object({
   /** 给那一轮叠一份插件自己的 patch（把 B站 MCP 挂上）—— 用户 profile 一个字都不用改 */
   overlayMcp: z.boolean().default(true).extra('volatile', true),
   /** 跑 headless 时的工作目录 */
-  /** ⭐ 人设提示词：使用者想让它怎么说话（比"填工作区"对新手友好得多）· 留空 = 按中性说话 */
-  personaPrompt: z.string().default('').extra('volatile', true),
+  /** ⭐ 人设提示词：首次安装使用大肥鱼内置默认；用户自定义优先，清空恢复内置人设 */
+  personaPrompt: z.string().default(DEFAULT_PERSONA_PROMPT).extra('volatile', true),
   /** Editable fictional relationship to DeepSeek/DSH and AI personification fandom. */
   characterLore: z.string().default('').extra('volatile', true),
   /** 后台私信监听总开关：只在用户允许时回复。 */
@@ -332,7 +333,7 @@ function reportMeta() {
     commentWatchReplies: false, commentWatchTop: false, commentTopCount: 5, commentTopVideoCount: 3,
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
-    personaPrompt: '', characterLore: '',
+    personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, visionMode: 'reuse_video_model', visionDebug: false, visionModelProvider: '', visionReasoningEffort: '', visionModelId: '', visionEndpoint: '', visionFrames: 2, visionPrompt: '', commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1, commentMemePrompt: '',
     homeRecommendationsEnabled: true, keywords: [], minVideoViews: 1000, minVideoLikes: 10, minVideoReplies: 3, commentPerRound: 5, mentionName: '', mentionTargets: '', mentionProfiles: '{}', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
@@ -1211,7 +1212,7 @@ function reportMeta() {
     //    所以"使用者的设定"由**我们自己读进来**喂给它 —— 它在宿主进程里跑，没有沙箱限制 ✓
     // 🔒 主动设置的人设才准送入公开内容生成模型；不再通过任意路径隐式读取 AGENTS.md / workspace。
     // 用户可以复制需要的文字到设置中的“人设提示词”框；避免宿主代 Agent 读入用户私人文件。
-    const persona = String(cfg.personaPrompt || '').trim().slice(0, 6000)
+    const persona = effectivePersonaPrompt(cfg.personaPrompt).slice(0, 6000)
     const ownerDoc = persona ? '\n\n===== 用户手动填写的人设（仅风格，不应原文公开）=====\n' + persona + '\n===== 人设结束 =====\n' : ''
     /* dsh-persona-growth: begin */
     // 只读取经主人批准的成长经验；不重写 personaPrompt / characterLore。
@@ -1799,7 +1800,7 @@ function reportMeta() {
 
   function dmChatPrompt({ uid, text, messages, history }) {
     // 聊天只使用用户在本插件设置里手动填写的人设，不能隐式读取工作区文件。
-    const persona = String(cfg.personaPrompt || '').trim().slice(0, 3000) + '\n角色语境：' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,600) + buildGrowthContext(stateDir,{scene:'dm',query:text,maxChars:650})
+    const persona = effectivePersonaPrompt(cfg.personaPrompt).slice(0, 3000) + '\n角色语境：' + (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,600) + buildGrowthContext(stateDir,{scene:'dm',query:text,maxChars:650})
     const historyText = history.slice(-16).map((m) => (m.role === 'assistant' ? '助手' : '用户') + '：' + String(m.text).slice(0, 500)).join('\n')
     const recentText = messages.slice(-8).map((m) => String(m).slice(0, 500)).join('\n')
     return `你是 B站 账号的私信聊天助手。仅为用户 UID=${uid} 草拟一条自然、简短、友好的中文回复。
@@ -1857,7 +1858,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const scene=batch.some(x=>x.kind==='comment')?'comment':'dm'
       // 多人的批量互动互相隔离：只有独立请求才按文本检索经历／角色关系。
       const query=batch.length===1?(String(batch[0].text||'')+' '+String(batch[0].context||'')).slice(0,800):''
-      return `${String(cfg.personaPrompt || '')}\n${(normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,1700)}\n${buildGrowthContext(stateDir,{scene,query,maxChars:850})}`
+      return `${effectivePersonaPrompt(cfg.personaPrompt)}\n${(normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0,1700)}\n${buildGrowthContext(stateDir,{scene,query,maxChars:850})}`
     }, 
     logger: {warn: (msg) => log('互动 AI：' + msg)},
   })
@@ -2747,6 +2748,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         return sendJson(res,200,listCommentMemes(folder,{limit:100}))
       } catch {return sendJson(res,200,{ok:false,names:[],categories:[],total:0,error:'无法读取梗图库目录'})}
     }
+    if (req.method === 'GET' && path === '/api/bili-duty/persona-prompt-default') {
+      return sendJson(res, 200, {ok:true, prompt:DEFAULT_PERSONA_PROMPT, maxLength:8000})
+    }
     if (req.method === 'GET' && path === '/api/bili-duty/vision-prompt-default') {
       return sendJson(res, 200, {ok:true, prompt:DEFAULT_VISION_PROMPT, maxLength:4000})
     }
@@ -2787,7 +2791,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
             // 只传本插件中主人明确配置的人设和角色背景；不读取其他 DSH 会话、私密文件。
             refreshCfg()
             const roleReference = {
-              personaPrompt: String(cfg.personaPrompt || '').slice(0, 6000),
+              personaPrompt: effectivePersonaPrompt(cfg.personaPrompt).slice(0, 6000),
               characterLore: normalizeCharacterLore(cfg.characterLore),
               defaultCharacterLore: DEFAULT_CHARACTER_LORE,
             }
@@ -2862,7 +2866,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         try { parsePeakWindows(patch.peakWindows) } catch (e) { return sendJson(res, 400, {ok:false,error:String(e?.message||e)}) }
       }
       const { clean, host } = await persistCfg(patch)
-      log(`设置已更新：${JSON.stringify({...clean, ...('mentionProfiles' in clean ? {mentionProfiles:'[好友画像已更新]'} : {}), ...('characterLore' in clean ? {characterLore:'[角色关系设定已更新]'} : {}), ...('commentMemePrompt' in clean ? {commentMemePrompt: '[选图提示词已更新]'} : {}), ...('visionPrompt' in clean ? {visionPrompt: '[识图提示词已更新]'} : {})})}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
+      log(`设置已更新：${JSON.stringify({...clean, ...('mentionProfiles' in clean ? {mentionProfiles:'[好友画像已更新]'} : {}), ...('personaPrompt' in clean ? {personaPrompt:'[人设提示词已更新]'} : {}), ...('characterLore' in clean ? {characterLore:'[角色关系设定已更新]'} : {}), ...('commentMemePrompt' in clean ? {commentMemePrompt: '[选图提示词已更新]'} : {}), ...('visionPrompt' in clean ? {visionPrompt: '[识图提示词已更新]'} : {})})}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
       return sendJson(res, 200, { ok: true, config: cfg, host })
     }
 
