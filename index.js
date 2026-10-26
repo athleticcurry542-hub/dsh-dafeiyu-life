@@ -27,6 +27,7 @@ const z = hostDeps.z
 const defineTool = hostDeps.defineTool
 import { spawn } from 'node:child_process'
 import { createBackup, validateBackup, restoreBackupFiles } from './lib/data-backup.mjs'
+import { requireBackupDirectory, saveBackupJson } from './lib/backup-directory.mjs'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, lstatSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createRequire } from 'node:module'
@@ -203,6 +204,8 @@ export const Config = !z ? undefined : z.object({
   commentTopVideoCount: z.natural().default(3).extra('volatile', true),
   /** 后台回复 / 被 @：获取并提供给 AI 的其他热门评论数量（1–30），不是主动扫热评的数量。 */
   commentReplyHotCount: z.natural().default(12).extra('volatile', true),
+  /** 用户自己选择的数据备份目录；不使用系统 Temp。 */
+  backupDirectory: z.string().default('').extra('volatile', true),
   commentAllowGeneralTop: z.boolean().default(false).extra('volatile', true),
   commentReplyPerPoll: z.natural().default(1).extra('volatile', true),
   commentReplyPerDay: z.natural().default(5).extra('volatile', true),
@@ -352,7 +355,7 @@ function reportMeta() {
     dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
     dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10, dmWishMentionLimit: 3,
     videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '',
-    commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12,
+    commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12, backupDirectory: '',
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
@@ -418,6 +421,7 @@ function reportMeta() {
       const n = Math.floor(Number(p.peakIntervalMinutes))
       p.peakIntervalMinutes = Number.isFinite(n) && n >= 1 ? Math.min(720, n) : DEFAULT_PEAK_INTERVAL_MINUTES
     }
+    if ('backupDirectory' in p) p.backupDirectory = String(p.backupDirectory || '').trim().slice(0,420)
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     for (const k of ['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort']) if(k in p) p[k]=String(p[k]||'').trim().slice(0,160).replace(/[\r\n\0]/g,'')
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
@@ -2674,8 +2678,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         'cache-control':'no-store','x-content-type-options':'nosniff'})
       return res.end(body)
     }
-    // v2.4.68: local, opt-in portable business data backup. No sticker assets, secrets, cookies or external uploads.
-    if (req.method === 'POST' && ['/api/bili-duty/data-backup/export', '/api/bili-duty/data-backup/inspect', '/api/bili-duty/data-backup/restore'].includes(path)) {
+    // v2.4.69: user-configured backup directory and SQLite memory snapshots; never use OS Temp.
+    if (req.method === 'POST' && ['/api/bili-duty/data-backup/location', '/api/bili-duty/data-backup/export', '/api/bili-duty/data-backup/inspect', '/api/bili-duty/data-backup/restore'].includes(path)) {
       const origin = String(req.headers.origin || '')
       const host = String(req.headers.host || '')
       if (origin && (!host || ![ `http://${host}`, `https://${host}` ].includes(origin)))
@@ -2684,7 +2688,14 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         return sendJson(res, 403, {ok:false,error:'拒绝来自其他网站的备份请求'})
       const action = path.split('/').pop()
       try {
-        // Existing plugin venv is preferred: SQLite snapshots use Python stdlib sqlite3.backup().
+        if (action === 'location') {
+          const body = await readBody(req, 12_000)
+          const folder = requireBackupDirectory(body?.directory, {create:true})
+          // Keep the destination local-first even if Desktop settings synchronization is unavailable.
+          const {host} = await persistCfg({backupDirectory:folder})
+          return sendJson(res, 200, {ok:true,directory:folder,hostSynced:host.ok})
+        }
+        // SQLite snapshot is made in memory, not in Windows / Python temp directories.
         const py = existsSync(venvPython()) ? venvPython() : String(cfg.pythonPath || 'python')
         const sqliteHelper = join(pluginDir, 'lib', 'data-backup-sqlite.py')
         const runSqlite = (op, data) => new Promise((resolve, reject) => {
@@ -2703,24 +2714,30 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.68'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.69'})
         }
-        if (action === 'export') return sendJson(res, 200, {ok:true,backup:await snapshot()})
+        if (action === 'export') {
+          refreshCfg()
+          const folder = requireBackupDirectory(cfg.backupDirectory)
+          const backup = await snapshot()
+          const filePath = saveBackupJson(folder, backup)
+          log('用户数据已备份到：'+filePath)
+          return sendJson(res, 200, {ok:true,backup,filePath})
+        }
         const body = await readBody(req, 90_000_000)
         const data = body?.backup
         const summary = validateBackup(data)
         // Inspect must not write anything. The browser shows scope + a second confirmation.
         if (action === 'inspect') return sendJson(res, 200, {ok:true,summary})
         if (body.confirm !== 'RESTORE_VERIFIED_DATA') return sendJson(res, 400, {ok:false,error:'未完成恢复前人工确认'})
-        const patch = Object.fromEntries(Object.keys(DEFAULTS).filter(k=>Object.hasOwn(data.config,k)).map(k=>[k,data.config[k]]))
+        const patch = Object.fromEntries(Object.keys(DEFAULTS).filter(k=>k!=='backupDirectory'&&Object.hasOwn(data.config,k)).map(k=>[k,data.config[k]]))
         if (Object.keys(patch).length < 10) return sendJson(res,400,{ok:false,error:'设置项不足，不能执行整包恢复'})
-        // Save current full snapshot locally before touching anything. Never clobber prior snapshots.
+        // User-chosen destination: no system Temp fallback, never overwrite prior snapshots.
+        refreshCfg()
+        const folder = requireBackupDirectory(cfg.backupDirectory)
         const safeguard = await snapshot()
-        const backupFolder = join(stateDir, 'backups')
-        mkdirSync(backupFolder, {recursive:true})
-        const backupName = 'pre-restore-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+process.pid+'.json'
-        const safeguardPath = join(backupFolder,backupName)
-        writeFileSync(safeguardPath, JSON.stringify(safeguard), {encoding:'utf8',flag:'wx'})
+        const safeguardPath = saveBackupJson(folder, safeguard, 'pre-restore')
+        const backupName = safeguardPath.split(/[\\/]/).at(-1)
         // Validate every SQLite source first, then use the SQLite online backup API to restore.
         const restoredDbs = (await runSqlite('restore',{sqlite:data.sqlite})).count
         const restoredFiles = restoreBackupFiles(stateDir,data)
