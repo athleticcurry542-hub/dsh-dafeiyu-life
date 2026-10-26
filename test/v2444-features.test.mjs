@@ -89,4 +89,5 @@ test('管理页提供四类入口，已批准成长经验才需要删除确认',
  assert.match(js,/e.status==='approved'&&\!confirm/)
  for(const name of ['growth-list','meme-new-save','sticker-upload','sticker-list','sticker-search'])assert.ok(html.includes('id="'+name+'"'))
  assert.ok(html.includes('data-tab="stickers"'))
+ assert.ok(html.includes('直接提交待审核'))
 })

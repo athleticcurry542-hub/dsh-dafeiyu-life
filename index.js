@@ -1,5 +1,5 @@
 import { judgeVideoHeat } from './lib/video-heat.mjs'
-import { buildGrowthContext, syncReportsToGrowth, listGrowth, proposeGrowth, updateGrowthSuggestion, reviewGrowth, deleteGrowth, updateGrowthPerson, undoGrowth } from './lib/persona-growth.mjs'
+import { buildGrowthContext, syncReportsToGrowth, listGrowth, proposeGrowth, updateGrowthSuggestion, markGrowthDirectReview, reviewGrowth, deleteGrowth, updateGrowthPerson, undoGrowth } from './lib/persona-growth.mjs'
 /**
  * dsh-bili-scroll-plus —— host 半端
  * ============================================================================
@@ -2582,7 +2582,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (req.method === 'GET' && path === '/api/bili-duty/manage') {
       const body=readFileSync(join(pluginDir,'lib','management-console.html'),'utf8')
       res.writeHead(200,{'content-type':'text/html; charset=utf-8','cache-control':'no-store',
-        'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"})
+        'x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"})
       return res.end(body)
     }
     if (req.method === 'GET' && path === '/api/bili-duty/manage.js') {
@@ -2810,6 +2810,10 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         if (action === 'add') result = proposeGrowth(stateDir, {
           text:body.text, type:body.type, tags:body.tags, source:'owner', evidence:''
         })
+        else if (action === 'add-direct') result = proposeGrowth(stateDir, {
+          text:body.text, type:body.type, tags:body.tags, source:'owner-direct', evidence:''
+        })
+        else if (action === 'direct') result = markGrowthDirectReview(stateDir, String(body.id || ''))
         else if (action === 'suggest') {
           const id = String(body.id || '')
           if (growthGenerating.has(id)) throw Error('这条反馈正在由模型提炼，请勿重复提交')
