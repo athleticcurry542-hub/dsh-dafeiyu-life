@@ -3011,6 +3011,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         limit: url.searchParams.get('limit'),
         offset: url.searchParams.get('offset'),
         day: url.searchParams.get('day'),
+        kind: url.searchParams.get('kind'),
       }))
     }
 

@@ -62,8 +62,8 @@ test('管理中心有文件夹筛选和分页，评论标题不暴露重复 rpid
  assert.match(js,/sticker-page-next/);
  assert.match(html,/id="sticker-page-prev"/);
  assert.match(html,/id="sticker-folder-filter"/);
- assert.match(js,/对方昵称未记录/);
- assert.match(js,/const a=node\('a',videoLabel\)/); // 可见标题是 AV，rpid 仍保留在 tooltip 和 href
+ assert.match(js,/昵称及 UID 未记录/);
+ assert.match(js,/const a=node\('a',videoLabel\)/); // 可见标题恢复 BV，rpid 仍保留在 tooltip 和 href
 });
 
 test('插件真实 HTTP 预览路由对第 130 张图片返回 200，而不是 404',async()=>{
