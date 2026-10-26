@@ -18,7 +18,7 @@ EXTENSIONS = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', 
 NAME = re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,48}$')
 MAX_BYTES = 8 * 1024 * 1024
 MAX_FOLDER_DEPTH = 3
-MAX_SCAN = 300
+MAX_SCAN = 1200
 
 
 def folder_of(home):

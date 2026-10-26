@@ -1418,7 +1418,7 @@ function reportMeta() {
     if (cfg.memeMemoryEnabled) list.push('bili_meme_search','bili_meme_remember')
     if (cfg.visionEnabled) list.push('bili_preview_vision')
     if (cfg.visionEnabled && resolvedVisionMode() === 'reuse_video_model' && cfg.memeMemoryEnabled) list.push('bili_preview_observation')
-    if (cfg.commentMemesEnabled && cfg.autoComment && cfg.dmMode !== 'only') list.push('bili_comment_meme_list')
+    if (cfg.commentMemesEnabled && cfg.autoComment && cfg.dmMode !== 'only') list.push('bili_comment_meme_list','bili_comment_meme_search')
     if (cfg.transcribe) list.push('bili_transcribe_safe')
     // ⭐⭐ 2.0.4（第三方体检第 3 条）：**"只发私信"时评论通道必须硬关** —— 以前只看 autoComment，
     //    用户以前开过自动评论、后来切到"只私信"，那个 true 还在 config 里 ⇒ 评论工具照样下发 ✗
@@ -2714,7 +2714,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.69'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.70'})
         }
         if (action === 'export') {
           refreshCfg()

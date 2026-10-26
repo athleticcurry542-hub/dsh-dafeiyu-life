@@ -1188,12 +1188,22 @@ def _record_meme_event(payload, bvid, target_rpid, chosen_name, chosen_reason, d
                 re.search(r'https?://|[\r\n\x00]',image,re.I)):
             image = '[invalid_name]'
         reason = _public_no_mention_reason(chosen_reason if chosen_name else decline_reason)
+        # Explain local candidate availability when the agent claims there are no
+        # matching stickers. This is a read-only filename search, NEVER an auto-send.
+        suggestions = []
+        if not chosen_name and comment_text:
+            try:
+                from comment_meme_search import search_library
+                result = search_library(_DUTY_HOME, comment_text, limit=3)
+                suggestions = [x['name'] for x in result.get('matches', [])][:3]
+            except Exception:
+                pass  # Public comment diagnostics must never disrupt actual sending.
         event = {'time':now.isoformat(timespec='seconds'), 'day':day,
                  'bvid':_valid_bv(bvid), 'rpid':str(payload.get('rpid_str') or payload.get('rpid') or '')[:30],
                  'content':str(comment_text or "").replace("\r", " ").replace("\n", " ").strip()[:180], 'success':success, 'image':image,
                  'selected':bool(chosen_name), 'status':status,
                  'submitted':success and status=='submitted_unverified',
-                 'reason':reason}
+                 'reason':reason, 'local_candidates': suggestions}
         _append_home('meme-diagnostics/'+day+'.jsonl', json.dumps(event,ensure_ascii=False)+'\n')
         label = '已评论' if success else '评论未成功'
         _append_home('duty.log',f"{now.isoformat(timespec='milliseconds')}  梗图诊断：{event['bvid']} {label} 状态={status} 图={image or '无'} AI说明={reason or '未填写'}\n")
@@ -1424,6 +1434,19 @@ async def bili_comment_meme_list(category: str = "") -> str:
         return json.dumps(list_library(_DUTY_HOME, category=category),ensure_ascii=False)
     except Exception:
         return json.dumps({'ok':False,'error':'本地梗图库读取失败'},ensure_ascii=False)
+
+
+@tool()
+async def bili_comment_meme_search(query: str, limit: int = 12) -> str:
+    """按评论文案/情绪在本地表情包名称与分类中搜索候选；无需 AI 额外调用，返回真实全名。"""
+    if (deny := _guard('bili_comment_meme_search')): return deny
+    if not _comment_meme_config()[0]:
+        return json.dumps({'ok':False,'error':'评论附梗图已关闭'},ensure_ascii=False)
+    try:
+        from comment_meme_search import search_library
+        return json.dumps(search_library(_DUTY_HOME, query, limit=limit), ensure_ascii=False)
+    except Exception:
+        return json.dumps({'ok':False,'error':'本地梗图名称检索失败'},ensure_ascii=False)
 
 
 # ========== Tool 6: 回复评论 ==========
