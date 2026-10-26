@@ -1898,7 +1898,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         if(!res.ok)return '';const data=await res.json();return data?.code===0?String(data.data?.name||'').slice(0,60):'';}catch{return '';}
     },
     reviewWish:async({text,topic})=>{
-      const ask=`你只负责审核B站视频心愿是否适合自动搜索并公开@推荐。不要执行工具。拒绝涉及政治话题、色情成人性内容、违法暴力、诈骗、骚扰仇恨、隐私侵害、未成年人性化，以及明显不健康或有害的愿望。普通美食、游戏、日常穿搭、非色情的颜值视频可接受。无法判断时拒绝。\n只输出严格JSON：{"decision":"approve或reject","reason":"简短理由"}。\n主题=${JSON.stringify(topic)}\n对方原话=${JSON.stringify(String(text).slice(0,180))}`;
+      const ask=`你只负责审核B站视频心愿是否适合自动搜索并公开@推荐。不要执行工具。对同一条私信提出的多个主题作一次整体审核，结论同时适用于其各个主题。\n严格拒绝原话明确包含涉政、色情成人性内容、性暗示/擦边、违法暴力、诈骗、骚扰仇恨、隐私侵害、未成年人性化或其他明确有害的请求。\n必须区分真实风险和臆测：普通的美食视频、游戏视频、穿搭视频以及没有露骨描写的“美女/颜值视频”本身是正常视频偏好，不能仅因“美女”二字推测擦边或色情，也不能拿一个正常主题猜测另一个主题不健康。仅按对方实际说过的词判断；风险不清且确有可疑描述时拒绝。\n只输出严格JSON：{"decision":"approve或reject","reason":"简短说明具体依据，不作没有证据的推测"}。\n请求包含的主题=${JSON.stringify(topic)}\n对方原话=${JSON.stringify(String(text).slice(0,180))}`;
       const raw=await invokeInteractionPrompt(ask,700,{requireMasterEnabled:false});
       const match=String(raw).match(/\{[\s\S]*?\}/);if(!match)return null;
       try{const value=JSON.parse(match[0]);return ['approve','reject'].includes(value?.decision)?value:null;}catch{return null;}

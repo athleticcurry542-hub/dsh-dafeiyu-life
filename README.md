@@ -4,7 +4,7 @@
 
 这是一个为 DeepSeek Harness（DSH） 构建的 B站浏览与互动插件，独立维护于 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)。在原项目基础上，增加了视频预览取帧、可控互动、本地成长记忆和可视化管理能力。
 
-> **当前版本：v2.4.54** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：v2.4.55** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > 衍生版并非 B站、DeepSeek 或原作者的官方产品。原项目：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，保留 MIT 版权与许可，详见文末说明。
 
