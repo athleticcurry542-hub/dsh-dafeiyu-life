@@ -52,9 +52,10 @@ def describe_with_dsh(bvid, home, env=None, runner=None):
                     return {'ok':True,'status':'cached','bvid':bvid,'description':d['description'],
                             'times':d.get('times',[]),'notice':'缓存的独立视觉模型观察，低清待核实'}
             except (OSError,ValueError): pass
-        from preview_vision import _claim_vision_quota
-        if not _claim_vision_quota(home):
-            return {'ok':False,'status':'daily_limit','error':'今日独立模型视觉调用已达 8 次上限'}
+        from preview_vision import _claim_vision_quota, _vision_daily_limit
+        daily_limit=_vision_daily_limit(env)
+        if not _claim_vision_quota(home,daily_limit):
+            return {'ok':False,'status':'daily_limit','error':f'今日独立视觉模型调用已达 {daily_limit} 次上限'}
         proof_dir=home/'vision-proof'
         proof_dir.mkdir(parents=True,exist_ok=True)
         nonce=uuid.uuid4().hex

@@ -846,7 +846,7 @@ function WatchTab() {
                     onChange:e=>setVisionDraft(old=>({...old,[key]:e.target.value})),
                     onBlur:()=>patch({[key]:(visionDraft||{})[key]||''},label)}))),
               h('div',{'data-bd-note':''},'留空时优先继承刷视频模型的相应配置。独立视觉 Agent 与主视频 Agent 是两次 DSH 模型会话，但不走旧的 API Key/DPAPI 接口。')):null,
-            h('div',{'data-bd-note':''},`每条取图 ${cfg.visionFrames??2} 张；可在管理中心 → 次数与额度调整。`),
+            h('div',{'data-bd-note':''},`每条取图 ${cfg.visionFrames??2} 张；额外独立视觉模型每日最多 ${cfg.visionDailyLimit??30} 次（复用视频模型看图不扣此额度）。两项分别在管理中心 → 次数与额度修改。`),
             h('div',{'data-bd-note':''},'不再需要视觉 API Key。旧版本本地可能保存过 DPAPI 加密文件，升级不会读取或上传它；如需清理，可删除 bili-duty 目录中的 .vision-api-key.dpapi。'),
             h('div',{'data-bd-row':''},
               h('input',{'data-bd-input':'',placeholder:'输入一个 BV 号，测试预览图片',style:{flex:1,minWidth:'180px'},value:visionBV,

@@ -241,8 +241,23 @@ def _call_vision(frames, provider, model, url, api_key):
     return ans[:1100]
 
 
-def _claim_vision_quota(home, daily_limit=8):
-    # 每天最多 8 次付费分析。SQLite BEGIN IMMEDIATE 避免两轮同时计数时超额。
+def _vision_daily_limit(env=None):
+    # 缺失时采用可编辑的默认值；配置过高或异常时防止意外高额调用。
+    raw=(os.environ if env is None else env).get('BILI_VISION_DAILY_LIMIT','30')
+    try:
+        value=int(raw)
+    except (TypeError,ValueError):
+        return 30
+    return max(0,min(200,value))
+
+def _claim_vision_quota(home, daily_limit=None):
+    # 同一账本供独立 DSH 视觉和旧独立 API 路线共享。
+    # 额度以实际开始的调用/尝试计费（包括调用失败），缓存命中不扣。
+    # SQLite BEGIN IMMEDIATE 避免两轮同时计数时超额。
+    if daily_limit is None:
+        daily_limit=_vision_daily_limit()
+    else:
+        daily_limit=max(0,min(200,int(daily_limit)))
     day=datetime.now().strftime('%Y-%m-%d')
     db=Path(home)/'vision-usage.sqlite3'
     db.parent.mkdir(parents=True,exist_ok=True)
@@ -359,7 +374,7 @@ def _analyze_preview_core(bvid, home, *, enabled=None, debug=None, max_frames=No
         if not key:
             answer.update(status='vision_unavailable',error='没有读到视觉 API Key；已抓取预览图但尚未识图。请在设置页「视觉 API Key」保存密钥，或配置 BILI_VISION_API_KEY。');return answer
         if not _claim_vision_quota(home):
-            answer.update(status='daily_limit',error='视觉模型每日分析上限 8 次已用完；只取得预览图，未识图');return answer
+            answer.update(status='daily_limit',error=f'今日独立视觉模型调用已达 {_vision_daily_limit()} 次上限；只取得预览图，未识图');return answer
         try:
             description=_call_vision(frames,provider,model,endpoint,key)
         except Exception as e:
