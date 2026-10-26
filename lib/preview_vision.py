@@ -376,6 +376,8 @@ def _analyze_preview_core(bvid, home, *, enabled=None, debug=None, max_frames=No
 def record_vision_event(home, bvid, status, *, source='preview', ok=False, debug_saved=False, error='', times=None):
     """Bounded local diagnostic only. No credentials, image bytes or arbitrary paths."""
     try:
+        if os.environ.get('BILI_VISION_DIAG_ENABLED','1') == '0':
+            return
         if not BV_RE.fullmatch(str(bvid or '')):
             return
         directory=Path(home).resolve()/'vision-events'

@@ -98,6 +98,10 @@ export const Config = !z ? undefined : z.object({
   visionMode: z.string().default('reuse_video_model').extra('volatile', true),
   /** 保存实际预览 JPEG 到插件家目录 vision-debug，默认关闭。 */
   visionDebug: z.boolean().default(false).extra('volatile', true),
+  diagMentionEnabled: z.boolean().default(true).extra('volatile', true),
+  diagDynamicEnabled: z.boolean().default(true).extra('volatile', true),
+  diagVisionEnabled: z.boolean().default(true).extra('volatile', true),
+  diagMemeEnabled: z.boolean().default(true).extra('volatile', true),
   visionModelProvider: z.string().default('').extra('volatile', true),
   visionReasoningEffort: z.string().default('').extra('volatile', true),
   visionModelId: z.string().default('').extra('volatile', true),
@@ -345,7 +349,7 @@ function reportMeta() {
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
-    dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, visionMode: 'reuse_video_model', visionDebug: false, visionModelProvider: '', visionReasoningEffort: '', visionModelId: '', visionEndpoint: '', visionFrames: 2, visionPrompt: '', commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1, commentMemePrompt: '',
+    dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, diagMentionEnabled: true, diagDynamicEnabled: true, diagVisionEnabled: true, diagMemeEnabled: true, visionMode: 'reuse_video_model', visionDebug: false, visionModelProvider: '', visionReasoningEffort: '', visionModelId: '', visionEndpoint: '', visionFrames: 2, visionPrompt: '', commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1, commentMemePrompt: '',
     homeRecommendationsEnabled: true, keywords: [], minVideoViews: 1000, minVideoLikes: 10, minVideoReplies: 3, commentPerRound: 5, mentionName: '', mentionTargets: '', mentionProfiles: '{}', friendDirectory: '[]', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
   }
   const normalize = (src, base) => {
@@ -387,7 +391,7 @@ function reportMeta() {
     if ('commentMemesPerRound' in p) p.commentMemesPerRound=Math.max(0,Math.min(5,Math.floor(Number(p.commentMemesPerRound)||0)))
     if ('commentMemePrompt' in p) p.commentMemePrompt=normalizeCommentMemePrompt(p.commentMemePrompt)
     if ('visionPrompt' in p) p.visionPrompt=normalizeVisionPrompt(p.visionPrompt)
-    for (const k of ['visionEnabled','visionDebug']) if (k in p) p[k]=p[k]===true
+    for (const k of ['visionEnabled','visionDebug','diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled']) if (k in p) p[k]=p[k]===true
     if ('visionMode' in p) p.visionMode=['reuse_video_model','independent_dsh','auto'].includes(p.visionMode)?p.visionMode:'reuse_video_model'
     if ('visionModelProvider' in p) p.visionModelProvider=String(p.visionModelProvider||'').trim().replace(/[\r\n\0]/g,'').slice(0,160)
     if ('visionReasoningEffort' in p) p.visionReasoningEffort=String(p.visionReasoningEffort||'').trim().replace(/[\r\n\0]/g,'').slice(0,160)
@@ -652,7 +656,7 @@ function reportMeta() {
 
   let mcp = null
   let mcpKey = ''
-  const mcpKeyNow = () => `${cfg.pythonPath}|${join(stateDir, 'mcp_server.py')}|${cfg.commentDailyLimit}`
+  const mcpKeyNow = () => `${cfg.pythonPath}|${join(stateDir, 'mcp_server.py')}|${cfg.commentDailyLimit}|${cfg.diagMentionEnabled}|${cfg.diagDynamicEnabled}|${cfg.diagVisionEnabled}|${cfg.diagMemeEnabled}`
 
   const assertSecureMcp = () => {
     // 安全升级必须拒绝继续使用旧/用户自行修改但未经复核的 MCP 副本。
@@ -679,7 +683,9 @@ function reportMeta() {
       cwd: stateDir,                     // 凭证落在家里 ✓
       // ⭐ 这个内置的 Python MCP 会往 stdout 打中文（ensure_ascii=False）；
       //    Windows 默认 GBK 的话，中文/emoji 一进管道就可能炸 ⇒ 钉死 UTF-8
-      env: uvEnv({ BILI_DUTY_HOME: stateDir, BILI_COMMENT_DAILY_LIMIT: String(cfg.commentDailyLimit) }),
+      env: uvEnv({ BILI_DUTY_HOME: stateDir, BILI_COMMENT_DAILY_LIMIT: String(cfg.commentDailyLimit),
+        BILI_MENTION_DIAG_ENABLED: cfg.diagMentionEnabled?'1':'0', BILI_DYNAMIC_DIAG_ENABLED: cfg.diagDynamicEnabled?'1':'0',
+        BILI_VISION_DIAG_ENABLED: cfg.diagVisionEnabled?'1':'0', BILI_MEME_DIAG_ENABLED: cfg.diagMemeEnabled?'1':'0' }),
       log,
     })
     return mcp
@@ -1447,6 +1453,7 @@ function reportMeta() {
       '          BILI_VISION_ENABLED: '+yq('1'),
       '          BILI_VISION_MODE: '+yq('reuse_video_model'),
       '          BILI_VISION_DEBUG: '+yq(cfg.visionDebug?'1':'0'),
+      '          BILI_VISION_DIAG_ENABLED: '+yq(cfg.diagVisionEnabled?'1':'0'),
       '          BILI_VISION_FRAMES: '+yq(cfg.visionFrames),
       '')
     writeFileSync(out,rows.join('\n'),'utf8')
@@ -1544,6 +1551,10 @@ function reportMeta() {
           '          BILI_VISION_DSH_PROVIDER: ' + yq(cfg.visionModelProvider || cfg.videoModelProvider || ''),
           '          BILI_VIDEO_MODEL_ID: ' + yq(cfg.videoModelId || ''),
           '          BILI_VISION_DEBUG: ' + yq(cfg.visionDebug ? '1' : '0'),
+          '          BILI_VISION_DIAG_ENABLED: ' + yq(cfg.diagVisionEnabled?'1':'0'),
+          '          BILI_MENTION_DIAG_ENABLED: ' + yq(cfg.diagMentionEnabled?'1':'0'),
+          '          BILI_DYNAMIC_DIAG_ENABLED: ' + yq(cfg.diagDynamicEnabled?'1':'0'),
+          '          BILI_MEME_DIAG_ENABLED: ' + yq(cfg.diagMemeEnabled?'1':'0'),
           '          BILI_VISION_PROVIDER: ' + yq(cfg.visionModelProvider),
           '          BILI_VISION_MODEL: ' + yq(cfg.visionModelId),
           '          BILI_VISION_ENDPOINT: ' + yq(cfg.visionEndpoint),
@@ -2658,16 +2669,17 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       } catch (e) {
         return sendJson(res, 200, {ok:false, error:'本地@诊断读取失败'})
       }
-      const sent = events.filter(x => x.success === true)
+      const mentionEvents = events.filter(x => x.mention_diag_enabled !== false)
+      const sent = mentionEvents.filter(x => x.success === true)
       const attempted = sent.filter(x => x.mention_attempted === true)
-      const dynamicEvents = events.filter(x => x.kind === 'top' && typeof x.dynamic_ai_decision === 'boolean')
+      const dynamicEvents = events.filter(x => x.dynamic_diag_enabled !== false && x.kind === 'top' && typeof x.dynamic_ai_decision === 'boolean')
       const dynamicAccepted = dynamicEvents.filter(x => x.dynamic_status === 'api_accepted_unverified')
       const dynamicBlocked = dynamicEvents.filter(x => x.dynamic_ai_decision === true && ['blocked_by_setting','disabled','daily_limit','already_attempted','reservation_failed_no_publish','comment_receipt_unverified_no_publish'].includes(x.dynamic_status))
       const dynamic = {evaluated:dynamicEvents.length, aiSelected:dynamicEvents.filter(x=>x.dynamic_ai_decision===true).length,
         accepted:dynamicAccepted.length, aiSkipped:dynamicEvents.filter(x=>x.dynamic_ai_decision===false).length, blocked:dynamicBlocked.length}
       return sendJson(res, 200, {ok:true, day,
         total: sent.length, attempted: attempted.length, notMentioned: sent.length - attempted.length,
-        failed: events.length - sent.length, dynamic, dynamicRecent: dynamicEvents.slice(-12).reverse(), recent: events.slice(-12).reverse()})
+        failed: mentionEvents.length - sent.length, dynamic, dynamicRecent: dynamicEvents.slice(-12).reverse(), recent: mentionEvents.slice(-12).reverse()})
     }
     if (req.method === 'GET' && path === '/api/bili-duty/meme-diagnostics') {
       const day=dayKey()
@@ -2752,7 +2764,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const bv = String(body?.bvid || '').trim()
       if (!/^BV[0-9A-Za-z]{10}$/.test(bv)) return sendJson(res, 400, {ok:false,error:'请输入正确的 BV 号'})
       const script = join(pluginDir, 'lib', 'preview_vision.py')
-      const env=pyEnv({BILI_VISION_ENABLED:'0',BILI_VISION_MODE:resolvedVisionMode(),BILI_VISION_DEBUG:cfg.visionDebug?'1':'0',
+      const env=pyEnv({BILI_VISION_ENABLED:'0',BILI_VISION_MODE:resolvedVisionMode(),BILI_VISION_DEBUG:cfg.visionDebug?'1':'0',BILI_VISION_DIAG_ENABLED:cfg.diagVisionEnabled?'1':'0',
         BILI_VISION_PROVIDER:cfg.visionModelProvider,BILI_VISION_MODEL:cfg.visionModelId,
         BILI_VISION_ENDPOINT:cfg.visionEndpoint,BILI_VISION_FRAMES:String(cfg.visionFrames),BILI_DUTY_HOME:stateDir})
       const result = await new Promise(resolve=>{
@@ -2769,6 +2781,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         result.notice='已抓取预览图片；此按钮不调用模型、不消耗视觉模型 Token。复用模式会在下一轮交给视频 Agent；独立 DSH 模式会在自动刷片时使用独立会话。';
       }
       return sendJson(res,200,result)
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/dm-quota-usage') {
+      return sendJson(res,200,await dmAutoreply.quotaUsage())
     }
     if (req.method === 'GET' && path === '/api/bili-duty/comment-quota') {
       // 今日硬配额由 Python MCP 写入 SQLite；统计直接读相同表，不让前端猜测。
@@ -2921,7 +2936,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const body = await readBody(req)
       const patch = {}
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
-        'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
+        'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {

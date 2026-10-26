@@ -1065,7 +1065,9 @@ def _public_no_mention_reason(value):
 
 def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_decision=False, dynamic_authorized=False, dynamic_reason=''):
     """由发送工具本地记录 @ 结果，不依赖 Agent 在日报里复述；不保存评论正文或好友 UID。"""
-    if diagnostic is None:
+    mention_enabled = os.environ.get('BILI_MENTION_DIAG_ENABLED', '1') != '0'
+    dynamic_enabled = os.environ.get('BILI_DYNAMIC_DIAG_ENABLED', '1') != '0' and int(target_rpid or 0) == 0
+    if diagnostic is None or not (mention_enabled or dynamic_enabled):
         return
     try:
         now = datetime.now().astimezone()
@@ -1110,6 +1112,14 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_dec
             "dynamic_status": dynamic_status,
             "dynamic_reason": _public_no_mention_reason(dynamic_reason) if int(target_rpid or 0) == 0 else "",
         }
+        event['mention_diag_enabled'] = mention_enabled
+        event['dynamic_diag_enabled'] = dynamic_enabled
+        if not mention_enabled:
+            for key in ('mention_attempted','reason','mode','selected_count','configured_count','mention_delivery','ai_reason'):
+                event.pop(key, None)
+        if not dynamic_enabled:
+            for key in ('dynamic_ai_decision','dynamic_authorized','dynamic_status','dynamic_reason'):
+                event.pop(key, None)
         if not success:
             # 不写原始异常：网络错误有时夹带 URL/query，可能泄露凭证。
             error = str(payload.get("error") or "")
@@ -1124,9 +1134,10 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_dec
         # 固定路径，日期来自本地时钟；Agent 无权指定日志文件。
         _append_home("mention-diagnostics/" + day + ".jsonl", json.dumps(event, ensure_ascii=False) + "\n")
         label = "已发送" if success else "发送未成功"
-        notice = "已尝试@（未验证通知）" if attempted else "未@"
-        explanation = (" AI说明=" + (event["ai_reason"] or "未填写")) if success and event["reason"] == "ai_declined" else ""
-        _append_home("duty.log", f"{now.isoformat(timespec='milliseconds')}  @诊断：{event['bvid']} {label} {notice} 原因={event['reason']} 方式={delivery}{explanation}\n")
+        if mention_enabled:
+            notice = "已尝试@（未验证通知）" if attempted else "未@"
+            explanation = (" AI说明=" + (event.get("ai_reason") or "未填写")) if success and event.get("reason") == "ai_declined" else ""
+            _append_home("duty.log", f"{now.isoformat(timespec='milliseconds')}  @诊断：{event['bvid']} {label} {notice} 原因={event.get('reason','')} 方式={delivery}{explanation}\n")
     except Exception as exc:
         # 诊断写盘失败不能让已经发出的公开评论在 Agent 眼里变成失败，造成重复发布。
         print("@诊断写入失败：" + str(exc)[:160], file=sys.stderr)
@@ -1136,6 +1147,8 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_dec
 def _record_meme_event(payload, bvid, target_rpid, chosen_name, chosen_reason, decline_reason):
     """Top-level comment meme diagnostics, always local; never save comment body/UID/credentials."""
     try:
+        if os.environ.get('BILI_MEME_DIAG_ENABLED','1') == '0':
+            return
         if int(target_rpid or 0) != 0 or os.environ.get('BILI_COMMENT_MEMES_ENABLED') != '1':
             return
         now = datetime.now().astimezone()
@@ -1366,7 +1379,7 @@ def _comment_meme_config():
 
 
 def _comment_meme_debug(bvid, name, reason, status):
-    if os.environ.get('BILI_COMMENT_MEMES_DEBUG') != '1':
+    if os.environ.get('BILI_COMMENT_MEMES_DEBUG') != '1' or os.environ.get('BILI_MEME_DIAG_ENABLED','1') == '0':
         return
     try:
         from comment_memes import debug_event

@@ -4,7 +4,7 @@
 
 这是一个为 DeepSeek Harness（DSH） 构建的 B站浏览与互动插件，独立维护于 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)。在原项目基础上，增加了视频预览取帧、可控互动、本地成长记忆和可视化管理能力。
 
-> **当前版本：v2.4.55** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：v2.4.56** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > 衍生版并非 B站、DeepSeek 或原作者的官方产品。原项目：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，保留 MIT 版权与许可，详见文末说明。
 
@@ -205,3 +205,10 @@ node selfcheck.mjs
 本项目基于 [c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll) 衍生，由 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus) 独立维护。感谢上游作者、[社区贡献者](./CONTRIBUTORS.md) 和内置的 [bilibili-mcp](https://github.com/adoresever/bilibili-mcp) 项目。
 
 项目按 [MIT License](./LICENSE) 发布。保留上游版权及第三方授权声明，具体以仓库中的 `LICENSE`、`NOTICE.md` 和各第三方目录的许可证为准。
+
+
+### v2.4.56 · 管理页显示与额度诊断
+
+- 导航的待审数量角标仅在有待处理内容时显示；未加载时不出现红色横线。
+- 「每日诊断」四种日志可独立关闭，关闭不会停止实际功能；旧日志仍保留。
+- 「次数与额度」顶部汇总今日选片、公开评论、动态、私信、附图及独立识图用量；各每日额度输入框旁显示当前用量，后台回复按滚动 24 小时统计。
