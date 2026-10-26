@@ -4,7 +4,7 @@
 
 这是一个为 DeepSeek Harness（DSH） 构建的 B站浏览与互动插件，独立维护于 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)。在原项目基础上，增加了视频预览取帧、可控互动、本地成长记忆和可视化管理能力。
 
-> **当前版本：v2.4.67** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：v2.4.68** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > 衍生版并非 B站、DeepSeek 或原作者的官方产品。原项目：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，保留 MIT 版权与许可，详见文末说明。
 
@@ -72,6 +72,9 @@ dsh plugin --profile desktop update dsh-bili-scroll-plus
 如果你使用的是 `web` profile，将命令中的 `desktop` 改为 `web`。更新后同样建议重启 DSH。**插件更新不会要求清空运行数据目录。**
 
 ## 管理中心
+
+**本地数据备份与恢复（v2.4.68）：** 在「数据备份」页点击「下载完整数据备份」；保存生成的 JSON 文件。升级、重装或迁移后可选择该文件并确认恢复。保存所有生效设置、人设、好友 UID 关系与权限、成长经验、梗知识 SQLite、视频心愿、各类历史与防重复发送状态。恢复前自动在插件家 `bili-duty/backups/` 备份现有数据；恢复后重启 DSH。**不包含表情包图片、B站登录凭证/Cookie、视觉密钥及模型缓存**；账号可能需要重新扫码。备份包含私人资料，禁止上传到公开仓库。默认单次业务文本总量 32 MB，超过限制会明确提示，不静默丢数据。
+
 
 在 DSH **设置 → 刷B站 → 打开管理中心** 进入。管理页面由插件已有的本机 HTTP 服务提供，**不需要单独启动 Node 服务，也不使用固定的 18763 端口**。
 

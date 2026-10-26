@@ -26,6 +26,7 @@ const hostDeps = await loadHostDeps()
 const z = hostDeps.z
 const defineTool = hostDeps.defineTool
 import { spawn } from 'node:child_process'
+import { createBackup, validateBackup, restoreBackupFiles } from './lib/data-backup.mjs'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, lstatSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createRequire } from 'node:module'
@@ -2672,6 +2673,62 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       res.writeHead(200,{'content-type':'application/javascript; charset=utf-8',
         'cache-control':'no-store','x-content-type-options':'nosniff'})
       return res.end(body)
+    }
+    // v2.4.68: local, opt-in portable business data backup. No sticker assets, secrets, cookies or external uploads.
+    if (req.method === 'POST' && ['/api/bili-duty/data-backup/export', '/api/bili-duty/data-backup/inspect', '/api/bili-duty/data-backup/restore'].includes(path)) {
+      const origin = String(req.headers.origin || '')
+      const host = String(req.headers.host || '')
+      if (origin && (!host || ![ `http://${host}`, `https://${host}` ].includes(origin)))
+        return sendJson(res, 403, {ok:false,error:'仅允许管理中心同源访问备份接口'})
+      if (String(req.headers['sec-fetch-site'] || '').toLowerCase() === 'cross-site')
+        return sendJson(res, 403, {ok:false,error:'拒绝来自其他网站的备份请求'})
+      const action = path.split('/').pop()
+      try {
+        // Existing plugin venv is preferred: SQLite snapshots use Python stdlib sqlite3.backup().
+        const py = existsSync(venvPython()) ? venvPython() : String(cfg.pythonPath || 'python')
+        const sqliteHelper = join(pluginDir, 'lib', 'data-backup-sqlite.py')
+        const runSqlite = (op, data) => new Promise((resolve, reject) => {
+          const child = spawn(py, [sqliteHelper, op, stateDir], {windowsHide:true, stdio:['pipe','pipe','pipe']})
+          let stdout='',stderr='',settled=false
+          const fail=e=>{if(!settled){settled=true;reject(e)}}
+          child.on('error', e=>fail(Error('无法启动 SQLite 备份工具：'+String(e?.message||e))))
+          child.stdin.on('error', e=>fail(Error('向 SQLite 备份工具写数据失败：'+String(e?.message||e))))
+          child.stdout.on('data', chunk => {stdout+=chunk.toString();if(stdout.length>45_000_000){child.kill();fail(Error('SQLite 备份数据过大'))}})
+          child.stderr.on('data', chunk => {stderr+=chunk.toString().slice(0,800)})
+          child.on('close', code => {if(settled)return;settled=true;try{const result=JSON.parse(stdout||'{}');if(code!==0||!result.ok)throw Error(result.error||stderr||'SQLite 工具异常');resolve(result)}catch(e){reject(e)}})
+          try{child.stdin.end(data ? JSON.stringify(data):'')}catch(e){fail(e)}
+        })
+        const snapshot = async () => {
+          refreshCfg()
+          const sqlite = (await runSqlite('export')).sqlite
+          // All effective settings, including relationships, prompts and quotas.
+          const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.68'})
+        }
+        if (action === 'export') return sendJson(res, 200, {ok:true,backup:await snapshot()})
+        const body = await readBody(req, 90_000_000)
+        const data = body?.backup
+        const summary = validateBackup(data)
+        // Inspect must not write anything. The browser shows scope + a second confirmation.
+        if (action === 'inspect') return sendJson(res, 200, {ok:true,summary})
+        if (body.confirm !== 'RESTORE_VERIFIED_DATA') return sendJson(res, 400, {ok:false,error:'未完成恢复前人工确认'})
+        const patch = Object.fromEntries(Object.keys(DEFAULTS).filter(k=>Object.hasOwn(data.config,k)).map(k=>[k,data.config[k]]))
+        if (Object.keys(patch).length < 10) return sendJson(res,400,{ok:false,error:'设置项不足，不能执行整包恢复'})
+        // Save current full snapshot locally before touching anything. Never clobber prior snapshots.
+        const safeguard = await snapshot()
+        const backupFolder = join(stateDir, 'backups')
+        mkdirSync(backupFolder, {recursive:true})
+        const backupName = 'pre-restore-'+new Date().toISOString().replace(/[:.]/g,'-')+'-'+process.pid+'.json'
+        const safeguardPath = join(backupFolder,backupName)
+        writeFileSync(safeguardPath, JSON.stringify(safeguard), {encoding:'utf8',flag:'wx'})
+        // Validate every SQLite source first, then use the SQLite online backup API to restore.
+        const restoredDbs = (await runSqlite('restore',{sqlite:data.sqlite})).count
+        const restoredFiles = restoreBackupFiles(stateDir,data)
+        const {host} = await persistCfg(patch)
+        refreshCfg()
+        log(`数据备份恢复成功：${restoredFiles}个文件 / ${restoredDbs}个数据库；已有数据安全快照：${backupName}`)
+        return sendJson(res, 200, {ok:true,restoredFiles,restoredDbs,safeguardPath,hostSynced:host.ok,restartRequired:true})
+      } catch(e) {return sendJson(res,400,{ok:false,error:'数据备份操作失败：'+String(e?.message||e).slice(0,300)})}
     }
     if (req.method === 'GET' && path === '/api/bili-duty/status') {
       try { rollSeen() } catch (e) { /* 归档失败不影响状态接口 */ }
