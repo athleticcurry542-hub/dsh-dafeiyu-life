@@ -161,6 +161,10 @@ export const Config = !z ? undefined : z.object({
   dmWatch: z.boolean().default(true).extra('volatile', true),
   /** 私信监听间隔（分钟，1–120） */
   dmWatchMinutes: z.natural().default(1).extra('volatile', true),
+  /** 评论、被 @ 和热评各自独立轮询间隔（分钟）。 */
+  commentReplyWatchMinutes: z.natural().default(3).extra('volatile', true),
+  commentAtWatchMinutes: z.natural().default(3).extra('volatile', true),
+  commentTopWatchMinutes: z.natural().default(5).extra('volatile', true),
   /** 私信回复每天最多几条（防刷） */
   dmReplyPerDay: z.natural().default(0).extra('volatile', true),
   dmContextMessages: z.natural().default(40).extra('volatile', true),
@@ -330,7 +334,7 @@ function reportMeta() {
    */
   const DEFAULTS = {
     masterEnabled: true,
-    dmWatch: true, dmWatchMinutes: 1, dmReplyPerDay: 0, dmContextMessages: 40, dmOwnerUid: 0,
+    dmWatch: true, dmWatchMinutes: 1, commentReplyWatchMinutes: 3, commentAtWatchMinutes: 3, commentTopWatchMinutes: 5, dmReplyPerDay: 0, dmContextMessages: 40, dmOwnerUid: 0,
     dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
     dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10, dmWishMentionLimit: 3,
     videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '',
@@ -403,7 +407,9 @@ function reportMeta() {
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
     if ('characterLore' in p) p.characterLore = normalizeCharacterLore(p.characterLore)
     if ('dmWatch' in p) p.dmWatch = Boolean(p.dmWatch)
-    if ('dmWatchMinutes' in p) p.dmWatchMinutes = Math.max(1, Math.min(120, Number(p.dmWatchMinutes) || 1))
+    for (const [key, fallback] of [['dmWatchMinutes',1],['commentReplyWatchMinutes',3],['commentAtWatchMinutes',3],['commentTopWatchMinutes',5]]) {
+      if (key in p) {const v=Number(p[key]);p[key]=Number.isFinite(v)&&v>=1?Math.max(1,Math.min(120,Math.floor(v))):fallback}
+    }
     if ('dmReplyPerDay' in p) p.dmReplyPerDay = Math.max(0, Math.min(1000, Math.floor(Number(p.dmReplyPerDay) || 0)))
     if ('dmContextMessages' in p) p.dmContextMessages = Math.max(0,Math.min(80,Math.floor(Number(p.dmContextMessages)||0)))
     if ('dmOwnerUid' in p) p.dmOwnerUid = Math.max(0, Number(p.dmOwnerUid) || 0)
@@ -2914,7 +2920,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
         'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
-        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
+        'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {
         if (k in body) patch[k] = body[k]
       }
