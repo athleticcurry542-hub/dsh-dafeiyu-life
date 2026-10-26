@@ -91,6 +91,13 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div class="settings-section"><h4>公开评论全局硬上限（自然日）</h4><p id="global-comment-quota" class="muted">正在读取今日全局额度…</p><p id="global-comment-quota-note" class="muted">可在管理中心「次数与额度」里修改。</p></div>
 </div><p class="muted">重要区别：接口返回成功、本地评论账本有记录，都不等于评论当前一定对其他用户公开可见。此处不会把未向 B 站核验的记录标成“平台可见”。</p>
 <div class="settings-stack">
+<div class="settings-section"><h4>被 @ 邀请（默认关闭）</h4>
+<p class="muted">监听 B站发给本账号的评论 @ 通知；先检查视频资料、热评与当前评论串，再由 AI 决定是否接话。首次开启只将已有通知标记为历史，不补发；仍共用所有评论额度。</p>
+<div class="checkline"><input type="checkbox" id="comment-at-enabled"><label for="comment-at-enabled">开启被 @ 邀请监听</label></div>
+<div class="fields"><div><label for="comment-at-mode">回应范围</label><select id="comment-at-mode"><option value="whitelist">仅白名单用户（推荐）</option><option value="all">所有人</option></select></div>
+<div><label for="comment-at-whitelist">允许邀请的 B站 UID（独立白名单）</label><textarea id="comment-at-whitelist" rows="4" placeholder="每行一个 UID，可用逗号分隔"></textarea></div></div>
+<p class="muted">白名单只影响评论区 @ 邀请，不等于私信白名单；不保证所有通知都有可定位的视频和评论 ID，无法校验的会忽略。</p>
+</div>
 <div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
 <div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>
 <div class="checkline"><input id="comment-allow-general-top" type="checkbox"><label for="comment-allow-general-top">允许回复一般有趣的热评</label></div>

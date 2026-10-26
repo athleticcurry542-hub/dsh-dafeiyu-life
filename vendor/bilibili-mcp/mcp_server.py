@@ -363,6 +363,42 @@ async def bili_home_recommendations() -> str:
         return json.dumps({'ok': False, 'status': 'unavailable', 'error': f'首页推荐暂时不可用（{type(exc).__name__}）；继续关键词搜索，不需重试'}, ensure_ascii=False)
 
 
+# Video evidence cache for later comment replies. Only persist bounded text that tools actually returned.
+def _remember_video_context(bvid: str, kind: str, payload: dict) -> None:
+    if not re.fullmatch(r"BV[0-9A-Za-z]{10}", str(bvid)) or kind not in {"info", "subtitle", "comments"}:
+        return
+    base = Path(os.environ.get("BILI_DUTY_HOME") or Path(__file__).resolve().parent) / "comment-video-context"
+    try:
+        base.mkdir(mode=0o700, parents=True, exist_ok=True)
+        dest = base / (bvid + ".json")
+        try:
+            old = json.loads(dest.read_text(encoding="utf-8"))
+            if not isinstance(old, dict) or old.get("version") != 1:
+                old = {"version": 1}
+        except (OSError, ValueError):
+            old = {"version": 1}
+        if kind == "info":
+            safe = {key: str(payload.get(key, ""))[:length] for key, length in
+                    (("title", 180), ("description", 900), ("author", 80))}
+            safe["aid"] = str(payload.get("aid", ""))[:24]
+        elif kind == "subtitle":
+            safe = {"text": str(payload.get("text", ""))[:2000], "language": str(payload.get("language", ""))[:50]}
+        else:
+            safe = {"items": [{"rpid": str(row.get("rpid", ""))[:24],
+                               "content": str(row.get("content", ""))[:200]}
+                              for row in (payload.get("comments") or [])[:12] if isinstance(row, dict)]}
+        old[kind] = safe
+        old["updatedAt"] = datetime.now().isoformat()
+        tmp = dest.with_suffix(".tmp." + uuid.uuid4().hex)
+        try:
+            tmp.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, dest)
+        finally:
+            tmp.unlink(missing_ok=True)
+    except OSError:
+        pass  # Caching is best effort; it must never break normal video work.
+
+
 # ========== Tool 2: 获取评论 ==========
 
 @tool()
@@ -433,7 +469,35 @@ async def bili_comments(bvid: str, num: int = 30) -> str:
     out = {"bvid": bvid, "count": len(comments[:num]), "comments": comments[:num]}
     if fetch_error:
         out["error"] = fetch_error
+    else:
+        _remember_video_context(bvid, "comments", out)
     return json.dumps(out, ensure_ascii=False)
+
+
+# ========== 只读：某条顶层评论的最新楼中楼回复（后台 @ / 通知上下文） ==========
+
+@tool()
+async def bili_comment_thread(bvid: str, root: int, num: int = 12) -> str:
+    if not re.fullmatch(r"BV[0-9A-Za-z]{10}", str(bvid)) or not str(root).isdigit() or int(root) <= 0:
+        return json.dumps({"error": "视频或根评论 ID 无效"}, ensure_ascii=False)
+    try:
+        cred = get_cred()
+        video_info = await video.Video(bvid=bvid, credential=cred).get_info()
+        aid = int(video_info.get("aid") or 0)
+        if aid <= 0:
+            raise ValueError("没有取得视频 AID")
+        top = comment.Comment(oid=aid, type_=comment.CommentResourceType.VIDEO,
+                              rpid=int(root), credential=cred)
+        data = await top.get_sub_comments(page_index=1, page_size=min(max(int(num), 1), 20))
+        replies = data.get("replies") or []
+        rows = [{"rpid": str(r.get("rpid") or ""),
+                 "mid": str(r.get("member", {}).get("mid") or ""),
+                 "name": str(r.get("member", {}).get("uname") or "")[:60],
+                 "content": str(r.get("content", {}).get("message") or "")[:300]}
+                for r in replies[:min(max(int(num), 1), 20)] if isinstance(r, dict)]
+        return json.dumps({"bvid": bvid, "root": str(root), "replies": rows}, ensure_ascii=False)
+    except Exception as exc:
+        return json.dumps({"error": f"读取楼中楼失败：{type(exc).__name__}"}, ensure_ascii=False)
 
 
 # ========== Tool 3: 获取字幕 ==========
@@ -488,13 +552,15 @@ async def bili_subtitle(bvid: str) -> str:
     texts = [item.get("content", "") for item in sub_data.get("body", [])]
     full_text = "\n".join(texts)
 
-    return json.dumps({
+    result = {
         "bvid": bvid,
         "title": info.get("title", ""),
         "language": target.get("lan_doc", ""),
         "segments": len(texts),
         "text": full_text,
-    }, ensure_ascii=False)
+    }
+    _remember_video_context(bvid, "subtitle", result)
+    return json.dumps(result, ensure_ascii=False)
 
 
 # ========== Tool 4: 获取弹幕 ==========
@@ -543,7 +609,7 @@ async def bili_video_info(bvid: str) -> str:
     info = await v.get_info()
     stat = info.get("stat", {})
 
-    return json.dumps({
+    result = {
         "bvid": info.get("bvid"),
         "aid": info.get("aid"),
         "title": info.get("title"),
@@ -561,7 +627,9 @@ async def bili_video_info(bvid: str) -> str:
             "like": stat.get("like", 0),
             "share": stat.get("share", 0),
         },
-    }, ensure_ascii=False)
+    }
+    _remember_video_context(bvid, "info", result)
+    return json.dumps(result, ensure_ascii=False)
 
 
 
