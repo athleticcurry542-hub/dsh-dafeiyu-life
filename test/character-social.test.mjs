@@ -66,6 +66,6 @@ test('client UI has bounded per-friend controls and lore editor, server has gene
   for(const s of ['friends-save','friends-targets','friends-editor','lore-text']) assert.ok(html.includes(s))
   for(const s of ['mentionProfiles','characterLore','drawFriends','保存']) assert.ok(manage.includes(s))
   const consoleHtml=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
-  assert.ok(consoleHtml.includes('今日梗图诊断'))
+  assert.ok(consoleHtml.includes('今日表情包诊断'))
   for(const s of ['buildMentionProfilePrompt','loreDoc','memeInventory','/api/bili-duty/meme-diagnostics']) assert.ok(server.includes(s))
 })

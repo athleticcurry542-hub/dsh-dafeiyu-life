@@ -712,7 +712,7 @@ function WatchTab() {
           h('div', { 'data-bd-note': '' }, '公开评论 @ 策略：'+({ai_select:'AI 选择部分好友',ai:'AI 判断是否 @ 全部好友',off:'永不 @',always:'每次 @ 全部好友'}[cfg.mentionMode]||'AI 决定')+'；在管理中心「人设与好友」里调整。'),
           h('div', { 'data-bd-sep': '' }),
           h('div', { 'data-bd-h': '' }, '详细诊断已移至管理中心'),
-          h('div', { 'data-bd-note': '' }, '今日 @ 诊断、梗图选取原因、每日报告、后台私信记录和最近评论集中在管理中心展示，避免设置页过长。'),
+          h('div', { 'data-bd-note': '' }, '今日 @ 诊断、表情包选取原因、每日报告、后台私信记录和最近评论集中在管理中心展示，避免设置页过长。'),
           h('div', { 'data-bd-row': '' },
             h('button', { 'data-bd-btn': '', onClick: async () => {
               try { const r = await jpost('/open', { what: 'manage' }); if (!r?.ok) throw new Error(r?.error || '打开失败') }
@@ -739,14 +739,14 @@ function WatchTab() {
           (dmMode === 'off' || dmMode === 'both') && sw('autoComment') && sw('commentSyncDynamic')
             ? h('div',{'data-bd-note':''},`动态今日已尝试 ${st?.dynamicSyncUsage?.used??0} 次；每日额度在管理中心调整。`):null,
           h('div', { 'data-bd-sep': '' }),
-          h(ToggleRow, {label:'AI 自主给顶层评论附梗图（试验）',
+          h(ToggleRow, {label:'AI 自主给顶层评论附表情包（试验）',
             note:'默认关闭。仅使用你自己放入 comment-memes 文件夹的 PNG/JPG/GIF/WebP 图片（WebP 发送时转换为静态 PNG）。AI 在写评论时看情绪决定是否附图；真实上传和发送需要 B站接口许可。',
-            on:sw('commentMemesEnabled'),onChange:v=>patch({commentMemesEnabled:v},'评论附梗图')}),
-          h(ToggleRow, {label:'Debug：记录 AI 选择的梗图',
-            note:'保存 BV号、梗图名、选择原因和发送状态到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
-            on:sw('commentMemesDebug'),onChange:v=>patch({commentMemesDebug:v},'梗图 Debug')}),
+            on:sw('commentMemesEnabled'),onChange:v=>patch({commentMemesEnabled:v},'评论附表情包')}),
+          h(ToggleRow, {label:'Debug：记录 AI 选择的表情包',
+            note:'保存 BV号、表情包名、选择原因和发送状态到 comment-memes-debug/日期.jsonl；不保存评论正文或 Cookie。',
+            on:sw('commentMemesDebug'),onChange:v=>patch({commentMemesDebug:v},'表情包 Debug')}),
           sw('commentMemesEnabled') ? h('div',{'data-bd-note':''},
-            '梗图的每轮／每日次数、AI 选图提示词已移至管理中心；梗图素材继续保存在 comment-memes 文件夹。') : null,
+            '表情包的每轮／每日次数、AI 选图提示词已移至管理中心；表情包素材继续保存在 comment-memes 文件夹。') : null,
           h('div', { 'data-bd-note': '' }, '「跑一轮」只负责挑视频和发布原创顶层评论；回复观众评论与热门评论互动的详细设置、状态和记录已移至管理中心。'),
 
           h('div', { 'data-bd-sep': '' }),

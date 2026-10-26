@@ -38,11 +38,22 @@ def main():
             raise ValueError('参数数量不正确')
         home=Path(sys.argv[1]).resolve()
         action=sys.argv[2]
-        if action not in ('list','delete','edit','review'):
+        if action not in ('list','delete','edit','review','add'):
             raise ValueError('不支持的操作')
         db=(home/'meme-memory.sqlite3').resolve()
         if not db.is_relative_to(home) or db.is_symlink():
             raise ValueError('数据文件位置不安全')
+        if action=='add' and not db.exists():
+            conn=sqlite3.connect(str(db),timeout=8)
+            with conn:
+                conn.execute('''CREATE TABLE IF NOT EXISTS memes (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL, aliases TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '梗',
+                    meaning TEXT NOT NULL, confidence TEXT NOT NULL DEFAULT '待核实',
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, review_status TEXT NOT NULL DEFAULT 'approved')''')
+                conn.execute('''CREATE TABLE IF NOT EXISTS meme_sources (
+                    meme_id INTEGER NOT NULL,bvid TEXT NOT NULL,evidence_type TEXT NOT NULL,
+                    evidence TEXT NOT NULL,noted_at TEXT NOT NULL, PRIMARY KEY(meme_id,bvid))''')
+            conn.close()
         if not db.exists():
             result({'ok':True,'total':0,'entries':[], 'deleted':False} if action=='list'
                    else {'ok':False,'error':'梗知识库尚未创建，不能修改或审批不存在的条目'})
@@ -69,6 +80,21 @@ def main():
                     entries.append(item)
                 counts={r['review_status']:r['n'] for r in conn.execute('SELECT review_status, COUNT(*) AS n FROM memes GROUP BY review_status')}
                 result({'ok':True,'total':sum(counts.values()),'counts':counts,'entries':entries})
+                return
+            if action=='add':
+                payload=json.loads(sys.argv[3])
+                name=clean(payload.get('name'),48)
+                if len(name)<2:raise ValueError('名称至少2个字')
+                aliases=clean(payload.get('aliases',''),140,required=False)
+                meaning=clean(payload.get('meaning'),220)
+                kind=payload.get('kind')
+                confidence=payload.get('confidence')
+                if kind not in KINDS or confidence not in CONFIDENCES:raise ValueError('类型或可信度不合法')
+                now=datetime.now().astimezone().isoformat(timespec='seconds')
+                with conn:
+                    cur=conn.execute('''INSERT INTO memes(key,name,aliases,kind,meaning,confidence,created_at,updated_at,review_status)
+                        VALUES (?,?,?,?,?,?,?,?,?)''', (name.casefold(),name,aliases,kind,meaning,confidence,now,now,'approved'))
+                result({'ok':True,'id':cur.lastrowid,'status':'approved'})
                 return
             try:
                 payload=json.loads(sys.argv[3]) if action in ('edit','review') else {'id':int(sys.argv[3])}

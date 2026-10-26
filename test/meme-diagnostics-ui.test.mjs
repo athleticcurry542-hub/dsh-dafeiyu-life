@@ -29,7 +29,7 @@ test('本轮提示词实际预载分类梗图清单，并允许自定义规则',
   }finally{rmSync(home,{recursive:true,force:true})}
 })
 
-test('今日梗图诊断只读取固定日期 JSONL，统计发送和图片结果，UI 限高',async()=>{
+test('今日表情包诊断只读取固定日期 JSONL，统计发送和图片结果，UI 限高',async()=>{
   const home=mkdtempSync(join(tmpdir(),'bili-meme-diag-'))
   try{
     let route
@@ -60,7 +60,7 @@ test('今日梗图诊断只读取固定日期 JSONL，统计发送和图片结�
     assert.equal(value.recent.length,3)
     const consoleHtml=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
     const consoleJs=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8')
-    assert.match(consoleHtml,/今日梗图诊断/)
+    assert.match(consoleHtml,/今日表情包诊断/)
     assert.match(consoleJs,/meme-diagnostics/)
     assert.match(consoleJs,/slice\(0,12\)/)
   }finally{rmSync(home,{recursive:true,force:true})}

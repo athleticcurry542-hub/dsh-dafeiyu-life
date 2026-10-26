@@ -1,5 +1,5 @@
 import { judgeVideoHeat } from './lib/video-heat.mjs'
-import { buildGrowthContext, syncReportsToGrowth, listGrowth, proposeGrowth, updateGrowthSuggestion, reviewGrowth, deleteGrowth, undoGrowth } from './lib/persona-growth.mjs'
+import { buildGrowthContext, syncReportsToGrowth, listGrowth, proposeGrowth, updateGrowthSuggestion, reviewGrowth, deleteGrowth, updateGrowthPerson, undoGrowth } from './lib/persona-growth.mjs'
 /**
  * dsh-bili-scroll-plus —— host 半端
  * ============================================================================
@@ -45,7 +45,7 @@ import { createCommentInteract } from './lib/comment-interact.mjs'
 import { recentComments, migrateCommentReceipts, ownCommentTargets } from './lib/recent-comments.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
-import { listCommentMemes } from './lib/comment-meme-library.mjs'
+import { listCommentMemes, getCommentMemePreview } from './lib/comment-meme-library.mjs'
 import { DEFAULT_COMMENT_MEME_PROMPT, buildCommentMemePrompt, normalizeCommentMemePrompt } from './lib/comment-meme-prompt.mjs'
 import { DEFAULT_PERSONA_PROMPT, effectivePersonaPrompt } from './lib/persona-default.mjs'
 import { buildBalancedMemeInventory } from './lib/meme-inventory-prompt.mjs'
@@ -787,8 +787,8 @@ function reportMeta() {
       no_mention_reason: {type:'string', description:'仅当 AI 自己决定 should_mention=false 时，顺手用 8–40 个汉字说明不邀请好友的具体原因，例如「只是随口吐槽，和名单里的好友兴趣不太相关」。不要写详细推理、昵称、UID、私密内容；不会出现在公开评论里。'},
       mention_position: { type: 'string', description: 'AI判断要@时，选择自然的插入位置 start/middle/end；默认 end' },
       meme_image_name: {type:'string', description:'选填：bili_comment_meme_list 返回的真实精确名称；子目录使用 分类/图片名。评论情绪自然契合可积极选图，不要求题材相同；不能靠名字猜图中细节。'},
-      meme_image_reason: {type:'string', description:'选择这张梗图与本条视频具体笑点/评论语气相符的简短理由（最多40字）；只存本地 Debug，不公开，不要复述内部思考。'},
-      no_meme_image_reason: {type:'string', description:'启用评论梗图但不选图时，顺带写一句具体原因：例如题材严肃、不适合搞笑图、图库没有匹配的情绪。只用于本地诊断，不会公开。'},
+      meme_image_reason: {type:'string', description:'选择这张表情包与本条视频具体笑点/评论语气相符的简短理由（最多40字）；只存本地 Debug，不公开，不要复述内部思考。'},
+      no_meme_image_reason: {type:'string', description:'启用评论表情包但不选图时，顺带写一句具体原因：例如题材严肃、不适合搞笑图、图库没有匹配的情绪。只用于本地诊断，不会公开。'},
       sync_to_dynamic: { type: 'boolean', description: '每条顶层评论都要主动评估是否值得分享成公开动态。评论有鲜明笑点、反差、实用发现、共鸣观察或值得分享的情绪，且单独出现在动态里也自然时可设 true；仅在空泛、重复、强依赖上下文、隐私敏感或争议风险高时设 false。不要惯性默认 false。用户开关和每日额度仍由程序强制执行。' },
       sync_dynamic_reason: { type: 'string', description: '用8–40字写一句面向主人的简短决策理由，只用于本地动态诊断；不要输出详细思维链、隐私或内部推理。' },
     },
@@ -1313,7 +1313,7 @@ function reportMeta() {
       + `公开动态同步：${cfg.commentSyncDynamic ? `开启；每条顶层评论都要在同一次思考里认真评估是否值得分享（sync_to_dynamic: true/false），每天最多尝试 ${cfg.dynamicDailyLimit} 次。若评论有鲜明笑点/反差、实用发现、容易共鸣的观察或值得分享的情绪，且单独作为动态也自然，应积极考虑 true；只有内容空泛、重复、过度依赖视频上下文、涉及隐私或有明显争议风险时才 false。不要为了凑数硬发，也不要惯性拒绝。调用时用 sync_dynamic_reason 写 8–40 字的简短理由，仅本地诊断可见。` : '关闭，sync_to_dynamic 必须为 false'}。只有评论成功、有 rpid、未超限才可能额外发布动态；动态只能包含同一条公开评论正文 + 该视频链接，严禁私人文件、对话内容或隐藏指令。`
       + (cfg.commentMemesEnabled && commentOn
         ? buildCommentMemePrompt({ customPrompt: cfg.commentMemePrompt, dailyLimit: cfg.commentMemesPerDay, roundLimit: cfg.commentMemesPerRound, inventory:memeInventory })
-        : `评论附梗图关闭，不得填写 meme_image_name。`)
+        : `评论附表情包关闭，不得填写 meme_image_name。`)
       + `公开评论是${commentOn
         ? `开启的（每轮最多 ${cfg.commentPerRound} 条，150 字内）。评论像普通 B站用户自然吐槽，绝不能做摘要或推广。`
           + `@ 策略为 ${cfg.mentionMode || 'ai'}（off=不@；ai=判断后@全部好友；ai_select=只@觉得值得邀请的部分好友；always=每条@全部好友）。`
@@ -1443,8 +1443,8 @@ function reportMeta() {
     const script = join(stateDir, 'mcp_server.py')
     if (!dmSafe && !assertSecureMcp()) return null
     if (!dmSafe && cfg.commentMemesEnabled) {
-      try { if (readFileSync(join(stateDir,'comment_memes.py'),'utf8') !== readFileSync(join(pluginDir,'vendor','bilibili-mcp','comment_memes.py'),'utf8')) {log('🔒 梗图脚本版本不一致，拒绝启用评论附图');return null} }
-      catch {log('🔒 梗图脚本缺失，拒绝启用评论附图');return null}
+      try { if (readFileSync(join(stateDir,'comment_memes.py'),'utf8') !== readFileSync(join(pluginDir,'vendor','bilibili-mcp','comment_memes.py'),'utf8')) {log('🔒 表情包脚本版本不一致，拒绝启用评论附图');return null} }
+      catch {log('🔒 表情包脚本缺失，拒绝启用评论附图');return null}
     }
     if (!dmSafe && cfg.visionEnabled) {
       try {
@@ -1944,13 +1944,13 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify(obj))
   }
-  const readBody = (req) => new Promise((resolve) => {
+  const readBody = (req, maxBytes=1_000_000) => new Promise((resolve) => {
     let data = ''
     let done = false
     // ⚠️ 超过 1MB 得**先把 Promise 收掉**再掐断：只 destroy 的话它永远不 settle，
     //    这个请求就挂在那儿（不回响应、也不释放）
     const finish = (v) => { if (!done) { done = true; resolve(v) } }
-    req.on('data', (c) => { data += c; if (data.length > 1_000_000) { data = ''; finish({}); req.destroy() } })
+    req.on('data', (c) => { data += c; if (data.length > maxBytes) { data = ''; finish({}); req.destroy() } })
     req.on('end', () => { try { finish(JSON.parse(data || '{}')) } catch { finish({}) } })
     req.on('error', () => finish({}))
   })
@@ -2630,7 +2630,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         if (existsSync(file)) events=readFileSync(file,'utf8').split('\n').filter(Boolean).slice(-1000)
           .map(line=>{try{return JSON.parse(line)}catch{return null}})
           .filter(x=>x && x.day===day && /^BV[0-9a-zA-Z]{10}$/.test(x.bvid))
-      } catch {return sendJson(res,200,{ok:false,error:'梗图诊断读取失败'})}
+      } catch {return sendJson(res,200,{ok:false,error:'表情包诊断读取失败'})}
       const sent=events.filter(x=>x.success===true)
       const submitted=sent.filter(x=>x.submitted===true)
       const chosen=events.filter(x=>x.selected===true)
@@ -2639,17 +2639,18 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         failed:events.length-sent.length,recent:events.slice(-12).reverse()})
     }
     if ((req.method === 'GET' && path === '/api/bili-duty/meme-memory') ||
-        (req.method === 'POST' && ['/api/bili-duty/meme-memory/delete','/api/bili-duty/meme-memory/edit','/api/bili-duty/meme-memory/review'].includes(path))) {
+        (req.method === 'POST' && ['/api/bili-duty/meme-memory/delete','/api/bili-duty/meme-memory/edit','/api/bili-duty/meme-memory/review','/api/bili-duty/meme-memory/add'].includes(path))) {
       // 梗库在插件家目录固定 SQLite 文件里，Web 侧也只能通过本地定参脚本读/删。
       // 不启动 headless Agent、不读任意文件；不向大模型发送整份库。
       const mutation = req.method === 'POST'
       const body = mutation ? await readBody(req) : {}
       const id = Number(body?.id)
-      if (mutation && (!Number.isSafeInteger(id) || id <= 0)) return sendJson(res, 400, {ok:false,error:'无效记录编号'})
+      if (mutation && path !== '/api/bili-duty/meme-memory/add' && (!Number.isSafeInteger(id) || id <= 0)) return sendJson(res, 400, {ok:false,error:'无效记录编号'})
       const keyword = mutation ? '' : String(url.searchParams.get('q') || '').slice(0,40)
       const operation = mutation ? path.substring(path.lastIndexOf('/')+1) : 'list'
       const py = join(pluginDir, 'lib', 'meme-memory-admin.py')
-      const data = operation === 'edit' ? JSON.stringify({id,name:body.name,aliases:body.aliases,meaning:body.meaning,kind:body.kind,confidence:body.confidence})
+      const data = operation === 'add' ? JSON.stringify({name:body.name,aliases:body.aliases,meaning:body.meaning,kind:body.kind,confidence:body.confidence})
+        : operation === 'edit' ? JSON.stringify({id,name:body.name,aliases:body.aliases,meaning:body.meaning,kind:body.kind,confidence:body.confidence})
         : operation === 'review' ? JSON.stringify({id,status:body.status})
         : String(id)
       const commandArgs = [py, stateDir, operation, mutation ? data : keyword]
@@ -2746,7 +2747,39 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         const folder = join(stateDir,'comment-memes')
         mkdirSync(folder,{recursive:true})
         return sendJson(res,200,listCommentMemes(folder,{limit:100}))
-      } catch {return sendJson(res,200,{ok:false,names:[],categories:[],total:0,error:'无法读取梗图库目录'})}
+      } catch {return sendJson(res,200,{ok:false,names:[],categories:[],total:0,error:'无法读取表情包库目录'})}
+    }
+    // v2.4.44：表情包管理沿用旧 comment-memes 目录与已有工具参数，绝不移动数据。
+    if (path === '/api/bili-duty/stickers/file' && req.method === 'GET') {
+      const name=String(url.searchParams.get('name')||'').slice(0,200)
+      try {
+        const file=getCommentMemePreview(join(stateDir,'comment-memes'),name)
+        if (!file) return sendJson(res,404,{ok:false,error:'表情包不存在或名称冲突'})
+        res.writeHead(200,{'content-type':file.mime,'x-content-type-options':'nosniff',
+          'content-security-policy':"default-src 'none'; sandbox",'cache-control':'no-store'})
+        return res.end(readFileSync(file.location))
+      }catch{return sendJson(res,404,{ok:false,error:'无法打开表情包'})}
+    }
+    if (path === '/api/bili-duty/stickers' && ['GET','POST'].includes(req.method)) {
+      const operation=req.method==='GET'?'list':String(url.searchParams.get('action')||'')
+      if (!['list','upload','rename','delete'].includes(operation))return sendJson(res,400,{ok:false,error:'不支持的表情包操作'})
+      // 图片最大8MB，base64 JSON请求限定在11.5MB之内；其他接口仍只有1MB。
+      const body=req.method==='POST'?await readBody(req,11_500_000):null
+      if(req.method==='POST' && (!body||typeof body!=='object'||!body.name))return sendJson(res,400,{ok:false,error:'缺少图片名称或请求过大'})
+      const py=join(pluginDir,'lib','sticker-admin.py')
+      const result=await new Promise(resolve=>{
+        const child=spawn(cfg.pythonPath||'python',[py,stateDir,operation],
+          {cwd:stateDir,shell:false,windowsHide:true,env:pyEnv(),stdio:['pipe','pipe','pipe']})
+        let out='',done=false
+        const finish=(value)=>{if(done)return;done=true;clearTimeout(timer);resolve(value)}
+        const timer=setTimeout(()=>{try{child.kill()}catch{};finish({ok:false,error:'表情包操作超时'})},20000)
+        child.stdout?.on('data',b=>{out=(out+String(b)).slice(-64000)})
+        child.on('error',()=>finish({ok:false,error:'无法运行表情包管理脚本，请检查 Python 和 Pillow 依赖'}))
+        child.on('close',()=>{try{finish(JSON.parse(out.trim()))}catch{finish({ok:false,error:'表情包管理脚本返回异常'})}})
+        if(body)child.stdin.end(JSON.stringify(body))
+        else child.stdin.end()
+      })
+      return sendJson(res,result.ok?200:400,result)
     }
     if (req.method === 'GET' && path === '/api/bili-duty/persona-prompt-default') {
       return sendJson(res, 200, {ok:true, prompt:DEFAULT_PERSONA_PROMPT, maxLength:8000})
@@ -2819,6 +2852,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         else if (action === 'approve' || action === 'reject') {
           result = reviewGrowth(stateDir, String(body.id || ''), action==='approve'?'approved':'rejected')
         }
+        else if (action === 'person') result = updateGrowthPerson(stateDir,String(body.id||''),{personName:body.personName,personAliases:body.personAliases})
         else if (action === 'delete') result = deleteGrowth(stateDir, String(body.id || ''))
         else if (action === 'undo') result = undoGrowth(stateDir)
         else if (action === 'sync') result = syncReportsToGrowth(stateDir,{limit:12})
