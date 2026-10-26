@@ -191,16 +191,22 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <h3>表情包检索规则 · 可编辑</h3>
 <p class="muted">让评论中的词和已存在的表情包名称／分类关联起来。只检索文件名，不识别图片画面、不额外调用 AI。每条规则支持<strong>同时包含</strong>与<strong>排除</strong>条件；关闭规则不会禁止完全相同的文字直接命中文件名。</p>
 <div class="toolbar"><button id="meme-rule-add">新增规则</button><button id="meme-rule-save" class="primary">保存全部规则</button><button id="meme-rule-default">加载出厂默认（需保存）</button><button id="meme-rule-export">导出规则 JSON</button><label for="meme-rule-import" style="margin:0">导入 JSON</label><input id="meme-rule-import" type="file" accept=".json,application/json" style="max-width:245px"></div>
+<div class="toolbar" style="margin-top:10px">
+  <label for="meme-rule-search">搜索规则</label><input id="meme-rule-search" type="search" placeholder="名称、触发词、候选词（如白饭、爆笑）" style="flex:1;min-width:180px" autocomplete="off">
+  <label for="meme-rule-filter">状态</label><select id="meme-rule-filter"><option value="all">全部</option><option value="enabled">仅启用</option><option value="disabled">仅停用</option></select>
+  <label for="meme-rule-page-size">每页</label><select id="meme-rule-page-size"><option value="6" selected>6 条</option><option value="12">12 条</option><option value="24">24 条</option></select>
+</div>
 <p id="meme-rule-status" class="muted" role="status" aria-live="polite">正在读取规则…</p>
 <div id="meme-rule-list" class="records"></div>
+<div class="toolbar" aria-label="表情包检索规则翻页" style="margin-top:12px"><button id="meme-rule-prev" disabled>上一页</button><span id="meme-rule-page-status" class="muted" aria-live="polite">第 1 / 1 页</span><button id="meme-rule-next" disabled>下一页</button></div>
 <div class="settings-section" style="margin-top:12px"><h4>测试本地匹配（无需 AI）</h4><label for="meme-rule-test-text">输入一条评论，先保存上方规则，再点击测试</label><textarea id="meme-rule-test-text" maxlength="280" rows="2" placeholder="例如：这中转站我看不下去了，白饭先从冰箱里拿出来"></textarea><div class="toolbar"><button id="meme-rule-test">测试已保存的规则</button></div><div id="meme-rule-test-result" class="records" role="status" aria-live="polite"></div></div>
 </div>
 <div class="card"><h3>上传评论表情包</h3><p class="muted">支持 PNG、JPG、GIF、WebP，单张最多 8 MB；名称可使用分类/图片名。仅上传自己有权使用且适合公开发表评论的图片。图片会放在已有的 comment-memes 目录中。</p>
 <div class="fields"><div><label for="sticker-file">选择图片</label><input id="sticker-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp"></div>
 <div><label for="sticker-category">分类（可留空）</label><input id="sticker-category" maxlength="48" placeholder="例如 开心"></div>
-<div><label for="sticker-name">显示名称（不含扩展名）</label><input id="sticker-name" maxlength="48" placeholder="例如 笑哭"></div></div>
+<div><label for="sticker-name">显示名称（不含扩展名）</label><input id="sticker-name" maxlength="64" placeholder="例如 笑哭"></div></div>
 <div class="toolbar" style="margin-top:12px"><button id="sticker-upload" class="primary">上传表情包</button><span id="sticker-upload-status" class="muted"></span></div></div>
-<div class="toolbar" style="margin-top:20px"><h2 style="margin:0">已保存的表情包</h2><label for="sticker-folder-filter" style="margin:0">文件夹分类</label><select id="sticker-folder-filter" aria-label="按文件夹筛选表情包"><option value="all">全部文件夹</option></select><input id="sticker-search" placeholder="搜索名称或分类"><button id="sticker-reload">刷新图库</button></div>
+<div class="toolbar" style="margin-top:20px"><h2 style="margin:0">已保存的表情包</h2><label for="sticker-folder-filter" style="margin:0">文件夹分类</label><select id="sticker-folder-filter" aria-label="按文件夹筛选表情包"><option value="all">全部文件夹</option></select><input id="sticker-search" placeholder="搜索名称或分类"><button id="sticker-reload">刷新图库</button><button id="sticker-export-names">导出所有表情包名称 TXT</button></div>
 <p id="sticker-summary" class="muted">正在读取…</p><div id="sticker-list" class="grid sticker-grid"></div><div class="toolbar" aria-label="表情包翻页" style="margin-top:16px"><button id="sticker-page-prev" disabled>上一页</button><span id="sticker-page-status" class="muted" aria-live="polite">第 1 / 1 页</span><button id="sticker-page-next" disabled>下一页</button></div>
 <p class="muted">重命名后，AI 下次读取图库将使用新名称；已经发表的评论图片不受影响。删除后无法恢复，请先备份重要素材。</p>
 </section>

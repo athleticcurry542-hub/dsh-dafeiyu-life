@@ -2715,7 +2715,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.71'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.72'})
         }
         if (action === 'export') {
           refreshCfg()

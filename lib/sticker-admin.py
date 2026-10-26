@@ -16,12 +16,12 @@ from PIL import Image, UnidentifiedImageError
 
 EXTS={'.png':'PNG','.jpg':'JPEG','.jpeg':'JPEG','.gif':'GIF','.webp':'WEBP'}
 MAX_BYTES=8*1024*1024
-NAME=re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,48}$')
+NAME=re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,64}$')
 
 
 def clean_segment(s):
     if not isinstance(s,str) or s in ('','.','..') or not NAME.fullmatch(s):
-        raise ValueError('文件名或分类名非法（最长48字，不允许路径字符）')
+        raise ValueError('文件名或分类名非法（最长64字，不允许路径字符）')
     return s
 
 

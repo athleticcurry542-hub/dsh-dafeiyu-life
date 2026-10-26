@@ -1,3 +1,10 @@
+### v2.4.72 · 表情包检索规则搜索分页 + 全量名称导出（2026-10-26）
+
+- 「表情包管理」检索规则改为默认折叠、搜索、状态筛选和 6/12/24 条分页；无论筛选/翻页如何，保存及 JSON 导出始终保留全部规则。
+- 「已保存的表情包」旁新增 **导出所有表情包名称 TXT**，递归读取本地图库可管理名单，保留 `分类/名称`、去扩展名、UTF-8 BOM，无需 AI、B站接口。
+- 表情包文件名安全上限由 48 字扩到 64 字，适配部分 OCR 风格长文件名。
+- 为主人收到的 664 个文件名另外提供 81 条专属 JSON 规则（单独下载和导入，不会随着插件更新自动覆盖用户规则）。
+
 ### v2.4.71 · 表情包检索规则管理 + 数据备份（2026-10-26）
 
 - 在「管理中心 → 表情包管理」新增可编辑的检索关联规则（词语、组合条件、排除条件），能新增/禁用/删除、导入/导出 JSON，并使用本地真实图库测试匹配结果；不是对图片内容做 AI 识别。
@@ -24,7 +31,7 @@
 
 这是一个为 DeepSeek Harness（DSH） 构建的 B站浏览与互动插件，独立维护于 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)。在原项目基础上，增加了视频预览取帧、可控互动、本地成长记忆和可视化管理能力。
 
-> **当前版本：v2.4.71** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：v2.4.72** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > 衍生版并非 B站、DeepSeek 或原作者的官方产品。原项目：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，保留 MIT 版权与许可，详见文末说明。
 

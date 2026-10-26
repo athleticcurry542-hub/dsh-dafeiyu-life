@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 
 EXTENSIONS = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp'}
-NAME = re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,48}$')
+NAME = re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,64}$')
 MAX_BYTES = 8 * 1024 * 1024
 MAX_FOLDER_DEPTH = 3
 MAX_SCAN = 1200
