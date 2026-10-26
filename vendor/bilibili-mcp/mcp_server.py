@@ -1456,11 +1456,27 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
 
     try:
         mode, targets = _mention_settings(mention_mode, mention_targets)
+        # 允许只填 UID 的 @ 好友；发出前向 B站核对真实昵称。
+        # 未拿到真实昵称时不生成假的 @UID 字样，也不阻塞普通文字评论。
+        for target in targets:
+            target["configuredName"] = target.get("name", "")
+            if re.fullmatch(r"UID [1-9]\d{0,18}",target.get("name", "")) and target.get("uid"):
+                try:
+                    resolved = await user.User(uid=int(target["uid"]), credential=cred).get_user_info()
+                    found = str(resolved.get("name", "")).strip()
+                    if found and len(found) <= 40 and not re.search(r"[<>\r\n@]", found):
+                        target["name"] = found
+                    else:
+                        target["name"] = ""
+                except Exception:
+                    target["name"] = ""
+        targets = [x for x in targets if x.get("name")]
+
         # 只有一级评论可对配置中好友群发 @，回复具体评论不会把整个好友名单拖进来。
         selected = targets
         if mode == "ai_select":
             wanted = {str(x).strip().lstrip("@") for x in (mention_names or []) if isinstance(x, str)}
-            selected = [x for x in targets if x["name"] in wanted]
+            selected = [x for x in targets if x["name"] in wanted or x.get("configuredName") in wanted]
         # 临时心愿与固定好友名单相互独立：必须有有效的、获批后的心愿 ID，
         # 并且 B站实际视频元数据命中主题才能尝试 @。只做接口回执计数，不声称通知已送达。
         temporary_target = None

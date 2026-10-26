@@ -35,7 +35,7 @@ test('获批私信先记心愿，即便模型失败；历史补录可恢复已�
   const dm=createDmAutoReply({dataDir,selfUid:'999',now:()=>now,logger:{warn(){},info(){},error(){}},
     getConfig:()=>({enabled:true,strangerEnabled:true,approvalEnabled:true,approvalPhrase:'🍚',
       strangerFirstFixed:true,strangerMaxReplies:1,whitelist:[],whitelistCooldownSeconds:0,wishMentionLimit:3}),
-    fetchIncoming:async()=>msgs,send:async x=>{sent.push(x);return {ok:true}},generateReply:async req=>generation(req)});
+    reviewWish:async()=>({decision:'approve',reason:'正常的娱乐视频偏好'}),fetchIncoming:async()=>msgs,send:async x=>{sent.push(x);return {ok:true}},generateReply:async req=>generation(req)});
   const message=(id,text)=>({incoming:true,senderUid:'485221842',messageId:id,timestampMs:now,text});
   await dm.poll();msgs.push(message('m1','你好'));assert.equal((await dm.poll()).sent,1);
   now+=1000;msgs.push(message('m2','🍚'));await dm.poll();
@@ -60,7 +60,7 @@ test('已记录在历史中的请求可人工补录，无须重新发送消息',
   const dataDir=await mkdtemp(join(tmpdir(),'dm-old-wishes-'));
   const dm=createDmAutoReply({dataDir,selfUid:'999',now:()=>1800000000000,
     getConfig:()=>({enabled:true,approvalEnabled:true,strangerEnabled:true,whitelistCooldownSeconds:0}),
-    fetchIncoming:async()=>[],send:async()=>({ok:true}),generateReply:async()=> 'OK',logger:{warn(){},error(){}}});
+    reviewWish:async()=>({decision:'approve',reason:'正常的娱乐视频偏好'}),fetchIncoming:async()=>[],send:async()=>({ok:true}),generateReply:async()=> 'OK',logger:{warn(){},error(){}}});
   await dm.poll();
   const {writeFile}=await import('node:fs/promises');
   await writeFile(join(dataDir,'dm-autoreply-state.json'),JSON.stringify({version:1,initialized:true,sentAt:[],people:{'123':{seen:[],history:[{role:'user',text:'有那种美食视频，美女视频多艾特我一下'}],approval:{status:'approved'}}}}));

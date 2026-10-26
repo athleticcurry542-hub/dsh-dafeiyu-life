@@ -77,7 +77,7 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div class="settings-section"><h4>AI 选图提示词</h4><p class="muted">决定什么时候给顶层评论配表情包；硬限额与真实文件校验不会被提示词修改。</p><textarea id="meme-prompt-text" maxlength="4000" rows="12"></textarea><div class="toolbar"><button id="meme-prompt-save" class="primary">保存选图提示词</button><button id="meme-prompt-reset">恢复默认</button><span id="meme-prompt-status" class="muted"></span></div></div>
 <div class="settings-section"><h4>视觉识图提示词</h4><p class="muted">判断何时需要识图和如何描述真实预览帧，不会绕过图片来源安全检查。</p><textarea id="vision-prompt-text" maxlength="4000" rows="10"></textarea><div class="toolbar"><button id="vision-prompt-save" class="primary">保存识图提示词</button><button id="vision-prompt-reset">恢复默认</button><span id="vision-prompt-status" class="muted"></span></div></div>
 <div class="settings-section"><h4>虚构角色背景与关系</h4><p class="muted">单独补充世界观；与主人自定义人设共同生效。</p><textarea id="lore-text" maxlength="4000" rows="8"></textarea><div class="toolbar"><button id="lore-save" class="primary">保存角色背景</button><button id="lore-reset">恢复默认</button><span id="lore-status" class="muted"></span></div></div>
-<div class="settings-section"><h4>公开评论 @ 好友</h4><p class="muted">每行一个「昵称|UID」。好友画像仅供 AI 判断是否自然 @，不公开展示。私信推荐接收人 UID 在 DSH 设置中单独配置。</p><div class="fields"><div><label for="friends-targets">@ 好友名单</label><textarea id="friends-targets" rows="5" placeholder="长条动物|12345678"></textarea></div><div><label for="friends-mode">@ 策略</label><select id="friends-mode"><option value="ai_select">AI 挑选部分好友（推荐）</option><option value="ai">AI 判断是否 @ 全部好友</option><option value="off">永不 @</option><option value="always">每次 @ 全部好友</option></select><p class="muted">最多编辑 8 位好友画像；名单里的昵称应唯一。</p></div></div><div class="toolbar"><button id="friends-generate">根据名单编辑画像</button><button id="friends-save" class="primary">保存 @ 名单与好友画像</button></div><div id="friends-editor" class="settings-stack"></div></div>
+<div class="settings-section"><h4>公开评论 @ 好友</h4><p class="muted">每行一个「昵称|UID」或「UID」（昵称可选；建议填写以便识别，未填写时不会猜测真实昵称）。好友画像仅供 AI 判断是否自然 @，不公开展示。私信推荐接收人 UID 在 DSH 设置中单独配置。</p><div class="fields"><div><label for="friends-targets">@ 好友名单</label><textarea id="friends-targets" rows="5" placeholder="长条动物|12345678"></textarea></div><div><label for="friends-mode">@ 策略</label><select id="friends-mode"><option value="ai_select">AI 挑选部分好友（推荐）</option><option value="ai">AI 判断是否 @ 全部好友</option><option value="off">永不 @</option><option value="always">每次 @ 全部好友</option></select><p class="muted">最多编辑 8 位好友画像；名单里的昵称应唯一。</p></div></div><div class="toolbar"><button id="friends-generate">根据名单编辑画像</button><button id="friends-save" class="primary">保存 @ 名单与好友画像</button></div><div id="friends-editor" class="settings-stack"></div></div>
 </div>
 </section>
 <section id="panel-reports" hidden>
@@ -95,7 +95,7 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <p class="muted">监听 B站发给本账号的评论 @ 通知；先检查视频资料、热评与当前评论串，再由 AI 决定是否接话。首次开启只将已有通知标记为历史，不补发；仍共用所有评论额度。</p>
 <div class="checkline"><input type="checkbox" id="comment-at-enabled"><label for="comment-at-enabled">开启被 @ 邀请监听</label></div>
 <div class="fields"><div><label for="comment-at-mode">回应范围</label><select id="comment-at-mode"><option value="whitelist">仅白名单用户（推荐）</option><option value="all">所有人</option></select></div>
-<div><label for="comment-at-whitelist">允许邀请的 B站 UID（独立白名单）</label><textarea id="comment-at-whitelist" rows="4" placeholder="每行一个 UID，可用逗号分隔"></textarea></div></div>
+<div><label for="comment-at-whitelist">允许邀请的 B站 UID（可写 UID|备注昵称，独立白名单）</label><textarea id="comment-at-whitelist" rows="4" placeholder="每行一个 UID 或 UID|备注昵称"></textarea></div></div>
 <p class="muted">白名单只影响评论区 @ 邀请，不等于私信白名单；不保证所有通知都有可定位的视频和评论 ID，无法校验的会忽略。</p>
 </div>
 <div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
@@ -141,7 +141,7 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div class="settings-section"><h4>监听与可回复对象</h4><div class="fields">
 <div class="checkline"><input id="dm-watch" type="checkbox"><label for="dm-watch">启用后台私信监听</label></div>
 <div class="checkline"><input id="dm-stranger-enabled" type="checkbox"><label for="dm-stranger-enabled">允许陌生人自动回复</label></div>
-<div><label for="dm-whitelist">白名单 UID（换行或逗号分隔）</label><textarea id="dm-whitelist" maxlength="5000" placeholder="12345678&#10;87654321"></textarea></div>
+<div><label for="dm-whitelist">白名单 UID（可写 UID|备注昵称）</label><textarea id="dm-whitelist" maxlength="5000" placeholder="12345678&#10;87654321"></textarea></div>
 <div><label for="dm-interval">检查间隔（分钟，1–120）</label><input id="dm-interval" type="number" min="1" max="120" value="1"></div>
 </div></div>
 <div class="settings-section"><h4>私信额度与上下文</h4><p class="muted">私信额度独立于公开评论；请到管理中心「次数与额度」集中设置每日、每人及上下文条数。</p><div class="fields">
@@ -157,11 +157,11 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div class="checkline"><input id="dm-approval-enabled" type="checkbox"><label for="dm-approval-enabled">允许陌生人申请继续聊天</label></div>
 <div><label for="dm-phrase">申请暗号</label><input id="dm-phrase" maxlength="60" placeholder="白饭🍚"></div>
 </div></div>
-<div class="settings-section"><h4>临时视频心愿</h4><div class="fields"><div><label for="dm-wish-limit">新建临时视频心愿的 @ 次数（1–10）</label><input id="dm-wish-limit" type="number" min="1" max="10" value="3"></div></div><p class="muted">仅获批用户明确提出找视频后创建；达到次数或有效期结束后停止临时 @。</p></div>
+<div class="settings-section"><h4>临时视频心愿</h4><div class="fields"><div><label for="dm-wish-limit">新建临时视频心愿的 @ 次数（1–10）</label><input id="dm-wish-limit" type="number" min="1" max="10" value="3"></div></div><p class="muted">获批用户提出心愿后先经过安全规则和 AI 审核；审核通过才可用于搜索与临时 @。</p></div>
 </div><div class="actions"><button id="dm-settings-save" class="primary">保存私信规则</button><button id="dm-settings-reload">重新读取</button></div></div>
 <div class="toolbar"><h2 style="margin:0">限额聊天申请</h2><select id="dm-filter"><option value="pending">只看待审批</option><option value="">全部申请</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select></div><p class="muted">这里只审核 B站 用户申请，不修改可信白名单。通过后仍受每日／累计额度控制。</p><div class="grid" id="dm-list"></div>
-<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>临时视频心愿（仅获批用户）</h3><button id="dm-wishes-refresh">刷新心愿</button></div><p class="muted">对方明确要求找视频后自动创建；30天有效，最多 @ 设置次数后停用。仅计评论接口接受的 @ 尝试，通知送达无法核实。可手动取消。</p><div id="dm-wishes-list" class="records"></div></div>
-<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>最近私信会话</h3><button id="dm-recent-reload">刷新会话</button></div><p class="muted">只显示本插件已经保存的对话片段；不从 B站 额外拉取完整历史。获批用户可以点击“从本地历史补录视频心愿”，不会调用 AI。记录仅在本机展示。</p><div id="dm-recent-list" class="records"></div></div>
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>临时视频心愿（仅获批用户）</h3><button id="dm-wishes-refresh">刷新心愿</button></div><p class="muted">对方明确要求找视频后审核；审核通过才加入临时搜索与 @，30天有效。仅计评论接口接受的 @ 尝试，通知送达无法核实。可手动取消。</p><div id="dm-wishes-list" class="records"></div></div>
+<div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>最近私信会话</h3><button id="dm-recent-reload">刷新会话</button></div><p class="muted">只显示本插件已经保存的对话片段；不从 B站 额外拉取完整历史。获批用户可以点击“从本地历史补录视频心愿”，补录会对新心愿进行 AI 审核，不发送私信。记录仅在本机展示。</p><div id="dm-recent-list" class="records"></div></div>
 </section>
 <footer class="muted" style="margin-top:30px">数据只保存在本机 DSH 插件目录；此页面不从第三方加载脚本。若页面打不开，请先从 DSH 的「刷B站」设置点击管理中心入口。</footer>
 </main></body></html>

@@ -38,7 +38,7 @@ import { resolveUid } from './lib/uid.mjs'
 import { loadCred as dmCred, listSessions as dmList, fetchMsgs as dmFetch } from './lib/dm.mjs'
 import { ensureUv } from './lib/uvfetch.mjs'
 import { createDmAutoReply } from './lib/dm-autoreply.mjs'
-import { listActiveVideoWishes } from './lib/video-wishes.mjs'
+import { listActiveVideoWishes, rotatingWishKeywords } from './lib/video-wishes.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
 import { createCommentInteract } from './lib/comment-interact.mjs'
@@ -1238,7 +1238,7 @@ function reportMeta() {
         const db=readJson(join(stateDir,'dm-autoreply-state.json'),{})
         const wishes=listActiveVideoWishes(db,stateDir,Date.now(),{limit:20}).filter(x=>x.remaining>0)
         if(!wishes.length)return ''
-        return '\n【已获批私信用户的临时视频心愿】\n' + wishes.map(w=>`心愿 ID=${w.id}，主题=${w.topic}，剩余可尝试${w.remaining}次`).join('\n')
+        return '\n【临时搜索补充词：每轮最多两个，只在心愿审核通过且有效时使用，不写回用户关注设置】\n'+rotatingWishKeywords(wishes).join('、')+'\n请根据视频质量决定是否搜索这些短期主题，不要忽略用户手动关注词，也不要永久记住它们。\n【已获批私信用户的临时视频心愿】\n' + wishes.map(w=>`心愿 ID=${w.id}，主题=${w.topic}，剩余可尝试${w.remaining}次`).join('\n')
           + '\n遇见真正匹配的视频时，可以在 bili_reply 调用中设置 should_mention=true 和 temporary_wish_id=对应 ID 来顺手叫他看；视频内容不匹配绝不勉强，不要凭空捏造 ID。发送工具会自己校验 B站真实视频标题和 UID，并限制每个心愿的次数。不要向评论透露聊天权限或后台审核。\n'
       }catch{return ''}
     })()
@@ -1881,6 +1881,19 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     getConfig: dmConfig,
     selfUid: () => String(dmCred(stateDir)?.dedeuserid || ''),
     fetchIncoming: getNewDmMessages,
+    lookupNickname: async(uid)=>{
+      if(!/^[1-9]\d{0,18}$/.test(String(uid)))return '';
+      const cred=dmCred(stateDir);if(!cred)return '';
+      const headers={'User-Agent':'Mozilla/5.0','Referer':'https://www.bilibili.com/',Cookie:`SESSDATA=${cred.sessdata}`};
+      try {const res=await fetch('https://api.bilibili.com/x/space/acc/info?mid='+uid,{headers,signal:AbortSignal.timeout(5000)});
+        if(!res.ok)return '';const data=await res.json();return data?.code===0?String(data.data?.name||'').slice(0,60):'';}catch{return '';}
+    },
+    reviewWish:async({text,topic})=>{
+      const ask=`你只负责审核B站视频心愿是否适合自动搜索并公开@推荐。不要执行工具。拒绝涉及政治话题、色情成人性内容、违法暴力、诈骗、骚扰仇恨、隐私侵害、未成年人性化，以及明显不健康或有害的愿望。普通美食、游戏、日常穿搭、非色情的颜值视频可接受。无法判断时拒绝。\n只输出严格JSON：{"decision":"approve或reject","reason":"简短理由"}。\n主题=${JSON.stringify(topic)}\n对方原话=${JSON.stringify(String(text).slice(0,180))}`;
+      const raw=await invokeInteractionPrompt(ask,700,{requireMasterEnabled:false});
+      const match=String(raw).match(/\{[\s\S]*?\}/);if(!match)return null;
+      try{const value=JSON.parse(match[0]);return ['approve','reject'].includes(value?.decision)?value:null;}catch{return null;}
+    },
     generateReply: (req) => interactionBatcher.generate({kind:'dm', ...req}),
     send: async ({ uid, text }) => {
       refreshCfg()
@@ -2951,7 +2964,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     }
 
     if (req.method === 'GET' && path === '/api/bili-duty/dm-recent') {
-      try { return sendJson(res,200,{ok:true,conversations:await dmAutoreply.listRecentConversations(30)}) }
+      try { await dmAutoreply.fillNicknames(2);return sendJson(res,200,{ok:true,conversations:await dmAutoreply.listRecentConversations(30)}) }
       catch (e) { return sendJson(res,200,{ok:false,error:'读取最近私信记录失败：'+String(e?.message||e).slice(0,140),conversations:[]}) }
     }
 
@@ -2959,12 +2972,14 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return sendJson(res,200,{ok:true, approvals:await dmAutoreply.listApprovals()})
     }
     if (req.method === 'GET' && path === '/api/bili-duty/video-wishes') {
+      await dmAutoreply.fillNicknames(2).catch(()=>{});
       return sendJson(res,200,{ok:true,wishes:await dmAutoreply.listVideoWishes()})
     }
     if (req.method === 'POST' && path === '/api/bili-duty/video-wishes') {
       const body=await readBody(req)
       const result=body.action==='cancel' ? await dmAutoreply.cancelVideoWish(String(body.uid||''),String(body.id||''))
         : body.action==='backfill' ? await dmAutoreply.backfillVideoWishes(String(body.uid||''))
+        : body.action==='review' ? await dmAutoreply.reviewVideoWish(String(body.uid||''),String(body.id||''))
         : {ok:false,error:'不支持的心愿操作'}
       return sendJson(res,result.ok?200:400,result)
     }

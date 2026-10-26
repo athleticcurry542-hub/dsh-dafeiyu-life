@@ -27,6 +27,7 @@ test('only approved UID may create wish and has bounded count and expiry',async(
   person.approval.status='approved';
   const wish=updateVideoWishes(person,'给我找点好吃的',{uid:'123',limit:100,now:1700000000000,messageId:'m1'});
   assert.equal(wish.record.limit,10);
+  wish.record.reviewedAt=1700000000000; // 测试已批准的审核回执；旧版无审核心愿禁止参与搜索
   assert.equal(updateVideoWishes(person,'再找点美食',{uid:'123',limit:3}).existing,true);
   const state={people:{123:person}};
   assert.equal(listActiveVideoWishes(state,dir,1700000000001).length,1);
@@ -41,7 +42,7 @@ test('approval -> queued answer -> explicit food request creates persistent canc
   const incoming=[],sent=[];const cfg={enabled:true,strangerEnabled:true,approvalEnabled:true,approvalPhrase:'🍚',
     strangerMaxReplies:1,whitelist:[],whitelistCooldownSeconds:0,wishMentionLimit:2};
   const dm=createDmAutoReply({dataDir,selfUid:'999',getConfig:()=>cfg,now:()=>at,
-    fetchIncoming:async()=>incoming,send:async x=>{sent.push(x);return {ok:true}},generateReply:async()=> '本鱼吃饱啦🐳',
+    reviewWish:async()=>({decision:'approve',reason:'正常的娱乐视频偏好'}),fetchIncoming:async()=>incoming,send:async x=>{sent.push(x);return {ok:true}},generateReply:async()=> '本鱼吃饱啦🐳',
     logger:{warn(){},error(){}}});
   const msg=(id,text)=>({incoming:true,senderUid:'123',messageId:id,text,timestampMs:at});
   await dm.poll();incoming.push(msg('m1','嗨'));assert.equal((await dm.poll()).sent,1);

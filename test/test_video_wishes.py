@@ -15,7 +15,7 @@ class WishTests(unittest.TestCase):
         self.root=Path(self.tmp.name)
         self.wid='01234567-89ab-4cde-aaaa-0123456789ab'
         self.person={'approval':{'status':'approved'},'videoWishes':[{'id':self.wid,'uid':'123',
-            'topic':'美食','status':'active','limit':2,'expiresAt':9999999999999}]}
+            'topic':'美食','status':'active','reviewedAt':1700000000000,'limit':2,'expiresAt':9999999999999}]}
         self.save()
     def save(self):
         (self.root/'dm-autoreply-state.json').write_text(json.dumps({'people':{'123':self.person}}),encoding='utf-8')

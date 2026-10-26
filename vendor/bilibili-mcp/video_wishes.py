@@ -48,7 +48,7 @@ def get_approved_wish(home, wish_id, now_ms=None):
             continue
         for wish in person.get('videoWishes') or []:
             if (isinstance(wish, dict) and wish.get('id') == wish_id and
-                wish.get('status') == 'active' and int(wish.get('expiresAt') or 0) > now_ms and
+                wish.get('status') == 'active' and int(wish.get('reviewedAt') or 0) > 0 and int(wish.get('expiresAt') or 0) > now_ms and
                 str(wish.get('uid')) == uid and wish.get('topic') in TOPIC_WORDS):
                 limit = int(wish.get('limit') or 0)
                 if 1 <= limit <= 10:
