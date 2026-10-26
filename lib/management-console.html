@@ -48,6 +48,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <article class="card"><div class="diag-heading"><h3>预览识图诊断</h3><label class="diag-switch"><input type="checkbox" id="diag-vision-enabled" checked> 记录诊断</label></div><p class="muted">Debug 只会保存真正取到的 JPEG；勾选开关不等于 AI 一定调用。可以用设置页的「测试预览」手动验证取帧。高能时间点不可用时会退回均匀取帧。</p><div id="vision-summary" class="muted">正在读取…</div><div id="vision-list" class="records"></div></article>
 <article class="card"><div class="diag-heading"><h3>今日表情包诊断</h3><label class="diag-switch"><input type="checkbox" id="diag-meme-enabled" checked> 记录诊断</label></div><p class="muted">显示 AI 是否选图、附图回执与本地原因；工具接受不等于图片一定公开展示。</p><div id="meme-summary" class="muted">正在读取…</div><div id="meme-diag-list" class="records"></div></article>
 </div>
+<div class="settings-stack" style="margin-top:16px">
+<article class="settings-section"><div class="diag-heading"><h3>@ 邀请处理诊断（最近 30 条）</h3><label class="diag-switch"><input type="checkbox" id="diag-at-invite-enabled" checked> 记录诊断</label></div><p class="muted">收到别人 @ 大肥鱼后的处理过程，可能跨越多个自然日；与上方「大肥鱼主动 @ 好友」的诊断不同。</p><p id="comment-at-fetch" class="muted">尚未检查</p><div id="comment-at-events" class="records" role="status" aria-live="polite"></div></article>
+<article class="settings-section"><div class="diag-heading"><h3>收到评论回复处理诊断（最近 30 条）</h3><label class="diag-switch"><input type="checkbox" id="diag-reply-inbox-enabled" checked> 记录诊断</label></div><p class="muted">用于排查同一视频下别人回复大肥鱼而大肥鱼没有接话：查看接口识别、首次基线、限额、AI 沉默与发送结果。</p><p id="comment-reply-fetch" class="muted">尚未检查</p><div id="comment-reply-events" class="records" role="status" aria-live="polite"></div></article>
+</div>
 </section>
 <section id="panel-quotas" hidden>
 <div class="toolbar"><h2 style="margin:0">次数与额度</h2><button id="quota-refresh">重新读取</button></div>
@@ -135,8 +139,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <div class="checkline"><input type="checkbox" id="comment-at-enabled"><label for="comment-at-enabled">开启被 @ 邀请监听</label></div>
 <div class="fields"><div><label for="comment-at-mode">回应范围</label><select id="comment-at-mode"><option value="whitelist">仅白名单用户（推荐）</option><option value="all">所有人</option></select></div>
 <div hidden><label for="comment-at-whitelist">被 @ 白名单（由可信好友名册同步）</label><textarea id="comment-at-whitelist" rows="4"></textarea></div></div>
-<p class="muted">可在「人设与好友 → 可信好友名册」统一管理允许邀请的 UID。下方展示本地 @ 检查结果；首次启用会将当时已有通知标为历史，不自动回复。</p>
-<div class="inset"><h4>@ 邀请处理诊断（最近 30 条）</h4><p id="comment-at-fetch" class="muted">尚未检查</p><div id="comment-at-events" class="records" role="status" aria-live="polite"></div></div>
+<p class="muted">可在「人设与好友 → 可信好友名册」统一管理允许邀请的 UID。<strong>通知是否被识别、为什么没有回复</strong>，请到「每日诊断 → @ 邀请处理诊断」查看。</p>
 </div>
 <div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
 <div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>

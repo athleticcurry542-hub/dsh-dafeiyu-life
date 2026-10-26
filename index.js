@@ -102,6 +102,8 @@ export const Config = !z ? undefined : z.object({
   diagDynamicEnabled: z.boolean().default(true).extra('volatile', true),
   diagVisionEnabled: z.boolean().default(true).extra('volatile', true),
   diagMemeEnabled: z.boolean().default(true).extra('volatile', true),
+  diagAtInviteEnabled: z.boolean().default(true).extra('volatile', true),
+  diagReplyInboxEnabled: z.boolean().default(true).extra('volatile', true),
   visionModelProvider: z.string().default('').extra('volatile', true),
   visionReasoningEffort: z.string().default('').extra('volatile', true),
   visionModelId: z.string().default('').extra('volatile', true),
@@ -351,7 +353,7 @@ function reportMeta() {
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
-    dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, diagMentionEnabled: true, diagDynamicEnabled: true, diagVisionEnabled: true, diagMemeEnabled: true, visionMode: 'reuse_video_model', visionDebug: false, visionModelProvider: '', visionReasoningEffort: '', visionModelId: '', visionEndpoint: '', visionFrames: 2, visionDailyLimit: 30, visionPrompt: '', commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1, commentMemePrompt: '',
+    dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, diagMentionEnabled: true, diagDynamicEnabled: true, diagVisionEnabled: true, diagMemeEnabled: true, diagAtInviteEnabled: true, diagReplyInboxEnabled: true, visionMode: 'reuse_video_model', visionDebug: false, visionModelProvider: '', visionReasoningEffort: '', visionModelId: '', visionEndpoint: '', visionFrames: 2, visionDailyLimit: 30, visionPrompt: '', commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1, commentMemePrompt: '',
     homeRecommendationsEnabled: true, keywords: [], minVideoViews: 1000, minVideoLikes: 10, minVideoReplies: 3, commentPerRound: 5, mentionName: '', mentionTargets: '', mentionProfiles: '{}', friendDirectory: '[]', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
   }
   const normalize = (src, base) => {
@@ -393,7 +395,7 @@ function reportMeta() {
     if ('commentMemesPerRound' in p) p.commentMemesPerRound=Math.max(0,Math.min(5,Math.floor(Number(p.commentMemesPerRound)||0)))
     if ('commentMemePrompt' in p) p.commentMemePrompt=normalizeCommentMemePrompt(p.commentMemePrompt)
     if ('visionPrompt' in p) p.visionPrompt=normalizeVisionPrompt(p.visionPrompt)
-    for (const k of ['visionEnabled','visionDebug','diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled']) if (k in p) p[k]=p[k]===true
+    for (const k of ['visionEnabled','visionDebug','diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled']) if (k in p) p[k]=p[k]===true
     if ('visionMode' in p) p.visionMode=['reuse_video_model','independent_dsh','auto'].includes(p.visionMode)?p.visionMode:'reuse_video_model'
     if ('visionModelProvider' in p) p.visionModelProvider=String(p.visionModelProvider||'').trim().replace(/[\r\n\0]/g,'').slice(0,160)
     if ('visionReasoningEffort' in p) p.visionReasoningEffort=String(p.visionReasoningEffort||'').trim().replace(/[\r\n\0]/g,'').slice(0,160)
@@ -1949,6 +1951,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         watchReplies: cfg.masterEnabled === true && cfg.commentWatchReplies === true,
         watchTop: cfg.masterEnabled === true && cfg.commentWatchTop === true,
         watchAt: cfg.masterEnabled === true && cfg.commentAtEnabled === true,
+        diagAtInviteEnabled:cfg.diagAtInviteEnabled!==false,
+        diagReplyInboxEnabled:cfg.diagReplyInboxEnabled!==false,
         atMode: cfg.commentAtMode, atWhitelist: cfg.commentAtWhitelist,
         topCount: cfg.commentTopCount, topVideoCount: cfg.commentTopVideoCount,
         replyPerPoll: cfg.commentReplyPerPoll, replyPerDay: cfg.commentReplyPerDay,
@@ -2941,7 +2945,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const body = await readBody(req)
       const patch = {}
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
-        'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
+        'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {
