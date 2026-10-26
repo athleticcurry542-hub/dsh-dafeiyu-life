@@ -44,6 +44,14 @@ class MemeDiagnosticsTests(unittest.TestCase):
     def record(self, payload, bvid=None, target_rpid=0, name='', chosen_reason='', decline_reason=''):
         self.scope['_record_meme_event'](payload, bvid or self.bvid, target_rpid, name, chosen_reason, decline_reason)
 
+    def test_public_comment_excerpt_from_explicit_arg_not_payload_secrets(self):
+        self.scope['_record_meme_event']({'success': True, 'rpid': 12345, 'private_note':'SECRET'},
+            self.bvid,0,'','','',comment_text='大肥鱼的公开评论')
+        [event] = self.events()
+        self.assertEqual(event['rpid'],'12345')
+        self.assertEqual(event['content'],'大肥鱼的公开评论')
+        self.assertNotIn('SECRET',json.dumps(event,ensure_ascii=False))
+
     def test_no_image_reason_is_persisted_without_comment_body(self):
         self.record({'success': True, 'rpid': 234, 'text': 'private-should-not-save'}, decline_reason='本条只是科普讲解，没有合适梗图')
         [event] = self.events()

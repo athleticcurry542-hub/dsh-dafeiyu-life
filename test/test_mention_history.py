@@ -111,6 +111,14 @@ class MentionHistoryTests(unittest.TestCase):
         self.scope['_comment_result']({'success':True,'rpid':456,'mention_delivery':'none'},self.bvid,3344,diag)
         self.assertEqual(self.lines()[0]['kind'],'reply')
 
+    def test_reply_diagnostic_keeps_bounded_public_text_and_root(self):
+        self.scope['_comment_result']({'success':True,'rpid':456,'mention_delivery':'none'},
+                                       self.bvid,3344,self.diag,'公开回复内容[doge]',2233)
+        rec=self.lines()[0]
+        self.assertEqual(rec['content'],'公开回复内容[doge]')
+        self.assertEqual(rec['root'],'2233')
+        self.assertEqual(rec['kind'],'reply')
+
     def test_comment_text_and_uid_not_persisted(self):
         p={'success':True,'rpid':456,'mention_delivery':'none','private_note':'private content'}
         self.scope['_comment_result'](p,self.bvid,0,self.diag)

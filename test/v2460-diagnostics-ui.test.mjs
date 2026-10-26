@@ -21,5 +21,5 @@ test('每日诊断中的通知卡片使用评论深链与评论预览',()=>{
 test('通知诊断记录持久化 rpid root 与评论文本',()=>{
   assert.match(interact,/rpid:validId\(x\.rpid\)/);
   assert.match(interact,/root:validId\(x\.root\)/);
-  assert.match(interact,/text:String\(x\.text\|\|''\)\.trim\(\)\.slice\(0,420\)/);
+  assert.match(interact,/text:String\(x\.text\|\|''\)\.trim\(\)\.slice\(0,800\)/);
 });

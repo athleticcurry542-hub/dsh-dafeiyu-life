@@ -477,7 +477,8 @@ async def bili_comments(bvid: str, num: int = 30) -> str:
 # ========== 只读：某条顶层评论的最新楼中楼回复（后台 @ / 通知上下文） ==========
 
 @tool()
-async def bili_comment_thread(bvid: str, root: int, num: int = 12) -> str:
+async def bili_comment_thread(bvid: str, root: int, num: int = 20, target_rpid: int = 0) -> str:
+    """读取某条顶层评论下的楼中楼；优先翻页直到找到当前通知对应的回复，最多读取三页。"""
     if not re.fullmatch(r"BV[0-9A-Za-z]{10}", str(bvid)) or not str(root).isdigit() or int(root) <= 0:
         return json.dumps({"error": "视频或根评论 ID 无效"}, ensure_ascii=False)
     try:
@@ -488,17 +489,38 @@ async def bili_comment_thread(bvid: str, root: int, num: int = 12) -> str:
             raise ValueError("没有取得视频 AID")
         top = comment.Comment(oid=aid, type_=comment.CommentResourceType.VIDEO,
                               rpid=int(root), credential=cred)
-        data = await top.get_sub_comments(page_index=1, page_size=min(max(int(num), 1), 20))
-        replies = data.get("replies") or []
-        rows = [{"rpid": str(r.get("rpid") or ""),
-                 "mid": str(r.get("member", {}).get("mid") or ""),
-                 "name": str(r.get("member", {}).get("uname") or "")[:60],
-                 "content": str(r.get("content", {}).get("message") or "")[:300]}
-                for r in replies[:min(max(int(num), 1), 20)] if isinstance(r, dict)]
-        return json.dumps({"bvid": bvid, "root": str(root), "replies": rows}, ensure_ascii=False)
+        page_size = min(max(int(num), 1), 20)
+        max_pages = 3
+        rows = []
+        found_target = False
+        root_comment = None
+        for page_index in range(1, max_pages + 1):
+            data = await top.get_sub_comments(page_index=page_index, page_size=page_size)
+            replies = data.get("replies") or []
+            root_obj = data.get("root") if isinstance(data.get("root"), dict) else None
+            if root_comment is None and root_obj:
+                root_member = root_obj.get("member") or {}
+                root_content = root_obj.get("content") or {}
+                root_comment = {"rpid": str(root_obj.get("rpid") or root),
+                                "name": str(root_member.get("uname") or "")[:60],
+                                "content": str(root_content.get("message") or "")[:300]}
+            page_rows = [{"rpid": str(r.get("rpid") or ""),
+                          "mid": str(r.get("member", {}).get("mid") or ""),
+                          "name": str(r.get("member", {}).get("uname") or "")[:60],
+                          "content": str(r.get("content", {}).get("message") or "")[:300]}
+                         for r in replies if isinstance(r, dict)]
+            rows.extend(page_rows)
+            if target_rpid and any(row["rpid"] == str(target_rpid) for row in page_rows):
+                found_target = True
+                break
+            if len(replies) < page_size:
+                break
+            await asyncio.sleep(0.15)
+        return json.dumps({"bvid": bvid, "root": str(root), "root_comment": root_comment,
+                           "replies": rows[-60:], "pages_read": page_index,
+                           "target_found": found_target}, ensure_ascii=False)
     except Exception as exc:
         return json.dumps({"error": f"读取楼中楼失败：{type(exc).__name__}"}, ensure_ascii=False)
-
 
 # ========== Tool 3: 获取字幕 ==========
 
@@ -1063,8 +1085,8 @@ def _public_no_mention_reason(value):
     return result
 
 
-def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_decision=False, dynamic_authorized=False, dynamic_reason=''):
-    """由发送工具本地记录 @ 结果，不依赖 Agent 在日报里复述；不保存评论正文或好友 UID。"""
+def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_decision=False, dynamic_authorized=False, dynamic_reason='', root=0, comment_text=''):
+    """由发送工具本地记录 @ 结果；只保存已经生成的公开评论节选，不保存好友 UID 或密钥。"""
     mention_enabled = os.environ.get('BILI_MENTION_DIAG_ENABLED', '1') != '0'
     dynamic_enabled = os.environ.get('BILI_DYNAMIC_DIAG_ENABLED', '1') != '0' and int(target_rpid or 0) == 0
     if diagnostic is None or not (mention_enabled or dynamic_enabled):
@@ -1094,6 +1116,8 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_dec
             "day": day,
             "bvid": _valid_bv(bvid),
             "rpid": str(raw_id or "")[:30],
+            "root": str(root or target_rpid or "")[:30] if int(target_rpid or 0) else "0",
+            "content": str(comment_text or "").replace("\r", " ").replace("\n", " ").strip()[:180],
             "kind": "top" if int(target_rpid or 0) == 0 else "reply",
             "success": success,
             "mention_attempted": bool(attempted),
@@ -1144,8 +1168,8 @@ def _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_dec
 
 
 
-def _record_meme_event(payload, bvid, target_rpid, chosen_name, chosen_reason, decline_reason):
-    """Top-level comment meme diagnostics, always local; never save comment body/UID/credentials."""
+def _record_meme_event(payload, bvid, target_rpid, chosen_name, chosen_reason, decline_reason, comment_text=""):
+    """Top-level comment meme diagnostics; store bounded public comment preview only, no UID/credentials."""
     try:
         if os.environ.get('BILI_MEME_DIAG_ENABLED','1') == '0':
             return
@@ -1165,7 +1189,8 @@ def _record_meme_event(payload, bvid, target_rpid, chosen_name, chosen_reason, d
             image = '[invalid_name]'
         reason = _public_no_mention_reason(chosen_reason if chosen_name else decline_reason)
         event = {'time':now.isoformat(timespec='seconds'), 'day':day,
-                 'bvid':_valid_bv(bvid), 'success':success, 'image':image,
+                 'bvid':_valid_bv(bvid), 'rpid':str(payload.get('rpid_str') or payload.get('rpid') or '')[:30],
+                 'content':str(comment_text or "").replace("\r", " ").replace("\n", " ").strip()[:180], 'success':success, 'image':image,
                  'selected':bool(chosen_name), 'status':status,
                  'submitted':success and status=='submitted_unverified',
                  'reason':reason}
@@ -1216,7 +1241,7 @@ def _record_comment_in_ledger(payload, bvid, target_rpid, comment_text="", root=
 def _comment_result(payload, bvid, target_rpid, diagnostic=None, comment_text="", root=0, dynamic_ai_decision=False, dynamic_authorized=False, dynamic_reason=""):
     """发送成功统一自动写判重表；动态决策诊断只存简短理由和回执状态。"""
     _record_comment_in_ledger(payload, bvid, target_rpid, comment_text, root)
-    _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_decision, dynamic_authorized, dynamic_reason)
+    _record_mention_event(payload, bvid, target_rpid, diagnostic, dynamic_ai_decision, dynamic_authorized, dynamic_reason, root, comment_text)
     return json.dumps(payload, ensure_ascii=False)
 
 # ========== 顶层评论可选同步动态（独立公开动态，而非客户端原生勾选链路） ==========
@@ -1459,7 +1484,7 @@ async def bili_reply(bvid: str, text: str, rpid: int = 0, root: int = 0, aid: in
             except Exception as exc:
                 print('临时@计数保存失败：'+str(exc)[:100],file=sys.stderr)
         _record_meme_event(payload, posted_bvid, reply_to_rpid, meme_image_name,
-                           meme_image_reason, no_meme_image_reason)
+                           meme_image_reason, no_meme_image_reason, text)
         return _comment_result(payload, posted_bvid, reply_to_rpid, mention_diag, text, root, sync_dynamic_ai_decision, sync_to_dynamic, sync_dynamic_reason)
     cred = get_cred()
     if not aid:
