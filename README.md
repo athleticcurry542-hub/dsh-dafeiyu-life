@@ -1,3 +1,7 @@
+### v2.4.73 · 本地备份按钮简化、表情包规则预览与恢复验证（2026-10-26）
+
+「数据备份」页现在点击「确认备份目录」先检查保存位置，再点「备份数据」直接将 JSON 写入该目录；不会额外触发浏览器下载。响应只显示文件路径和文件/数据库/设置清单。先在表情包管理保存自定义规则后再执行备份，`comment-meme-rules.json` 将随备份保存，恢复后继续生效。原有恢复文件选择操作保持不变。规则编辑页新增对当前编辑区规则（含尚未保存的导入内容）的即时预览，并可查看命中规则及插件本机实际扫描到的图片数量；仅测试不会保存规则。
+
 ### v2.4.72 · 表情包检索规则搜索分页 + 全量名称导出（2026-10-26）
 
 - 「表情包管理」检索规则改为默认折叠、搜索、状态筛选和 6/12/24 条分页；无论筛选/翻页如何，保存及 JSON 导出始终保留全部规则。
@@ -31,7 +35,7 @@
 
 这是一个为 DeepSeek Harness（DSH） 构建的 B站浏览与互动插件，独立维护于 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)。在原项目基础上，增加了视频预览取帧、可控互动、本地成长记忆和可视化管理能力。
 
-> **当前版本：v2.4.72** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：v2.4.73** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > 衍生版并非 B站、DeepSeek 或原作者的官方产品。原项目：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，保留 MIT 版权与许可，详见文末说明。
 

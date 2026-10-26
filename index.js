@@ -2715,7 +2715,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.72'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.73'})
         }
         if (action === 'export') {
           refreshCfg()
@@ -2723,7 +2723,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const backup = await snapshot()
           const filePath = saveBackupJson(folder, backup)
           log('用户数据已备份到：'+filePath)
-          return sendJson(res, 200, {ok:true,backup,filePath})
+          return sendJson(res, 200, {ok:true,filePath,summary:validateBackup(backup)})
         }
         const body = await readBody(req, 90_000_000)
         const data = body?.backup
@@ -2925,13 +2925,16 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
         if ((origin && ![`http://${host}`,`https://${host}`].includes(origin)) || String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')
           return sendJson(res,403,{ok:false,error:'拒绝跨站检索'})
-        const body=await readBody(req,4000)
+        const body=await readBody(req,120_000)
         const query=String(body?.query||'').trim().slice(0,280)
+        const previewRules=body?.rules===undefined?null:validateCommentMemeRules(body.rules)
         if (!query) return sendJson(res,400,{ok:false,error:'请填写待测试的评论文案'})
         const py=existsSync(venvPython())?venvPython():String(cfg.pythonPath||'python')
         const script=join(pluginDir,'lib','comment-meme-rule-preview.py')
         const result=await new Promise(resolve=>{
-          const child=spawn(py,[script,stateDir,query],{cwd:stateDir,shell:false,windowsHide:true,env:pyEnv(),stdio:['ignore','pipe','pipe']})
+          const child=spawn(py,[script,stateDir,query],{cwd:stateDir,shell:false,windowsHide:true,env:pyEnv(),stdio:['pipe','pipe','pipe']})
+          child.stdin.on('error',()=>{})
+          child.stdin.end(previewRules?JSON.stringify(previewRules):'')
           let output='',finished=false
           const finish=o=>{if(finished)return;finished=true;clearTimeout(timer);resolve(o)}
           const timer=setTimeout(()=>{try{child.kill()}catch{};finish({ok:false,error:'规则预览超时'})},10000)
