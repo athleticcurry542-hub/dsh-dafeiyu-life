@@ -3009,7 +3009,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       if (cfg.masterEnabled !== true)return sendJson(res,403,{ok:false,error:'大肥鱼总开关已关闭，无法发送公开评论'})
       const id=String(body?.id||'').trim()
       if (!/^(?:at|comment):[A-Za-z0-9_-]{1,40}$/.test(id))return sendJson(res,400,{ok:false,error:'无效的诊断记录编号'})
-      try { const result=await commentInteract.forceReply({id});return sendJson(res,200,result) }
+      // Only a deliberate human confirmation may unlock a failed/uncertain send.
+      const confirmedMissing=body?.confirmedMissing===true
+      try { const result=await commentInteract.forceReply({id,confirmedMissing});return sendJson(res,200,result) }
       catch(e) {return sendJson(res,409,{ok:false,error:String(e?.message||e).slice(0,200)})}
     }
 
