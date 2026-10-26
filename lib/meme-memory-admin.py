@@ -38,7 +38,7 @@ def main():
             raise ValueError('参数数量不正确')
         home=Path(sys.argv[1]).resolve()
         action=sys.argv[2]
-        if action not in ('list','delete','edit','review','add'):
+        if action not in ('list','delete','edit','review','add','interaction'):
             raise ValueError('不支持的操作')
         db=(home/'meme-memory.sqlite3').resolve()
         if not db.is_relative_to(home) or db.is_symlink():
@@ -64,6 +64,13 @@ def main():
         try:
             if not migrate(conn):
                 result({'ok':True,'total':0,'entries':[]})
+                return
+            if action=='interaction':
+                # Interactive reply engine reads a bounded approved-only snapshot. The host
+                # matches exact names/aliases locally; never pass the whole library to AI.
+                rows=conn.execute('''SELECT id,name,aliases,meaning,kind,confidence FROM memes
+                    WHERE review_status='approved' ORDER BY updated_at DESC LIMIT 2000''').fetchall()
+                result({'ok':True,'entries':[dict(row) for row in rows]})
                 return
             if action=='list':
                 query=clean(sys.argv[3][:40],40,required=False)

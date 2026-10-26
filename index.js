@@ -45,6 +45,7 @@ import { createCommentInteract } from './lib/comment-interact.mjs'
 import { createCommentVideoContext } from './lib/comment-video-context.mjs'
 import { recentComments, migrateCommentReceipts, ownCommentTargets } from './lib/recent-comments.mjs'
 import { createInteractionBatcher } from './lib/interaction-batch.mjs'
+import { createInteractionMemeLookup, readReplyMemeSnapshot } from './lib/interaction-meme-memory.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { listCommentMemes, getCommentMemePreview } from './lib/comment-meme-library.mjs'
 import { DEFAULT_COMMENT_MEME_PROMPT, buildCommentMemePrompt, normalizeCommentMemePrompt } from './lib/comment-meme-prompt.mjs'
@@ -1890,7 +1891,15 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
   const replyIdentityContext = (uid) => buildSenderRelationshipContext({
     uid, friendDirectory:cfg.friendDirectory, profiles:cfg.mentionProfiles, targetsText:cfg.mentionTargets
   })
+  const interactionMemeLookup = createInteractionMemeLookup({
+    dataDir: stateDir,
+    isEnabled: () => {refreshCfg();return cfg.memeMemoryEnabled===true},
+    readEntries: () => readReplyMemeSnapshot({python:cfg.pythonPath||'python',
+      script:join(pluginDir,'lib','meme-memory-admin.py'),dataDir:stateDir,env:pyEnv()}),
+    logger:{warn:(msg)=>log('互动梗检索：'+msg),info:(msg)=>log('互动梗检索：'+msg)},
+  })
   const interactionBatcher = createInteractionBatcher({
+    prepareMemeContexts: (batch) => interactionMemeLookup.forBatch(batch),
     invoke: (prompt) => invokeInteractionPrompt(prompt, 24000),
     getPersona: (batch = []) => {
       const scene=batch.some(x=>x.kind==='comment')?'comment':'dm'
