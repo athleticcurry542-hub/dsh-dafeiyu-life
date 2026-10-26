@@ -1,3 +1,9 @@
+### v2.4.71 · 表情包检索规则管理 + 数据备份（2026-10-26）
+
+- 在「管理中心 → 表情包管理」新增可编辑的检索关联规则（词语、组合条件、排除条件），能新增/禁用/删除、导入/导出 JSON，并使用本地真实图库测试匹配结果；不是对图片内容做 AI 识别。
+- 用户规则存于插件家目录 `comment-meme-rules.json` 并随「数据备份与恢复」一并保留；表情包图片仍不备份。将来可用完整图库名称批量生成更适合个人图库的规则。
+- 修正冰箱单词过度映射为白饭：须与饭食词同时出现才触发饭食场景。补全 Windows MCP 的搜索脚本/默认规则自动部署。
+
 ### v2.4.70 · 评论表情包本地语义检索与漏选诊断（2026-10-26）
 
 - 原本每轮只展示 45 个表情包名字，且完整分类列表每次最多显示 100 个；这次补充只读 `bili_comment_meme_search`，在不匹配简表时按评论情绪与关键词搜索整个已扫描图库，直接返回安全、真实的「分类/名称」候选，无需另开一轮 AI。
@@ -18,7 +24,7 @@
 
 这是一个为 DeepSeek Harness（DSH） 构建的 B站浏览与互动插件，独立维护于 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)。在原项目基础上，增加了视频预览取帧、可控互动、本地成长记忆和可视化管理能力。
 
-> **当前版本：v2.4.70** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：v2.4.71** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > 衍生版并非 B站、DeepSeek 或原作者的官方产品。原项目：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，保留 MIT 版权与许可，详见文末说明。
 

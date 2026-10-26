@@ -50,6 +50,7 @@ import { createInteractionBatcher } from './lib/interaction-batch.mjs'
 import { createInteractionMemeLookup, readReplyMemeSnapshot } from './lib/interaction-meme-memory.mjs'
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { listCommentMemes, getCommentMemePreview } from './lib/comment-meme-library.mjs'
+import {readCommentMemeRules,saveCommentMemeRules,validateCommentMemeRules} from './lib/comment-meme-rules.mjs'
 import { DEFAULT_COMMENT_MEME_PROMPT, buildCommentMemePrompt, normalizeCommentMemePrompt } from './lib/comment-meme-prompt.mjs'
 import { DEFAULT_PERSONA_PROMPT, effectivePersonaPrompt } from './lib/persona-default.mjs'
 import { buildBalancedMemeInventory } from './lib/meme-inventory-prompt.mjs'
@@ -2714,7 +2715,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.70'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.71'})
         }
         if (action === 'export') {
           refreshCfg()
@@ -2900,6 +2901,46 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       })
       const r = await getQuota()
       return sendJson(res, 200, {...r, limit: Math.max(0,Number(cfg.commentDailyLimit)||0)})
+    }
+    // v2.4.71: owner-editable sticker retrieval rules (saved under plugin home and included in backup).
+    if (path === '/api/bili-duty/comment-meme-rules' && ['GET','POST'].includes(req.method)) {
+      try {
+        if (req.method === 'GET') {
+          const value=url.searchParams.get('defaults')==='1'
+            ? {data:validateCommentMemeRules(JSON.parse(readFileSync(join(pluginDir,'vendor','bilibili-mcp','comment_meme_rules_default.json'),'utf8'))),customized:false}
+            : readCommentMemeRules(stateDir,pluginDir)
+          return sendJson(res,200,{ok:true,...value})
+        }
+        const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
+        if ((origin && ![`http://${host}`,`https://${host}`].includes(origin)) || String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')
+          return sendJson(res,403,{ok:false,error:'拒绝跨站修改本地检索规则'})
+        const body=await readBody(req,120_000)
+        const saved=saveCommentMemeRules(stateDir,body)
+        log(`主人更新表情包检索规则：共 ${saved.rules.length} 条`)
+        return sendJson(res,200,{ok:true,count:saved.rules.length})
+      } catch(e) {return sendJson(res,400,{ok:false,error:'表情包检索规则操作失败：'+String(e?.message||e).slice(0,180)})}
+    }
+    if (path === '/api/bili-duty/comment-meme-rules/preview' && req.method === 'POST') {
+      try {
+        const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
+        if ((origin && ![`http://${host}`,`https://${host}`].includes(origin)) || String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')
+          return sendJson(res,403,{ok:false,error:'拒绝跨站检索'})
+        const body=await readBody(req,4000)
+        const query=String(body?.query||'').trim().slice(0,280)
+        if (!query) return sendJson(res,400,{ok:false,error:'请填写待测试的评论文案'})
+        const py=existsSync(venvPython())?venvPython():String(cfg.pythonPath||'python')
+        const script=join(pluginDir,'lib','comment-meme-rule-preview.py')
+        const result=await new Promise(resolve=>{
+          const child=spawn(py,[script,stateDir,query],{cwd:stateDir,shell:false,windowsHide:true,env:pyEnv(),stdio:['ignore','pipe','pipe']})
+          let output='',finished=false
+          const finish=o=>{if(finished)return;finished=true;clearTimeout(timer);resolve(o)}
+          const timer=setTimeout(()=>{try{child.kill()}catch{};finish({ok:false,error:'规则预览超时'})},10000)
+          child.stdout.on('data',b=>{output=(output+String(b)).slice(-40000)})
+          child.on('error',()=>finish({ok:false,error:'无法启动 Python 检索工具'}))
+          child.on('close',()=>{try{finish(JSON.parse(output.trim()))}catch{finish({ok:false,error:'检索工具响应异常'})}})
+        })
+        return sendJson(res,result.ok?200:400,result)
+      } catch(e) {return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,180)})}
     }
     if (req.method === 'GET' && path === '/api/bili-duty/comment-memes') {
       // v2.4.18：只返回位于 comment-memes 内、无歧义的分类/图片名称，绝不返回图片字节。
