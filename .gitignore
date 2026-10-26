@@ -1,0 +1,32 @@
+# Credentials and local state: never publish
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+bili_credential.json
+config.json
+.dsh/
+.bili-duty/
+bili-duty/
+*.sqlite3
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.log.*
+# Local workstation backups and git history export
+.acl-recovery/
+.persona-growth-backup/
+*.bak
+*.bak.*
+# Build/development
+node_modules/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.zip
+.DS_Store

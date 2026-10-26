@@ -53,6 +53,7 @@ import { buildBalancedMemeInventory } from './lib/meme-inventory-prompt.mjs'
 import { DEFAULT_VISION_PROMPT, buildVisionPrompt, normalizeVisionPrompt } from './lib/vision-prompt.mjs'
 import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
 import { DEFAULT_CHARACTER_LORE, normalizeCharacterLore, normalizeMentionProfiles, buildMentionProfilePrompt } from './lib/character-social.mjs'
+import { normalizeFriendDirectory } from './lib/friend-directory.mjs'
 import { shouldRunWindow, parsePeakWindows, readPeakWindows, activePeakWindow, DEFAULT_PEAK_INTERVAL_MINUTES } from './lib/peak-schedule.mjs'
 import { effectiveModelSelection } from './lib/model-routing.mjs'
 import { mergeWatchedRows } from './lib/watched.mjs'
@@ -128,6 +129,7 @@ export const Config = !z ? undefined : z.object({
   mentionTargets: z.string().default('').extra('volatile', true),
   /** Configured interests per nickname; only surfaced to the headless Agent as context. */
   mentionProfiles: z.string().default('{}').extra('volatile', true),
+  friendDirectory: z.string().default('[]').extra('volatile', true),
   /** 评论 @ 策略：ai=大肥鱼视情况决定，off=从不@，always=每条@ */
   mentionMode: z.string().default('ai').extra('volatile', true),
   /** AI 可选择 @ 部分好友（0/1/2/...人），与旧 ai=全体兼容 */
@@ -344,7 +346,7 @@ function reportMeta() {
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
     dmMode: 'only', dmUid: 0, commentSyncDynamic: false, dynamicDailyLimit: 3, commentDailyLimit: 10, memeMemoryEnabled: true, memeMemoryMaxEntries: 300, visionEnabled: false, visionMode: 'reuse_video_model', visionDebug: false, visionModelProvider: '', visionReasoningEffort: '', visionModelId: '', visionEndpoint: '', visionFrames: 2, visionPrompt: '', commentMemesEnabled: false, commentMemesDebug: false, commentMemesPerDay: 2, commentMemesPerRound: 1, commentMemePrompt: '',
-    homeRecommendationsEnabled: true, keywords: [], minVideoViews: 1000, minVideoLikes: 10, minVideoReplies: 3, commentPerRound: 5, mentionName: '', mentionTargets: '', mentionProfiles: '{}', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
+    homeRecommendationsEnabled: true, keywords: [], minVideoViews: 1000, minVideoLikes: 10, minVideoReplies: 3, commentPerRound: 5, mentionName: '', mentionTargets: '', mentionProfiles: '{}', friendDirectory: '[]', mentionMode: 'ai', pythonPath: 'python', dshBin: '', headlessProfile: 'headless', overlayMcp: true, workspace: '', reportLevel: 'full', favFolderId: 0,
   }
   const normalize = (src, base) => {
     const out = { ...base }
@@ -393,7 +395,8 @@ function reportMeta() {
     if ('visionEndpoint' in p) { const s=String(p.visionEndpoint||'').trim().slice(0,250); p.visionEndpoint=(!s||(/^https:\/\/[^\s@#]+$/i.test(s)))?s:'' }
     if ('visionFrames' in p) p.visionFrames=Math.max(1,Math.min(3,Math.floor(Number(p.visionFrames)||2)))
     if ('mentionTargets' in p) p.mentionTargets = String(p.mentionTargets || '').slice(0, 1200)
-    if ('mentionProfiles' in p) p.mentionProfiles = normalizeMentionProfiles(p.mentionProfiles, p.mentionTargets ?? '', p.mentionName ?? '')
+    if ('friendDirectory' in p) p.friendDirectory = normalizeFriendDirectory(p.friendDirectory)
+    if ('mentionProfiles' in p) p.mentionProfiles = normalizeMentionProfiles(p.mentionProfiles, p.mentionTargets ?? '', p.mentionName ?? '', p.friendDirectory ?? '')
     if ('mentionMode' in p) p.mentionMode = ['off', 'ai', 'ai_select', 'always'].includes(String(p.mentionMode)) ? String(p.mentionMode) : 'ai'
     if ('perDay' in p) p.perDay = Math.max(0, Math.floor(Number(p.perDay) || 0))
     if ('pickPerRound' in p) p.pickPerRound = Math.max(1, Math.min(50, Math.floor(Number(p.pickPerRound) || 5)))
@@ -596,7 +599,7 @@ function reportMeta() {
    */
   const persistCfg = async (patch) => {
     if ('peakWindows' in patch) parsePeakWindows(patch.peakWindows) // 保存错误要明说，不能悄悄清空列表
-    const clean = clampPatch('mentionProfiles' in patch ? {...patch, mentionTargets: patch.mentionTargets ?? cfg.mentionTargets, mentionName: patch.mentionName ?? cfg.mentionName} : patch)
+    const clean = clampPatch('mentionProfiles' in patch ? {...patch, mentionTargets: patch.mentionTargets ?? cfg.mentionTargets, friendDirectory: patch.friendDirectory ?? cfg.friendDirectory, mentionName: patch.mentionName ?? cfg.mentionName} : patch)
     if ('masterEnabled' in clean) {
       // 先同步文件，再持久化；写入失败必须报错，不能出现界面显示已暂停而 Python 仍可外发。
       const previous = cfg.masterEnabled
@@ -1330,7 +1333,7 @@ function reportMeta() {
         ? `开启的（每轮最多 ${cfg.commentPerRound} 条，150 字内）。评论像普通 B站用户自然吐槽，绝不能做摘要或推广。`
           + `@ 策略为 ${cfg.mentionMode || 'ai'}（off=不@；ai=判断后@全部好友；ai_select=只@觉得值得邀请的部分好友；always=每条@全部好友）。`
           + `名单：${parseMentionTargets(cfg.mentionTargets,cfg.mentionName).map(t=>t.name).join('、') || '空'}。`
-          + buildMentionProfilePrompt({targetsText:cfg.mentionTargets, legacyName:cfg.mentionName, profiles:cfg.mentionProfiles})
+          + buildMentionProfilePrompt({targetsText:cfg.mentionTargets, legacyName:cfg.mentionName, profiles:cfg.mentionProfiles, friendDirectory:cfg.friendDirectory})
           + `在 ai 或 ai_select 模式，每次调用 bili_reply 时显式填写 should_mention: true/false；在 ai_select 模式还要填写 mention_names（只填真正想邀请的名单内昵称，可为空/一个/几个），`
           + `普通无关联的视频可以选 false；如果内容明确符合好友兴趣，不要因怕打扰而惯性拒绝邀请。若你主动决定不 @（should_mention=false），在同一次调用的 no_mention_reason 写一句具体、简短的解释（8–40字，如「这条只是在吐槽音效，没联想到要邀请谁」）；不能写空泛的「没必要」，也不能编造好友喜好。它只保存到用户本地诊断，不属于公开评论，别把解释放进 text。不要展示推理过程或私密内容。`
           + `ai 模式触发时@名单全部好友；ai_select 仅@选中的好友；mention_position 可选 start/middle/end。`
@@ -2918,7 +2921,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const body = await readBody(req)
       const patch = {}
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
-        'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
+        'commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {
@@ -3200,7 +3203,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       // ⭐⭐ 2.0.4（第三方体检第 5 条）：脱敏改成**按字段白名单遮** ——
       //    以前只遮 dmUid，人设全文 / 昵称 / 工作区路径全在，而"复制诊断"是会被贴到群里的 ✗
       const masked = (() => {
-        const SENSITIVE = ['personaPrompt', 'characterLore', 'mentionName', 'mentionTargets', 'mentionProfiles', 'workspace', 'dshBin', 'dmUid', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerText', 'dmApprovalPhrase', 'keywords']
+        const SENSITIVE = ['personaPrompt', 'characterLore', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'workspace', 'dshBin', 'dmUid', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerText', 'dmApprovalPhrase', 'keywords']
         const c = { ...cfg }
         for (const k of SENSITIVE) {
           const v = c[k]

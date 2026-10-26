@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {parseMentionTargets, decideMentions, composeMentionComment} from '../lib/mentions.mjs'
 const people=parseMentionTargets('长条动物|12345\n俺爱啃猪蹄子|87654')
-test('旧 mentionName 兼容且不影响名单',()=>assert.deepEqual(parseMentionTargets('', '长条动物'), [{name:'长条动物',uid:''}]))
+test('空白名单不得通过旧昵称恢复 @ 权限',()=>assert.deepEqual(parseMentionTargets('', '长条动物'), []))
 test('新名单覆盖旧昵称并带上所有 UID',()=>assert.deepEqual(parseMentionTargets('甲|123\n乙|456','老昵称'),[{name:'甲',uid:'123'},{name:'乙',uid:'456'}]))
 test('AI 模式：默认不 @',()=>assert.equal(decideMentions({mode:'ai',targets:people}).shouldMention,false))
 test('AI 模式：显式想分享才 @',()=>assert.equal(decideMentions({mode:'ai',targets:people,shouldMention:true}).shouldMention,true))

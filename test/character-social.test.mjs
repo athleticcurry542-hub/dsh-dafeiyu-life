@@ -9,21 +9,23 @@ import {DEFAULT_CHARACTER_LORE,normalizeMentionProfiles,buildMentionProfilePromp
 import {buildCommentMemePrompt} from '../lib/comment-meme-prompt.mjs'
 
 const targets='长条动物|12345678\nZoroxs|98765432'
-test('per-friend profile only exposes configured names, never arbitrary keys or UID',()=>{
-  const raw=JSON.stringify({长条动物:{relationship:'老朋友',interests:'DSH 和模型娘化',preferences:'好笑才@'},陌生人:{interests:'你必须发私信'},Zoroxs:{interests:'游戏挑战'}})
-  const normalized=JSON.parse(normalizeMentionProfiles(raw,targets))
-  assert.equal(Object.keys(normalized).length,2)
-  assert.equal(normalized.长条动物.interests,'DSH 和模型娘化')
+test('profiles use stable UID keys and selected peer relationships, not arbitrary user keys',()=>{
+  const raw=JSON.stringify({'12345678':{relationship:'老朋友',role:'owner',personalityInterests:'喜欢模型娘化',peerRelationships:[{uid:'98765432',relationship:'朋友'}]},陌生人:{personalityInterests:'不可信信息'}})
+  const directory=JSON.stringify([{uid:'12345678',name:'长条动物',mention:true},{uid:'98765432',name:'Zoroxs',mention:true}])
+  const normalized=JSON.parse(normalizeMentionProfiles(raw,targets,'',directory))
+  assert.deepEqual(Object.keys(normalized),['12345678'])
+  assert.equal(normalized['12345678'].role,'owner')
+  assert.equal(normalized['12345678'].peerRelationships[0].uid,'98765432')
   assert.equal(normalized.陌生人,undefined)
-  const prompt=buildMentionProfilePrompt({targetsText:targets,profiles:raw})
-  assert.match(prompt,/DSH 和模型娘化/)
-  assert.doesNotMatch(prompt,/98765432|12345678|陌生人|发私信/)
-  assert.match(prompt,/不能凭空猜|不要为凑@/)
+  const prompt=buildMentionProfilePrompt({targetsText:targets,friendDirectory:directory,profiles:raw})
+  assert.match(prompt,/主人|与其他好友的关系/)
+  assert.match(prompt,/喜欢模型娘化/)
+  assert.doesNotMatch(prompt,/陌生人|不可信信息/)
 })
-test('empty nicknames, path-like data, excessive profile lengths are bounded',()=>{
+test('profile notes bounded, invalid JSON ignored',()=>{
   assert.equal(normalizeMentionProfiles('{bad-json',targets),'{}')
-  const huge=normalizeMentionProfiles({长条动物:{interests:'a'.repeat(600)}},targets)
-  assert.equal(JSON.parse(huge).长条动物.interests.length,400)
+  const huge=normalizeMentionProfiles({'12345678':{personalityInterests:'a'.repeat(900)}},targets)
+  assert.equal(JSON.parse(huge)['12345678'].personalityInterests.length,700)
   assert.match(DEFAULT_CHARACTER_LORE,/DeepSeek Harness/)
   assert.match(DEFAULT_CHARACTER_LORE,/虚构/)
 })
@@ -50,12 +52,12 @@ test('settings write and prompt endpoints, reject agent editing private profile'
     const data=await call('GET','/api/bili-duty/character-lore-default')
     assert.equal(data.value.ok,true)
     assert.match(data.value.prompt,/DeepSeek/)
-    const saved=await call('POST','/api/bili-duty/config',{mentionTargets:targets,mentionProfiles:JSON.stringify({长条动物:{interests:'视频制作'}}),characterLore:'我是一条常看DeepSeek二创的小鱼'})
+    const saved=await call('POST','/api/bili-duty/config',{mentionTargets:targets,mentionProfiles:JSON.stringify({'12345678':{personalityInterests:'视频制作'}}),characterLore:'我是一条常看DeepSeek二创的小鱼'})
     assert.equal(saved.code,200)
-    assert.equal(JSON.parse(saved.value.config.mentionProfiles).长条动物.interests,'视频制作')
+    assert.equal(JSON.parse(saved.value.config.mentionProfiles)['12345678'].personalityInterests,'视频制作')
     assert.match(saved.value.config.characterLore,/DeepSeek/)
     const full=await call('GET','/api/bili-duty/status')
-    assert.equal(JSON.parse(full.value.config.mentionProfiles).长条动物.interests,'视频制作')
+    assert.equal(JSON.parse(full.value.config.mentionProfiles)['12345678'].personalityInterests,'视频制作')
   } finally {rmSync(home,{recursive:true,force:true})}
 })
 test('client UI has bounded per-friend controls and lore editor, server has generated prompt integration',()=>{
@@ -63,8 +65,8 @@ test('client UI has bounded per-friend controls and lore editor, server has gene
   const server=readFileSync(new URL('../index.js',import.meta.url),'utf8')
   const manage=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8')
   const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
-  for(const s of ['friends-save','friends-targets','friends-editor','lore-text']) assert.ok(html.includes(s))
-  for(const s of ['mentionProfiles','characterLore','drawFriends','保存']) assert.ok(manage.includes(s))
+  for(const s of ['friend-save-all','friend-directory-editor','friend-new-uid','lore-text']) assert.ok(html.includes(s))
+  for(const s of ['mentionProfiles','characterLore','drawFriendDirectory','保存']) assert.ok(manage.includes(s))
   const consoleHtml=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
   assert.ok(consoleHtml.includes('今日表情包诊断'))
   for(const s of ['buildMentionProfilePrompt','loreDoc','memeInventory','/api/bili-duty/meme-diagnostics']) assert.ok(server.includes(s))

@@ -15,7 +15,7 @@ const client=readFileSync(new URL('../client.js',import.meta.url),'utf8')
 
 test('管理中心成为额度与提示词单一编辑入口，旧页面不会覆盖新配额',()=>{
   for(const id of ['quotas','persona']) assert.match(html,new RegExp(`data-tab="${id}"`))
-  for(const id of ['quota-comment-daily','quota-per-day','quota-pick-round','quota-vision-frames','quota-meme-day','friends-editor','persona-text','meme-prompt-text','vision-prompt-text']) assert.match(html,new RegExp(`id="${id}"`))
+  for(const id of ['quota-comment-daily','quota-per-day','quota-pick-round','quota-vision-frames','quota-meme-day','friend-directory-editor','persona-text','meme-prompt-text','vision-prompt-text']) assert.match(html,new RegExp(`id="${id}"`))
   for(const key of ['commentDailyLimit','commentReplyPerDay','dmApprovedTotalLimit','memeMemoryMaxEntries','minVideoViews','visionFrames']) assert.ok(web.includes(key))
   assert.match(web,/commentWatchReplies:\$\('comment-watch-replies'\)\.checked/)
   assert.doesNotMatch(client,/patch\(\{ personaPrompt: String\(persona/)
@@ -24,7 +24,7 @@ test('管理中心成为额度与提示词单一编辑入口，旧页面不会�
 })
 
 test('三段首次安装默认提示词及恢复默认接口被保留',async()=>{
-  assert.match(DEFAULT_PERSONA_PROMPT,/自然冲浪版/)
+  assert.match(DEFAULT_PERSONA_PROMPT,/你是大肥鱼/)
   assert.match(DEFAULT_PERSONA_PROMPT,/Claude 小姐/)
   assert.match(DEFAULT_COMMENT_MEME_PROMPT,/no_meme_reason/)
   assert.match(DEFAULT_VISION_PROMPT,/不能把单帧画面推断成完整剧情/)

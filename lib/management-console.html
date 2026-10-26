@@ -13,25 +13,33 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 .card{border:1px solid var(--stroke);background:var(--panel);padding:17px;border-radius:13px;min-width:0;overflow-wrap:anywhere}.card h3{margin:0 0 8px;font-size:16px}.card p{margin:6px 0}.card .actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}.card .actions button{font-size:13px;padding:5px 10px}.pill{display:inline-block;border-radius:30px;padding:2px 9px;font-size:12px;background:var(--tint);color:var(--action);margin-right:6px}.pill.pending{background:#fff0d2;color:#8c6200}.pill.rejected{background:#fae7e7;color:#9b4747}#message{min-height:25px;margin:12px 0;color:var(--action)}.actions .danger{color:var(--bad)}section[hidden]{display:none!important}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:11px}.fields>*{min-width:0}.fields input,.fields select{width:100%}.fields input[type=checkbox]{width:22px;height:22px}.settings-stack{display:grid;gap:12px;margin-top:12px}.settings-section{border:1px solid var(--stroke);border-radius:10px;padding:14px;min-width:0}.settings-section h4{margin:0 0 10px;font-size:14px}.settings-section>.muted{margin:9px 0 0}.inset{padding:12px 0;border-top:1px dashed var(--stroke);margin-top:13px}.queue-badge{display:inline-flex;min-width:20px;justify-content:center;background:#d54949;color:#fff;border-radius:12px;font-size:11px;padding:1px 5px}#growth-context{white-space:pre-wrap;max-height:440px;overflow:auto;font-size:12px;background:var(--tint);padding:12px;border-radius:8px}pre.output{white-space:pre-wrap;overflow:auto;max-height:65vh;background:var(--tint);border-radius:8px;padding:14px;font-size:12px} .records{display:grid;gap:9px}.record{border:1px solid var(--stroke);border-radius:9px;padding:11px;overflow-wrap:anywhere}.record a{color:var(--action)}.checkline{display:flex;align-items:center;gap:8px}.checkline label{margin:0}.sticker-grid .sticker-preview{display:block;width:100%;height:170px;object-fit:contain;background:var(--tint);border-radius:8px}.sticker-grid .card h3{margin-top:10px}
 @media(max-width:580px){.wrap{padding:15px 12px 35px}.top h1{font-size:21px}.tabs button{flex:1}}
+
+.tabs{position:sticky;top:0;z-index:5;background:var(--page);padding:12px 0;margin:14px 0 20px;border-bottom:1px solid var(--stroke)}
+.tabs button{white-space:nowrap;font-size:13px}.settings-section{background:var(--panel)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:3px solid var(--action);outline-offset:2px}
+.friend-role-row{display:grid;grid-template-columns:minmax(130px,1fr) repeat(3,minmax(90px,auto));gap:10px;align-items:center}
+.friend-role-row label{font-size:12px}.friend-role-row input[type=checkbox]{width:18px;height:18px}
+.peer-line{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.peer-line select{min-width:160px}.peer-line input{flex:1;min-width:160px}
+@media(max-width:700px){.tabs{position:static}.friend-role-row{grid-template-columns:1fr 1fr}.wrap{padding:16px 12px 35px}}
 </style>
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
 <body><main class="wrap">
 <header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">运行控制 · 次数与额度 · 人设与好友 · 诊断与互动记录｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
 <nav class="tabs" aria-label="管理分类">
-<button data-tab="diagnostics" aria-selected="true">今日诊断</button>
-<button data-tab="reports" aria-selected="false">每日报告</button>
+<button data-tab="persona" aria-selected="true">人设与好友</button>
+<button data-tab="comments" aria-selected="false">最近评论</button>
+<button data-tab="dm" aria-selected="false">后台私信 <span id="dm-count" class="queue-badge" hidden></span></button>
+<button data-tab="growth" aria-selected="false">成长记忆 <span id="growth-count" class="queue-badge" hidden></span></button>
+<button data-tab="stickers" aria-selected="false">表情包管理</button>
+<button data-tab="meme" aria-selected="false">梗知识库 <span id="meme-count" class="queue-badge" hidden></span></button>
 <button data-tab="quotas" aria-selected="false">次数与额度</button>
 <button data-tab="polling" aria-selected="false">后台轮询</button>
-<button data-tab="persona" aria-selected="false">人设与好友</button>
-<button data-tab="dm" aria-selected="false">后台私信 <span id="dm-count" class="queue-badge" hidden></span></button>
-<button data-tab="comments" aria-selected="false">最近评论</button>
-<button data-tab="growth" aria-selected="false">成长记忆 <span id="growth-count" class="queue-badge" hidden></span></button>
-<button data-tab="meme" aria-selected="false">梗知识库 <span id="meme-count" class="queue-badge" hidden></span></button>
-<button data-tab="stickers" aria-selected="false">表情包管理</button>
+<button data-tab="reports" aria-selected="false">每日报告</button>
+<button data-tab="diagnostics" aria-selected="false">每日诊断</button>
 </nav>
 <p id="message" role="status" aria-live="polite"></p>
-<section id="panel-diagnostics">
+<section id="panel-diagnostics" hidden>
 <div class="toolbar"><h2 style="margin:0">今日诊断</h2><button id="diag-refresh" class="primary">刷新诊断</button></div>
 <div class="grid">
 <article class="card"><h3>今日 @ 诊断</h3><p class="muted">记录顶层评论的 @ 决策原因。尝试 @ 不保证 B站 一定通知送达。</p><div id="mention-summary" class="muted">正在读取…</div><div id="mention-list" class="records"></div></article>
@@ -85,15 +93,28 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div id="polling-status-list" class="grid" role="status" aria-live="polite">读取中…</div></div>
 </div><p class="muted">刷视频的“自定义时段执行”是独立的任务计划，不属于以上四种收件轮询。</p>
 </section>
-<section id="panel-persona" hidden>
+<section id="panel-persona">
 <div class="toolbar"><h2 style="margin:0">人设与好友</h2><button id="persona-refresh">重新读取</button></div>
 <p class="muted">默认提示词是第一次安装的官方规则；此前保存的自定义提示词不会自动覆盖。恢复默认只清除这一项的自定义，不清理成长记忆、好友画像或历史。</p>
 <div class="settings-stack">
+<div class="settings-section" id="unified-friends">
+<h4>可信好友名册 · 一处设置三项权限</h4>
+<p class="muted">UID 是唯一身份；昵称是可选备注。可独立勾选「后台私信」「大肥鱼主动 @」「允许对方 @ 大肥鱼」；主人的角色标签仅供人设使用，目前没有管理权限。原有名单会在本次打开时合并展示；保存后请手动核对三项权限。</p>
+<div class="fields"><div><label for="friend-new-uid">B站 UID（必填）</label><input id="friend-new-uid" inputmode="numeric" placeholder="210228238"></div><div><label for="friend-new-name">昵称备注（可留空）</label><input id="friend-new-name" maxlength="40" placeholder="长条动物"></div></div>
+<div class="toolbar" style="margin-top:12px"><button type="button" id="friend-add">加入名册</button><span class="muted">添加后记得点击底部保存</span></div>
+<div id="friend-directory-editor" class="settings-stack"></div>
+<div class="toolbar" style="margin-top:12px"><button id="friend-save-all" class="primary">保存名册、权限及画像</button></div>
+</div>
 <div class="settings-section"><h4>🐳 大肥鱼人设</h4><p class="muted">用于刷视频、公开评论和私信的角色语气。空配置使用内置默认；不在公开评论里发布提示词原文。</p><textarea id="persona-text" maxlength="8000" rows="13"></textarea><div class="toolbar"><button id="persona-save" class="primary">保存大肥鱼人设</button><button id="persona-reset">恢复默认</button><span id="persona-status" class="muted"></span></div></div>
 <div class="settings-section"><h4>AI 选图提示词</h4><p class="muted">决定什么时候给顶层评论配表情包；硬限额与真实文件校验不会被提示词修改。</p><textarea id="meme-prompt-text" maxlength="4000" rows="12"></textarea><div class="toolbar"><button id="meme-prompt-save" class="primary">保存选图提示词</button><button id="meme-prompt-reset">恢复默认</button><span id="meme-prompt-status" class="muted"></span></div></div>
 <div class="settings-section"><h4>视觉识图提示词</h4><p class="muted">判断何时需要识图和如何描述真实预览帧，不会绕过图片来源安全检查。</p><textarea id="vision-prompt-text" maxlength="4000" rows="10"></textarea><div class="toolbar"><button id="vision-prompt-save" class="primary">保存识图提示词</button><button id="vision-prompt-reset">恢复默认</button><span id="vision-prompt-status" class="muted"></span></div></div>
 <div class="settings-section"><h4>虚构角色背景与关系</h4><p class="muted">单独补充世界观；与主人自定义人设共同生效。</p><textarea id="lore-text" maxlength="4000" rows="8"></textarea><div class="toolbar"><button id="lore-save" class="primary">保存角色背景</button><button id="lore-reset">恢复默认</button><span id="lore-status" class="muted"></span></div></div>
-<div class="settings-section"><h4>公开评论 @ 好友</h4><p class="muted">每行一个「昵称|UID」或「UID」（昵称可选；建议填写以便识别，未填写时不会猜测真实昵称）。好友画像仅供 AI 判断是否自然 @，不公开展示。私信推荐接收人 UID 在 DSH 设置中单独配置。</p><div class="fields"><div><label for="friends-targets">@ 好友名单</label><textarea id="friends-targets" rows="5" placeholder="长条动物|12345678"></textarea></div><div><label for="friends-mode">@ 策略</label><select id="friends-mode"><option value="ai_select">AI 挑选部分好友（推荐）</option><option value="ai">AI 判断是否 @ 全部好友</option><option value="off">永不 @</option><option value="always">每次 @ 全部好友</option></select><p class="muted">最多编辑 8 位好友画像；名单里的昵称应唯一。</p></div></div><div class="toolbar"><button id="friends-generate">根据名单编辑画像</button><button id="friends-save" class="primary">保存 @ 名单与好友画像</button></div><div id="friends-editor" class="settings-stack"></div></div>
+<div class="settings-section"><h4>主动 @ 好友的决策方式</h4>
+<p class="muted">具体哪些 UID 允许主动 @，请在本页顶部「可信好友名册」勾选。好友画像也统一在名册下编辑。</p>
+<label for="friends-mode">@ 策略</label><select id="friends-mode"><option value="ai_select">AI 根据性格爱好挑选（推荐）</option><option value="ai">AI 判断是否 @ 全部好友</option><option value="off">永不 @</option><option value="always">每次 @ 全部好友</option></select>
+
+<div class="toolbar"><button id="friends-generate">刷新画像</button><button id="friends-save" class="primary">保存好友策略与画像</button></div>
+</div>
 </div>
 </section>
 <section id="panel-reports" hidden>
@@ -111,8 +132,8 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <p class="muted">监听 B站发给本账号的评论 @ 通知；先检查视频资料、热评与当前评论串，再由 AI 决定是否接话。首次开启只将已有通知标记为历史，不补发；仍共用所有评论额度。</p>
 <div class="checkline"><input type="checkbox" id="comment-at-enabled"><label for="comment-at-enabled">开启被 @ 邀请监听</label></div>
 <div class="fields"><div><label for="comment-at-mode">回应范围</label><select id="comment-at-mode"><option value="whitelist">仅白名单用户（推荐）</option><option value="all">所有人</option></select></div>
-<div><label for="comment-at-whitelist">允许邀请的 B站 UID（可写 UID|备注昵称，独立白名单）</label><textarea id="comment-at-whitelist" rows="4" placeholder="每行一个 UID 或 UID|备注昵称"></textarea></div></div>
-<p class="muted">白名单只影响评论区 @ 邀请，不等于私信白名单；不保证所有通知都有可定位的视频和评论 ID，无法校验的会忽略。</p>
+<div hidden><label for="comment-at-whitelist">被 @ 白名单（由可信好友名册同步）</label><textarea id="comment-at-whitelist" rows="4"></textarea></div></div>
+<p class="muted">可在「人设与好友 → 可信好友名册」统一管理允许邀请的 UID；不保证所有通知都有可定位的视频和评论 ID，无法校验的会忽略。</p>
 </div>
 <div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
 <div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>
@@ -157,7 +178,7 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div class="settings-section"><h4>监听与可回复对象</h4><div class="fields">
 <div class="checkline"><input id="dm-watch" type="checkbox"><label for="dm-watch">启用后台私信监听</label></div>
 <div class="checkline"><input id="dm-stranger-enabled" type="checkbox"><label for="dm-stranger-enabled">允许陌生人自动回复</label></div>
-<div><label for="dm-whitelist">白名单 UID（可写 UID|备注昵称）</label><textarea id="dm-whitelist" maxlength="5000" placeholder="12345678&#10;87654321"></textarea></div>
+<div hidden><label for="dm-whitelist">后台私信白名单（由可信好友名册同步）</label><textarea id="dm-whitelist" maxlength="5000"></textarea></div>
 
 </div></div>
 <div class="settings-section"><h4>私信额度与上下文</h4><p class="muted">私信额度独立于公开评论；请到管理中心「次数与额度」集中设置每日、每人及上下文条数。</p><div class="fields">
