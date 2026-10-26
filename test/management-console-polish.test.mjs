@@ -9,7 +9,10 @@ const python=readFileSync(new URL('../vendor/bilibili-mcp/mcp_server.py',import.
 test('recent comment link targets a specific rpid instead of only opening the video',()=>{
   assert.match(js,/safeCommentLink/)
   assert.match(js,/定位具体评论 · rpid/)
-  assert.match(js,/\?comment=/)
+  assert.match(js,/comment_on/)
+  assert.match(js,/comment_root_id/)
+  assert.match(js,/comment_secondary_id/)
+  assert.match(js,/c\?\.root/)
   assert.match(js,/safeCommentLink\(c\)/)
 })
 test('comment per-poll limit and per-user own-comment limits are visually separated',()=>{

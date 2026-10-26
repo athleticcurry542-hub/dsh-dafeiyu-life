@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {Readable} from 'node:stream'
-import {recentComments,migrateCommentReceipts} from '../lib/recent-comments.mjs'
+import {recentComments,migrateCommentReceipts,commentUrlForRecord} from '../lib/recent-comments.mjs'
 import {apply} from '../index.js'
 
 function setup(){const dir=mkdtempSync(join(tmpdir(),'bili-recent-'));return {dir,close:()=>rmSync(dir,{recursive:true,force:true})}}
@@ -109,4 +109,14 @@ test('旧评论记录归档到同一判重账本的月度文件后仍可查询',
   assert.ok(rows.some(r=>r.rpid==='318765432101'&&r.snippet==='归档前的旧评论'))
   assert.ok(!rows.some(r=>r.bvid==='BV1234567891'))
  }finally{rmSync(home,{recursive:true,force:true})}
+})
+
+
+test('B站评论直达链接为顶层与楼中楼分别携带正确定位参数',()=>{
+ const top=commentUrlForRecord({bvid:'BV1234567890',rpid:'321904061968',kind:'top',root:'0'})
+ assert.equal(top,'https://www.bilibili.com/video/BV1234567890/?comment_on=1&comment_root_id=321904061968#reply321904061968')
+ const reply=commentUrlForRecord({bvid:'BV1234567890',rpid:'321904061969',root:'321904061968',kind:'reply'})
+ assert.equal(reply,'https://www.bilibili.com/video/BV1234567890/?comment_on=1&comment_root_id=321904061968&comment_secondary_id=321904061969#reply321904061969')
+ const unknownRoot=commentUrlForRecord({bvid:'BV1234567890',rpid:'321904061969',root:'?',kind:'reply'})
+ assert.equal(unknownRoot,'https://www.bilibili.com/video/BV1234567890/')
 })
