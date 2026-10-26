@@ -199,6 +199,8 @@ export const Config = !z ? undefined : z.object({
   commentAtWhitelist: z.string().default('').extra('volatile',true),
   commentTopCount: z.natural().default(5).extra('volatile', true),
   commentTopVideoCount: z.natural().default(3).extra('volatile', true),
+  /** 后台回复 / 被 @：获取并提供给 AI 的其他热门评论数量（1–30），不是主动扫热评的数量。 */
+  commentReplyHotCount: z.natural().default(12).extra('volatile', true),
   commentAllowGeneralTop: z.boolean().default(false).extra('volatile', true),
   commentReplyPerPoll: z.natural().default(1).extra('volatile', true),
   commentReplyPerDay: z.natural().default(5).extra('volatile', true),
@@ -348,7 +350,7 @@ function reportMeta() {
     dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
     dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10, dmWishMentionLimit: 3,
     videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '',
-    commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3,
+    commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12,
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
@@ -438,7 +440,7 @@ function reportMeta() {
     for (const k of ['commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAllowGeneralTop']) if(k in p) p[k] = p[k] === true
     if ('commentAtMode' in p) p.commentAtMode = p.commentAtMode==='all'?'all':'whitelist'
     if ('commentAtWhitelist' in p) p.commentAtWhitelist = String(p.commentAtWhitelist||'').slice(0,2500)
-    for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,1000,5],['commentOwnTopPerUser',1,1000,5],['commentOwnNestedPerUser',1,1000,3]]) {
+    for (const [k,min,max,def] of [['commentTopCount',1,20,5],['commentTopVideoCount',1,6,3],['commentReplyHotCount',1,30,12],['commentReplyPerPoll',1,5,1],['commentReplyPerDay',1,1000,5],['commentOwnTopPerUser',1,1000,5],['commentOwnNestedPerUser',1,1000,3]]) {
       if(k in p) p[k] = Math.max(min, Math.min(max, Math.floor(Number(p[k]) || def)))
     }
     if ('commentSyncDynamic' in p) p.commentSyncDynamic = p.commentSyncDynamic === true
@@ -1941,8 +1943,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     stateDir,
     getInfo: (bvid)=>call('bili_video_info',{bvid}),
     getSubtitle:(bvid)=>call('bili_subtitle',{bvid}),
-    getHot: (bvid)=>call('bili_comments',{bvid,num:10}),
-    getThread:(bvid,root)=>call('bili_comment_thread',{bvid,root:Number(root),num:12}),
+    getHot: (bvid,count)=>call('bili_comments',{bvid,num:count}),
+    getHotLimit: ()=>cfg.commentReplyHotCount,
+    getThread:(bvid,root,targetRpid)=>call('bili_comment_thread',{bvid,root:Number(root),target_rpid:Number(targetRpid)||0,num:20}),
     logger:{warn:(msg)=>log('评论上下文：'+msg)},
   })
   const commentInteract = createCommentInteract({
@@ -2951,7 +2954,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
-        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {
+        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，
