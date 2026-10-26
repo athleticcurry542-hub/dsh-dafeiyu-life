@@ -52,7 +52,7 @@ import { DEFAULT_PERSONA_PROMPT, effectivePersonaPrompt } from './lib/persona-de
 import { buildBalancedMemeInventory } from './lib/meme-inventory-prompt.mjs'
 import { DEFAULT_VISION_PROMPT, buildVisionPrompt, normalizeVisionPrompt } from './lib/vision-prompt.mjs'
 import { parseMentionTargets, decideMentions } from './lib/mentions.mjs'
-import { DEFAULT_CHARACTER_LORE, normalizeCharacterLore, normalizeMentionProfiles, buildMentionProfilePrompt } from './lib/character-social.mjs'
+import { DEFAULT_CHARACTER_LORE, normalizeCharacterLore, normalizeMentionProfiles, buildMentionProfilePrompt, buildSenderRelationshipContext } from './lib/character-social.mjs'
 import { normalizeFriendDirectory } from './lib/friend-directory.mjs'
 import { shouldRunWindow, parsePeakWindows, readPeakWindows, activePeakWindow, DEFAULT_PEAK_INTERVAL_MINUTES } from './lib/peak-schedule.mjs'
 import { effectiveModelSelection } from './lib/model-routing.mjs'
@@ -1885,6 +1885,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     })
   }
 
+  const replyIdentityContext = (uid) => buildSenderRelationshipContext({
+    uid, friendDirectory:cfg.friendDirectory, profiles:cfg.mentionProfiles, targetsText:cfg.mentionTargets
+  })
   const interactionBatcher = createInteractionBatcher({
     invoke: (prompt) => invokeInteractionPrompt(prompt, 24000),
     getPersona: (batch = []) => {
@@ -1921,7 +1924,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const match=String(raw).match(/\{[\s\S]*?\}/);if(!match)return null;
       try{const value=JSON.parse(match[0]);return ['approve','reject'].includes(value?.decision)?value:null;}catch{return null;}
     },
-    generateReply: (req) => interactionBatcher.generate({kind:'dm', ...req}),
+    generateReply: (req) => interactionBatcher.generate({kind:'dm', ...req,identityContext:replyIdentityContext(req.uid)}),
     send: async ({ uid, text }) => {
       refreshCfg()
       if (cfg.masterEnabled !== true) return {ok:false,error:'总开关已关闭，私信发送已暂停'}
@@ -1971,11 +1974,11 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return [...new Set(parseSeenTable().filter(x => x.day >= cutoff && (x.picked || x.delivered)).map(x => x.bvid))]
     },
     getComments: (bvid, num) => call('bili_comments', {bvid, num}),
-    generateReply: (req) => interactionBatcher.generate(req),
+    generateReply: (req) => interactionBatcher.generate({...req,identityContext:replyIdentityContext(req.uid)}),
     send: async (req) => {
       // 后台独立发送，受评论互动专用开关保护，不使用 model 的 force 绕过公开评论安全闸。
       refreshCfg()
-      if (!(cfg.masterEnabled && (cfg.commentWatchReplies || cfg.commentWatchTop || cfg.commentAtEnabled))) return {ok:false,error:'后台评论回复已关闭'}
+      if (!(cfg.masterEnabled && (req.manual===true || cfg.commentWatchReplies || cfg.commentWatchTop || cfg.commentAtEnabled))) return {ok:false,error:'后台评论回复已关闭'}
       const r = await call('bili_reply', {bvid: req.bvid || '', aid: Number(req.aid)||0,
         rpid: Number(req.rpid), root: Number(req.root)||0, text:String(req.text).slice(0,130)})
       return r?.success === true ? {ok:true,rpid:String(r?.rpid_str||r?.rpid||'')} : {ok:false,error:String(r?.error||r?.message||'评论未确认成功')}
@@ -2994,6 +2997,17 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         log('私信接口连通性测试失败：' + error)
         return sendJson(res,200,{ok:false,error})
       }
+    }
+
+    // 主人通过本机管理中心明确要求 AI 回应某一条已诊断的 B站评论。
+    // 不绕过总开关与 Python 全局公开评论硬额度，不替模型编造文字。
+    if (req.method === 'POST' && path === '/api/bili-duty/comment-force-reply') {
+      const body=await readBody(req)
+      if (cfg.masterEnabled !== true)return sendJson(res,403,{ok:false,error:'大肥鱼总开关已关闭，无法发送公开评论'})
+      const id=String(body?.id||'').trim()
+      if (!/^(?:at|comment):[A-Za-z0-9_-]{1,40}$/.test(id))return sendJson(res,400,{ok:false,error:'无效的诊断记录编号'})
+      try { const result=await commentInteract.forceReply({id});return sendJson(res,200,result) }
+      catch(e) {return sendJson(res,409,{ok:false,error:String(e?.message||e).slice(0,200)})}
     }
 
     if (req.method === 'GET' && path === '/api/bili-duty/dm-recent') {

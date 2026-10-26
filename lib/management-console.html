@@ -41,7 +41,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <p id="message" role="status" aria-live="polite"></p>
 <section id="panel-diagnostics" hidden>
 <div class="toolbar"><h2 style="margin:0">今日诊断</h2><button id="diag-refresh" class="primary">刷新诊断</button><button id="diag-save">保存诊断开关</button></div>
-<p class="muted">勾选后会记录后续诊断；关闭仅停止新日志，不影响评论、同步、取帧和选图的正常功能。已存在的历史诊断记录不会自动删除，重启后仍保持设置。</p>
+<p class="muted">勾选后会记录后续诊断；关闭仅停止新日志，不影响评论、同步、取帧和选图的正常功能。已存在的历史诊断记录不会自动删除。诊断里的“要求 AI 回复这条”必须人工确认；不绕过回复额度、去重或上下文验证。</p>
 <div class="diag-grid">
 <article class="card diag-card"><div class="diag-heading"><h3>今日 @ 诊断</h3><label class="diag-switch"><input type="checkbox" id="diag-mention-enabled" checked> 记录诊断</label></div><p class="muted">记录顶层评论的 @ 决策原因。尝试 @ 不保证 B站 一定通知送达。</p><div id="mention-summary" class="muted">正在读取…</div><div id="mention-list" class="records records-scroll" role="status" aria-live="polite"></div></article>
 <article class="card diag-card"><div class="diag-heading"><h3>今日动态同步诊断</h3><label class="diag-switch"><input type="checkbox" id="diag-dynamic-enabled" checked> 记录诊断</label></div><p class="muted">区分 AI 是否选择同步、设置／额度是否允许、B站接口是否接受；接口接受不等于动态已公开可见。</p><div id="dynamic-summary" class="muted">正在读取…</div><div id="dynamic-list" class="records records-scroll" role="status" aria-live="polite"></div></article>
