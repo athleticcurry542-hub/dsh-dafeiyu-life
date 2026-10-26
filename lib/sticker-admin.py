@@ -37,7 +37,7 @@ def scans(root):
     result=[]
     def walk(folder,parts):
         for path in sorted(folder.iterdir(),key=lambda p:p.name.casefold()):
-            if len(result)>=300:break
+            if len(result)>=2000:break
             if path.is_symlink():continue
             if path.is_dir() and len(parts)<3:
                 try:clean_segment(path.name)

@@ -123,8 +123,8 @@ input,textarea,select{background:var(--panel);color:var(--ink);border:1px solid 
 <div><label for="sticker-category">分类（可留空）</label><input id="sticker-category" maxlength="48" placeholder="例如 开心"></div>
 <div><label for="sticker-name">显示名称（不含扩展名）</label><input id="sticker-name" maxlength="48" placeholder="例如 笑哭"></div></div>
 <div class="toolbar" style="margin-top:12px"><button id="sticker-upload" class="primary">上传表情包</button><span id="sticker-upload-status" class="muted"></span></div></div>
-<div class="toolbar" style="margin-top:20px"><h2 style="margin:0">已保存的表情包</h2><input id="sticker-search" placeholder="搜索名称或分类"><button id="sticker-reload">刷新图库</button></div>
-<p id="sticker-summary" class="muted">正在读取…</p><div id="sticker-list" class="grid sticker-grid"></div>
+<div class="toolbar" style="margin-top:20px"><h2 style="margin:0">已保存的表情包</h2><label for="sticker-folder-filter" style="margin:0">文件夹分类</label><select id="sticker-folder-filter" aria-label="按文件夹筛选表情包"><option value="all">全部文件夹</option></select><input id="sticker-search" placeholder="搜索名称或分类"><button id="sticker-reload">刷新图库</button></div>
+<p id="sticker-summary" class="muted">正在读取…</p><div id="sticker-list" class="grid sticker-grid"></div><div class="toolbar" aria-label="表情包翻页" style="margin-top:16px"><button id="sticker-page-prev" disabled>上一页</button><span id="sticker-page-status" class="muted" aria-live="polite">第 1 / 1 页</span><button id="sticker-page-next" disabled>下一页</button></div>
 <p class="muted">重命名后，AI 下次读取图库将使用新名称；已经发表的评论图片不受影响。删除后无法恢复，请先备份重要素材。</p>
 </section>
 <section id="panel-dm" hidden>

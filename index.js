@@ -2773,7 +2773,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         let out='',done=false
         const finish=(value)=>{if(done)return;done=true;clearTimeout(timer);resolve(value)}
         const timer=setTimeout(()=>{try{child.kill()}catch{};finish({ok:false,error:'表情包操作超时'})},20000)
-        child.stdout?.on('data',b=>{out=(out+String(b)).slice(-64000)})
+        child.stdout?.on('data',b=>{out=(out+String(b)).slice(-1_000_000)})
         child.on('error',()=>finish({ok:false,error:'无法运行表情包管理脚本，请检查 Python 和 Pillow 依赖'}))
         child.on('close',()=>{try{finish(JSON.parse(out.trim()))}catch{finish({ok:false,error:'表情包管理脚本返回异常'})}})
         if(body)child.stdin.end(JSON.stringify(body))
