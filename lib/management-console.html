@@ -135,7 +135,8 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <div class="checkline"><input type="checkbox" id="comment-at-enabled"><label for="comment-at-enabled">开启被 @ 邀请监听</label></div>
 <div class="fields"><div><label for="comment-at-mode">回应范围</label><select id="comment-at-mode"><option value="whitelist">仅白名单用户（推荐）</option><option value="all">所有人</option></select></div>
 <div hidden><label for="comment-at-whitelist">被 @ 白名单（由可信好友名册同步）</label><textarea id="comment-at-whitelist" rows="4"></textarea></div></div>
-<p class="muted">可在「人设与好友 → 可信好友名册」统一管理允许邀请的 UID；不保证所有通知都有可定位的视频和评论 ID，无法校验的会忽略。</p>
+<p class="muted">可在「人设与好友 → 可信好友名册」统一管理允许邀请的 UID。下方展示本地 @ 检查结果；首次启用会将当时已有通知标为历史，不自动回复。</p>
+<div class="inset"><h4>@ 邀请处理诊断（最近 30 条）</h4><p id="comment-at-fetch" class="muted">尚未检查</p><div id="comment-at-events" class="records" role="status" aria-live="polite"></div></div>
 </div>
 <div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
 <div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>

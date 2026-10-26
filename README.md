@@ -4,7 +4,7 @@
 
 这是一个为 DeepSeek Harness（DSH） 构建的 B站浏览与互动插件，独立维护于 [minedalang/dsh-bili-scroll-plus](https://github.com/minedalang/dsh-bili-scroll-plus)。在原项目基础上，增加了视频预览取帧、可控互动、本地成长记忆和可视化管理能力。
 
-> **当前版本：v2.4.57** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
+> **当前版本：v2.4.58** · [更新记录](./CHANGELOG.md) · [问题反馈](https://github.com/minedalang/dsh-bili-scroll-plus/issues)
 >
 > 衍生版并非 B站、DeepSeek 或原作者的官方产品。原项目：[c1overzz/dsh-bili-scroll](https://github.com/c1overzz/dsh-bili-scroll)，保留 MIT 版权与许可，详见文末说明。
 
@@ -208,6 +208,12 @@ node selfcheck.mjs
 
 项目按 [MIT License](./LICENSE) 发布。保留上游版权及第三方授权声明，具体以仓库中的 `LICENSE`、`NOTICE.md` 和各第三方目录的许可证为准。
 
+
+### v2.4.58 · 修复被 @ 邀请不回复（2026-10-26）
+
+- @ 通知可以从已验证的 AID/AV 号恢复 BV，避免因为通知没带 BV 链接而漏掉邀请。
+- 修复视频顶层评论 @ 没有楼中楼时被误判为缺失上下文，前提仍须读取到视频信息和最新热评。
+- 最近评论页面增加 @ 处理诊断，区分首次基线、白名单、视频资料失败、AI 沉默和发送结果。
 
 ### v2.4.57 · 可配置独立视觉每日额度
 
