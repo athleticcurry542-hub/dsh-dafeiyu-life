@@ -2939,6 +2939,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (req.method === 'POST' && path === '/api/bili-duty/video-wishes') {
       const body=await readBody(req)
       const result=body.action==='cancel' ? await dmAutoreply.cancelVideoWish(String(body.uid||''),String(body.id||''))
+        : body.action==='backfill' ? await dmAutoreply.backfillVideoWishes(String(body.uid||''))
         : {ok:false,error:'不支持的心愿操作'}
       return sendJson(res,result.ok?200:400,result)
     }
