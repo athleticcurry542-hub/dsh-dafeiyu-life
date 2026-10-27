@@ -64,6 +64,7 @@ import { HEADLESS_DENY_TOOLS, writeSecureHeadlessOverlay, validateHeadlessOverla
 import { mergeWatchedRows } from './lib/watched.mjs'
 import { createMainSessionBridge } from './lib/main-session-bridge.mjs'
 import { createLongTermMemory } from './lib/long-term-memory.mjs'
+import { createLifeReflection } from './lib/life-reflection.mjs'
 
 export const name = 'dafeiyu-life'
 export const inject = ['webServer', 'tools', 'settings', 'agents', 'sessionTitle', 'systemPrompt']
@@ -226,6 +227,12 @@ export const Config = !z ? undefined : z.object({
   /** 内置长期人格记忆：基于 MIT 上游 dsh-fish-memory 的核心设计，仅绑定主人明确选择的主 Session。 */
   mainSessionMemoryEnabled: z.boolean().default(false).extra('volatile', true),
   mainSessionMemoryAutoBili: z.boolean().default(true).extra('volatile', true),
+  /** B站经历先进入候选池，再由受限 AI 定期凝练成人生记忆。 */
+  mainSessionReflectionAuto: z.boolean().default(true).extra('volatile', true),
+  mainSessionReflectionMinCandidates: z.natural().default(6).extra('volatile', true),
+  mainSessionReflectionBatchSize: z.natural().default(16).extra('volatile', true),
+  mainSessionReflectionIntervalHours: z.number().default(6).extra('volatile', true),
+  mainSessionReflectionDailyBatches: z.natural().default(2).extra('volatile', true),
   mainSessionMemoryHalfLifeDays: z.number().default(30).extra('volatile', true),
   mainSessionMemoryThreshold: z.number().default(0.35).extra('volatile', true),
   mainSessionMemoryMaxItems: z.natural().default(6).extra('volatile', true),
@@ -379,7 +386,7 @@ function reportMeta() {
     commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12, backupDirectory: '',
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     mainSessionBridgeEnabled: false, mainSessionId: '', mainSessionAutoSync: true, mainSessionSyncMinutes: 60, mainSessionDailyBatches: 4, mainSessionBatchSize: 8, mainSessionIncludeComments: true,
-    mainSessionMemoryEnabled: false, mainSessionMemoryAutoBili: true, mainSessionMemoryHalfLifeDays: 30, mainSessionMemoryThreshold: 0.35, mainSessionMemoryMaxItems: 6, mainSessionMemoryMaxChars: 800, mainSessionMemoryDailyQuota: 8, mainSessionMemoryFactsMax: 2,
+    mainSessionMemoryEnabled: false, mainSessionMemoryAutoBili: true, mainSessionReflectionAuto: true, mainSessionReflectionMinCandidates: 6, mainSessionReflectionBatchSize: 16, mainSessionReflectionIntervalHours: 6, mainSessionReflectionDailyBatches: 2, mainSessionMemoryHalfLifeDays: 30, mainSessionMemoryThreshold: 0.35, mainSessionMemoryMaxItems: 6, mainSessionMemoryMaxChars: 800, mainSessionMemoryDailyQuota: 8, mainSessionMemoryFactsMax: 2,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
@@ -454,6 +461,11 @@ function reportMeta() {
     if ('mainSessionIncludeComments' in p) p.mainSessionIncludeComments = p.mainSessionIncludeComments !== false
     if ('mainSessionMemoryEnabled' in p) p.mainSessionMemoryEnabled = p.mainSessionMemoryEnabled === true
     if ('mainSessionMemoryAutoBili' in p) p.mainSessionMemoryAutoBili = p.mainSessionMemoryAutoBili !== false
+    if ('mainSessionReflectionAuto' in p) p.mainSessionReflectionAuto = p.mainSessionReflectionAuto !== false
+    if ('mainSessionReflectionMinCandidates' in p) p.mainSessionReflectionMinCandidates = Math.max(2,Math.min(30,Math.floor(Number(p.mainSessionReflectionMinCandidates)||6)))
+    if ('mainSessionReflectionBatchSize' in p) p.mainSessionReflectionBatchSize = Math.max(4,Math.min(30,Math.floor(Number(p.mainSessionReflectionBatchSize)||16)))
+    if ('mainSessionReflectionIntervalHours' in p) p.mainSessionReflectionIntervalHours = Math.max(1,Math.min(48,Number(p.mainSessionReflectionIntervalHours)||6))
+    if ('mainSessionReflectionDailyBatches' in p) p.mainSessionReflectionDailyBatches = Math.max(1,Math.min(8,Math.floor(Number(p.mainSessionReflectionDailyBatches)||2)))
     if ('mainSessionMemoryHalfLifeDays' in p) p.mainSessionMemoryHalfLifeDays = Math.max(15,Math.min(120,Number(p.mainSessionMemoryHalfLifeDays)||30))
     if ('mainSessionMemoryThreshold' in p) p.mainSessionMemoryThreshold = Math.max(0.1,Math.min(0.8,Number(p.mainSessionMemoryThreshold)||0.35))
     if ('mainSessionMemoryMaxItems' in p) p.mainSessionMemoryMaxItems = Math.max(1,Math.min(12,Math.floor(Number(p.mainSessionMemoryMaxItems)||6)))
@@ -592,6 +604,7 @@ function reportMeta() {
   // v2.4.76: 运行时挂接长期主 Session 与内置长期记忆。工具先注册，桥在后面的本地账本初始化完成后赋值。
   let mainSessionBridge = null
   let longTermMemory = null
+  let lifeReflection = null
   const pauseFile = join(stateDir, '.bili-duty-paused')
   let lastPauseState = null
   let cancelActiveDuty = () => {}
@@ -2406,9 +2419,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     return mergeWatchedRows(out, stateDir)
   }
 
-  // v2.4.79：长期记忆属于“大肥鱼本人”，主 Session 只是她当前聊天的房间。
-  // 明确长期事实由本地规则确定性保存；复杂关系/经历仍可由 scoped dafeiyu_remember 补记；
-  // B站重要经历继续从本地账本确定性入库，不额外调用模型。
+  // v2.4.81：长期记忆属于“大肥鱼本人”，主 Session 只是她当前聊天的房间。
+  // 主人明确长期事实由当前聊天中的语义记忆工具保存；B站生活经历不再逐条直塞长期记忆，
+  // 而是保留精确档案 → 进入候选池 → 由受限反思模型凝练后，才进入 dafeiyu.json。
   longTermMemory = createLongTermMemory({
     dataDir: stateDir,
     dshHome: dirname(stateDir),
@@ -2426,6 +2439,16 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
   longTermMemory.start()
   ctx.effect(() => () => longTermMemory.stop(), 'bili-duty: 内置长期记忆')
 
+  lifeReflection = createLifeReflection({
+    dataDir: stateDir,
+    getConfig: () => cfg,
+    invokeModel: (prompt,maxChars,opt) => invokeInteractionPrompt(prompt,maxChars,opt),
+    commitMemories: (items) => longTermMemory.addReflectedMemories(items),
+    logger: {warn:(m)=>log('⚠️ '+m),info:(m)=>log(m)},
+  })
+  lifeReflection.start()
+  ctx.effect(() => () => lifeReflection.stop(), 'bili-duty: 人生记忆自主反思')
+
   // 大肥鱼主 Session 是“家/人格记忆”，现有插件仍是“后台身体/精确档案”。
   // 这里只枚举 DSH 当前活着的 agent；绝不扫描 ~/.dsh/sessions，也不读取其它会话历史。
   mainSessionBridge = createMainSessionBridge({
@@ -2437,7 +2460,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     getConfig: () => cfg,
     getWatched: () => { const meta=reportMeta(); return parseSeenTable().map(x=>({...x,...(meta.get(x.bvid)||{})})) },
     getComments: (opt) => recentComments(stateDir,opt),
-    onNewEvents: (sid,events) => longTermMemory?.importBiliEvents(sid,events),
+    onNewEvents: (_sid,events) => lifeReflection?.addEvents(events),
     logger: {warn:(m)=>log('⚠️ '+m),info:(m)=>log(m)},
   })
   mainSessionBridge.start()
@@ -3264,6 +3287,18 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return sendJson(res,200,{ok:true,...mainSessionBridge.status(),days})
     }
 
+    if (req.method === 'GET' && path === '/api/bili-duty/main-session/reflection') {
+      const statusName=String(url.searchParams.get('status')||'pending').slice(0,20)
+      const limit=Math.max(1,Math.min(200,Number(url.searchParams.get('limit'))||60))
+      return sendJson(res,200,{...lifeReflection.status(),rows:lifeReflection.list(statusName,limit)})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/main-session/reflection/run') {
+      try{
+        const r=await lifeReflection.reflect({force:true})
+        return sendJson(res,r.ok?200:409,r)
+      }catch(e){return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,300)})}
+    }
+
     if (req.method === 'GET' && path === '/api/bili-duty/main-session/memory') {
       const q=String(url.searchParams.get('q')||'').trim().slice(0,120)
       const limit=Math.max(1,Math.min(300,Number(url.searchParams.get('limit'))||100))
@@ -3321,7 +3356,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
-        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId']) {
+        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionReflectionAuto', 'mainSessionReflectionMinCandidates', 'mainSessionReflectionBatchSize', 'mainSessionReflectionIntervalHours', 'mainSessionReflectionDailyBatches', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，

@@ -85,29 +85,37 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
 <div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search">搜索经历档案</button></div>
 <div id="main-session-history" class="records records-scroll tall"></div></div>
-<div class="settings-section"><h4>4. 大肥鱼长期记忆 · 跨 Session 共用</h4>
-<p class="muted"><strong>这里的记忆属于“大肥鱼本人”，不是某一个 Session。</strong> v2.4.79 起固定保存在 <code>long-term-memory/dafeiyu.json</code>。以后把主 Session 从 A 换成 B，只是换聊天房间；已经保存的大肥鱼长期记忆会继续使用。旧版按 Session 保存的记忆首次升级会自动合并，旧文件保留作安全兜底。</p>
+<div class="settings-section"><h4>4. 大肥鱼人生记忆 · 三层沉淀</h4>
+<p class="muted"><strong>主 Session 只是当前聊天房间；人生记忆属于“大肥鱼本人”。</strong> 普通聊天的长期事实仍由当前主 Session 在同一次模型思考里通过 <code>dafeiyu_remember</code> 保存。B站生活经历从 v2.4.81 起不再“每发一条评论就永久记一条”，而是先进入候选，再由受限反思模型少量凝练。</p>
 <div class="grid" style="margin:12px 0">
-<article class="record"><div class="title-line">① 当前主 Session · 短期上下文</div><p class="muted">DSH 会话自己负责“刚才聊了什么、上一条消息是什么”。换 Session 后这部分不会自动搬家，也不需要插件重复保存。</p></article>
-<article class="record"><div class="title-line">② 大肥鱼长期记忆 · 身份级</div><p class="muted">主人称呼、稳定偏好、重要约定、关系变化、长期状态和重要经历。开启下面的开关后，所有未来主 Session 共用同一份记忆。</p></article>
-<article class="record"><div class="title-line">③ 精确经历档案 · 可核对账本</div><p class="muted">BV、rpid、评论原文、时间、发送状态等继续由插件精确账本保存。长期记忆负责“我记得”，精确档案负责“到底是哪一条”。</p></article>
+<article class="record"><div class="title-line">聊天层 · 当前主 Session</div><p class="muted">DSH 会话自己负责刚才聊了什么、上一条消息和当前任务。换 Session 后这层不搬家；人格和长期记忆仍属于同一只大肥鱼。</p></article>
+<article class="record"><div class="title-line">① 精确经历档案 · 全部保存</div><p class="muted">BV、rpid、评论原文、时间、对象和发送状态留在插件本地账本。负责“到底发生了什么”，不会因为没进长期记忆就丢失。</p></article>
+<article class="record"><div class="title-line">② 经历候选池 · 等待反思</div><p class="muted">新的刷视频、公开评论和回复先变成小型候选。候选只是反思材料，不会自动出现在大肥鱼的长期记忆里。</p></article>
+<article class="record"><div class="title-line">③ 人生记忆凝练 · 跨 Session</div><p class="muted">受限模型定期看一小批候选，大多数普通事件会被放下；只有第一次、关系变化、连续兴趣变化或真正重要的生活片段才进入 <code>long-term-memory/dafeiyu.json</code>。</p></article>
 </div>
-<p class="muted"><strong>长期记忆现在由大肥鱼在当前这一次聊天思考里做语义判断。</strong> 如果主人明确表达了称呼、稳定偏好、长期状态、约定或关系变化，大肥鱼会在正常回复前调用 <code>dafeiyu_remember</code> 写入身份记忆；不会额外再启动一次“记忆判断 AI”。插件只负责本地安全校验、去重和事实键更新。单纯问“我喜欢什么？”这类召回问题只会读取，不允许反向写入。</p>
 <div class="fields"><div><label for="main-memory-enabled">启用大肥鱼跨 Session 长期记忆（身份级）</label><input id="main-memory-enabled" type="checkbox"></div>
-<div><label for="main-memory-auto-bili">自动记住重要 B站经历</label><input id="main-memory-auto-bili" type="checkbox" checked></div>
+<div><label for="main-memory-auto-bili">把新的 B站经历加入反思候选</label><input id="main-memory-auto-bili" type="checkbox" checked></div>
+<div><label for="main-reflection-auto">自动进行人生反思</label><input id="main-reflection-auto" type="checkbox" checked></div>
+<div><label for="main-reflection-min">至少积累多少候选再自动反思（2–30）</label><input id="main-reflection-min" type="number" min="2" max="30" value="6"></div>
+<div><label for="main-reflection-batch">每批最多反思候选（4–30）</label><input id="main-reflection-batch" type="number" min="4" max="30" value="16"></div>
+<div><label for="main-reflection-hours">两次自动反思至少间隔（1–48 小时）</label><input id="main-reflection-hours" type="number" min="1" max="48" step="0.5" value="6"></div>
+<div><label for="main-reflection-daily">每天最多自动反思（1–8 批）</label><input id="main-reflection-daily" type="number" min="1" max="8" value="2"></div>
 <div><label for="main-memory-half-life">普通记忆半衰期（15–120 天）</label><input id="main-memory-half-life" type="number" min="15" max="120" value="30"></div>
 <div><label for="main-memory-threshold">召回证据门槛（0.10–0.80）</label><input id="main-memory-threshold" type="number" min="0.1" max="0.8" step="0.05" value="0.35"></div>
 <div><label for="main-memory-max-items">每轮最多召回（1–12 条）</label><input id="main-memory-max-items" type="number" min="1" max="12" value="6"></div>
 <div><label for="main-memory-max-chars">每轮记忆字数上限（200–3000）</label><input id="main-memory-max-chars" type="number" min="200" max="3000" value="800"></div>
-<div><label for="main-memory-daily">AI 语义长期记忆每日最多（1–30 条）</label><input id="main-memory-daily" type="number" min="1" max="30" value="8"></div>
+<div><label for="main-memory-daily">主人聊天语义记忆每日最多（1–30 条）</label><input id="main-memory-daily" type="number" min="1" max="30" value="8"></div>
 <div><label for="main-memory-facts">长期事实最多占召回（0–6 条）</label><input id="main-memory-facts" type="number" min="0" max="6" value="2"></div></div>
-<div class="toolbar"><button id="main-memory-save" class="primary">保存长期记忆设置</button><button id="main-memory-import">导入当前主 Session 的旧 dsh-fish-memory 记忆</button></div>
+<div class="toolbar"><button id="main-memory-save" class="primary">保存记忆与反思设置</button><button id="main-memory-import">导入当前主 Session 的旧 dsh-fish-memory 记忆</button></div>
 <p id="main-memory-status" class="muted" role="status">正在读取…</p>
-<p class="muted">独立版 <code>dsh-fish-memory</code> 的旧文件仍按 Session 保存，因此导入按钮需要先选一个主 Session 来确定来源；导入后内容会合并进大肥鱼统一身份记忆，不删除旧文件。不要同时让两个记忆插件管理同一个在线 Session，以免重复工具和重复注入。</p>
+<div class="card" style="margin:12px 0"><div class="toolbar"><h4 style="margin:0">人生反思候选</h4><button id="main-reflection-run" class="primary">现在反思一次</button><button id="main-reflection-refresh">刷新候选</button></div>
+<p id="main-reflection-status" class="muted" role="status">正在读取…</p>
+<p class="muted">自动反思会使用现有受控 headless 模型，但不给 B站 MCP、文件、Shell 或任意网络工具。视频标题和评论正文全部按不可信数据处理；模型只能输出受限 JSON，插件会再次校验候选 ID 和记忆正文。手动“现在反思一次”会忽略候选数量和间隔限制，但仍执行相同安全校验。</p>
+<div id="main-reflection-list" class="records records-scroll"></div></div>
+<p class="muted">独立版 <code>dsh-fish-memory</code> 的旧文件仍按 Session 保存，因此导入按钮需要先选一个主 Session 来确定来源；导入后内容会合并进大肥鱼统一身份记忆，不删除旧文件。</p>
 <div class="toolbar"><input id="main-memory-add-text" maxlength="1000" placeholder="主人手动补一条大肥鱼长期记忆（可选）"><button id="main-memory-add">手动加入记忆</button></div>
 <div class="toolbar"><input id="main-memory-query" maxlength="120" placeholder="搜索大肥鱼跨 Session 长期记忆"><button id="main-memory-search">搜索记忆</button></div>
-<div id="main-memory-list" class="records records-scroll tall"></div></div>
-</div>
+<div id="main-memory-list" class="records records-scroll tall"></div></div></div>
 </section>
 <section id="panel-diagnostics" hidden>
 <div class="toolbar"><h2 style="margin:0">今日诊断</h2><button id="diag-refresh" class="primary">刷新诊断</button><button id="diag-save">保存诊断开关</button></div>

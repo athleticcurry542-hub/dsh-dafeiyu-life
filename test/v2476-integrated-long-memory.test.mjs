@@ -44,12 +44,12 @@ test('身份级 remember 可保存、事实键自动淘汰旧值并按当前话�
   }finally{rmSync(dir,{recursive:true,force:true});rmSync(dsh,{recursive:true,force:true})}
 })
 
-test('B站新经历无需额外 AI 即进入长期记忆，并按 sourceKey 去重',()=>{
+test('v2.4.81 B站新经历不再逐条直写长期记忆，旧入口只返回 deferred',()=>{
   const dir=temp(),dsh=temp();try{
     const mem=createLongTermMemory({dataDir:dir,dshHome:dsh,agents:{get:()=>null,list:()=>[]},getConfig:cfg,defineTool})
     const ev=[{kind:'watch',day:'2026-10-27',time:'2026-10-27',bvid:'BV1234567890',title:'Claude 和 DeepSeek',note:'很好笑',key:'watch:x'}]
-    assert.equal(mem.importBiliEvents('abc',ev).added,1);assert.equal(mem.importBiliEvents('abc',ev).added,0)
-    const rows=mem.list('Claude');assert.equal(rows.length,1);assert.match(rows[0].text,/BV1234567890/);assert.equal(rows[0].source,'bilibili-experience')
+    const r=mem.importBiliEvents('abc',ev);assert.equal(r.added,0);assert.equal(r.deferred,true)
+    assert.equal(mem.list('Claude').length,0)
   }finally{rmSync(dir,{recursive:true,force:true});rmSync(dsh,{recursive:true,force:true})}
 })
 
@@ -82,5 +82,5 @@ test('内置长期记忆随大肥鱼业务备份恢复，外部 fish-memory 不�
 test('源码保留 dsh-fish-memory MIT 署名并在管理中心提供内置记忆入口',()=>{
   const index=readFileSync(new URL('../index.js',import.meta.url),'utf8'),html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8'),notice=readFileSync(new URL('../THIRD_PARTY_NOTICES.md',import.meta.url),'utf8'),license=readFileSync(new URL('../vendor/fish-memory/LICENSE',import.meta.url),'utf8')
   assert.match(index,/createLongTermMemory/);assert.match(index,/systemPrompt/);assert.match(html,/大肥鱼长期记忆/);assert.match(html,/dsh-fish-memory 记忆/);assert.match(notice,/Yuuyuko-uu\/dsh-fish-memory/);assert.match(license,/Copyright \(c\) 2026 Yuuyuko/)
-  assert.match(readFileSync(new URL('../package.json',import.meta.url),'utf8'),/"version": "2\.4\.80"/)
+  assert.match(readFileSync(new URL('../package.json',import.meta.url),'utf8'),/"version": "2\.4\.81"/)
 })

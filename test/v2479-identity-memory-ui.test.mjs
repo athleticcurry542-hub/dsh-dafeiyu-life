@@ -74,11 +74,11 @@ test('v2.4.78 的多个 Session 记忆文件首次升级自动合并，旧文件
   }finally{rmSync(dir,{recursive:true,force:true})}
 })
 
-test('README 与管理中心明确展示三层记忆架构和表情包 AI 更新流程',()=>{
-  const root=new URL('..',import.meta.url),html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8'),js=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8'),readme=readFileSync(new URL('../README.md',import.meta.url),'utf8'),pkg=readFileSync(new URL('../package.json',import.meta.url),'utf8')
-  assert.match(html,/大肥鱼的家 · 当前房间、身份记忆与经历档案/);assert.doesNotMatch(html,/把一个长期 DSH 会话当作“大肥鱼本人”/);assert.match(html,/大肥鱼长期记忆 · 跨 Session 共用/);assert.match(html,/当前主 Session · 短期上下文/);assert.match(html,/大肥鱼长期记忆 · 身份级/);assert.match(html,/精确经历档案/)
+test('README 与管理中心明确展示三层人生记忆、表情包 AI 更新流程和路线图',()=>{
+  const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8'),js=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8'),readme=readFileSync(new URL('../README.md',import.meta.url),'utf8'),pkg=readFileSync(new URL('../package.json',import.meta.url),'utf8')
+  assert.match(html,/大肥鱼的家 · 当前房间、身份记忆与经历档案/);assert.doesNotMatch(html,/把一个长期 DSH 会话当作“大肥鱼本人”/);assert.match(html,/大肥鱼人生记忆 · 三层沉淀/);assert.match(html,/精确经历档案/);assert.match(html,/经历候选池/);assert.match(html,/人生记忆凝练/)
   assert.match(html,/导出最新表情包名称 TXT/);assert.match(html,/导出当前规则 JSON/);assert.match(html,/一起交给 AI/)
-  assert.match(js,/sticker-workflow-export-names/);assert.match(js,/sticker-workflow-export-rules/);assert.match(js,/跨 Session 共用/);assert.match(js,/大肥鱼语义记忆|大肥鱼主动记住/);assert.match(js,/旧 Session 记忆迁移/)
-  assert.match(readme,/三层记忆架构：换房间，不换脑子/);assert.match(readme,/dafeiyu\.json/);assert.match(readme,/当前全部表情包名称 TXT \+ 当前规则 JSON/)
-  assert.match(pkg,/"version": "2\.4\.80"/)
+  assert.match(js,/sticker-workflow-export-names/);assert.match(js,/sticker-workflow-export-rules/);assert.match(js,/自主反思凝练/);assert.match(js,/旧 Session 记忆迁移/)
+  assert.match(readme,/三层人生记忆/);assert.match(readme,/dafeiyu\.json/);assert.match(readme,/当前全部表情包名称 TXT \+ 当前规则 JSON/);assert.match(readme,/未来路线图/);assert.match(readme,/QQ 是优先讨论的平台方向之一/)
+  assert.match(pkg,/"version": "2\.4\.81"/)
 })
