@@ -63,20 +63,20 @@ test('manual growth entry can be reviewed and approved without invoking AI', asy
 test('existing owner feedback can switch to direct review, be edited, and approved without model extraction', async () => {
   const x = setup()
   try {
-    const added = await x.request('POST', 'persona-growth', { action: 'add', type: 'relationship', text: 'Claude 是大肥鱼在虚构 AI 世界里的熟悉朋友。' })
+    const added = await x.request('POST', 'persona-growth', { action: 'add', type: 'style', text: '评论应优先表达自己的直接感受，避免重复视频标题。' })
     assert.equal(added.code, 200)
     const id = added.body.result.id
     const direct = await x.request('POST', 'persona-growth', { action: 'direct', id })
     assert.equal(direct.code, 200, JSON.stringify(direct.body))
     assert.equal(direct.body.result.suggestedText, direct.body.result.text)
     assert.equal(direct.body.result.directReview, true)
-    const revisedText = 'Claude 是大肥鱼在虚构 AI 世界里的熟悉朋友，可以自然互相调侃。'
+    const revisedText = '评论应优先表达自己的直接感受，看到合适的具体笑点才自然互相调侃。'
     const revised = await x.request('POST', 'persona-growth', { action: 'revise', id, suggestion: revisedText })
     assert.equal(revised.code, 200, JSON.stringify(revised.body))
     const approved = await x.request('POST', 'persona-growth', { action: 'approve', id })
     assert.equal(approved.code, 200, JSON.stringify(approved.body))
     assert.equal(approved.body.result.approvedText, revisedText)
     assert.equal(listGrowth(x.dir).entries[0].status, 'approved')
-    assert.match(buildGrowthContext(x.dir, { scene: 'video', query: 'Claude' }), /自然互相调侃/)
+    assert.match(buildGrowthContext(x.dir, { scene: 'comment', query: '自然调侃' }), /自然互相调侃/)
   } finally { x.close() }
 })

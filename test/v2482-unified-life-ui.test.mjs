@@ -10,8 +10,8 @@ const j=readFileSync(new URL('../lib/management-console.js',import.meta.url),'ut
 const client=readFileSync(new URL('../client.js',import.meta.url),'utf8')
 const pkg=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'))
 
-test('仍是 v2.4.82；记忆内容独立页，原家页只管理记忆设置',()=>{
- assert.equal(pkg.version,'2.4.82')
+test('版本升级为 v2.4.83；记忆内容独立页，原家页只管理记忆设置',()=>{
+ assert.equal(pkg.version,'2.4.83')
  assert.match(h,/data-tab="life"/)
  const house=h.split('<section id="panel-home"')[1].split('<section id="panel-life"')[0]
  const life=h.split('<section id="panel-life"')[1].split('<section id="panel-diagnostics"')[0]

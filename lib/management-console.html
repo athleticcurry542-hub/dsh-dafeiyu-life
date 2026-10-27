@@ -64,6 +64,37 @@ border-radius:999px;transition:width .28s ease}
 }
 @media(max-width:580px){#panel-life .life-hero{padding:15px}#panel-life .life-hero h2{font-size:19px}}
 
+/* v2.4.83: 全站视觉层次、可辨识状态和操作按钮；保持原控件/接口 ID 不变。 */
+:root{--accent-green:#177d5a;--accent-cyan:#087ea4;--accent-purple:#744bac;--accent-gold:#a3651e;--lift:0 8px 28px rgba(39,65,111,.07)}
+.wrap{max-width:1200px}.top{padding:18px 22px;border:1px solid var(--stroke);border-radius:17px;background:linear-gradient(115deg,var(--panel),var(--tint));box-shadow:var(--lift)}
+.top h1{letter-spacing:-.35px}.tabs{gap:7px}.tabs button{border-radius:999px;font-weight:650;transition:background .16s,border-color .16s,transform .16s}
+.tabs button[aria-selected=true]{box-shadow:0 3px 9px rgba(35,75,150,.17)}
+.tabs button:not([aria-selected=true]):hover{border-color:var(--action);transform:translateY(-1px)}
+.card,.settings-section{border-radius:14px;box-shadow:var(--lift)}
+.card h3,.settings-section h4{letter-spacing:-.15px}
+button{transition:filter .16s,transform .16s,border-color .16s}
+button:not(:disabled):hover{transform:translateY(-1px)}
+button.primary,.toolbar button.primary,.actions button.primary{background:#275cb9;border-color:#275cb9;color:#fff;font-weight:700}
+#panel-meme button.primary,#panel-growth button.primary,#panel-life button.life-green,#panel-backup button.primary{background:#157e60;border-color:#157e60;color:#fff}
+#panel-dm button.primary,#panel-quotas button.primary,#panel-comments button.primary{background:#206da4;border-color:#206da4;color:#fff}
+input:not([type=checkbox]):focus,select:focus,textarea:focus{border-color:var(--action);box-shadow:0 0 0 3px color-mix(in srgb,var(--action) 18%,transparent)}
+input[type=checkbox]{accent-color:#16865f}
+.pill.approved{background:#d9f5e7;color:#136743}.pill.pending{background:#fff0cc;color:#875515}
+.live-badge{display:inline-flex;align-items:center;gap:5px;background:#daf5e7;color:#146647;border:1px solid #a5ddc2;border-radius:999px;font-weight:750;font-size:12px;padding:5px 11px;white-space:normal}
+.live-badge.paused{background:var(--tint);color:var(--muted);border-color:var(--stroke)}
+.status-line{display:flex;gap:8px;margin-bottom:9px}.field-help{display:block;margin-top:6px;color:var(--muted);font-size:12px;font-weight:400;line-height:1.55}
+.feature-intro{padding:17px 21px;margin-bottom:15px;border:1px solid #b7dfcb;border-radius:16px;background:linear-gradient(110deg,#e9f8ee,#ebf5fc 70%,#f1edff)}
+.feature-intro h2{margin:10px 0 5px;color:#194f48}.feature-intro p{margin:0;color:#405c65}
+#panel-life .interest-card{box-shadow:0 6px 20px rgba(44,66,103,.07)}
+#panel-life .interest-meter{height:13px}.records .record{border-left:3px solid color-mix(in srgb,var(--action) 65%,var(--stroke))}
+#panel-life .life-section:nth-of-type(3n+2){border-top:3px solid #3a97be}
+#panel-life .life-section:nth-of-type(3n+3){border-top:3px solid #36a27e}
+@media(prefers-color-scheme:dark){.feature-intro{background:linear-gradient(110deg,#1e403a,#24364c 70%,#302941);border-color:#426c5a}.feature-intro h2{color:#d5f8e6}.feature-intro p{color:#bbd4da}.live-badge{background:#214d3c;color:#acf0c9;border-color:#3c785c}.pill.approved{background:#214d3c;color:#acf0c9}.pill.pending{background:#52402a;color:#fbd790}}
+.life-jump{display:flex;flex-wrap:wrap;gap:9px;margin:13px 0 17px;}
+.life-jump a{border:1px solid var(--stroke);border-radius:999px;padding:8px 12px;color:var(--ink);text-decoration:none;background:var(--panel);font-weight:650;font-size:13px;}
+.life-jump a:hover,.life-jump a:focus-visible{border-color:#209a79;color:var(--accent-green);box-shadow:0 2px 9px rgba(19,131,95,.13)}
+#panel-life .life-section{scroll-margin-top:100px}
+@media(max-width:620px){.top{padding:14px}.feature-intro{padding:13px}.tabs{gap:5px}.tabs button{font-size:12px;padding:8px 10px}.toolbar>input{width:100%}}
 </style>
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
@@ -94,7 +125,7 @@ border-radius:999px;transition:width .28s ease}
 <div class="fields"><div style="grid-column:1/-1"><label for="backup-directory">Windows 本机绝对路径</label><input id="backup-directory" type="text" placeholder="D:\大肥鱼备份" autocomplete="off" style="width:100%"></div></div>
 <div class="toolbar"><button id="backup-directory-save" class="primary">确认备份目录</button></div>
 <p id="backup-directory-status" class="muted" role="status" aria-live="polite">尚未设置备份目录</p></div>
-<div class="settings-section"><h4>完整业务数据备份</h4><p class="muted">点击后将完整 JSON 备份文件直接保存到上面配置的本机目录，不会额外下载。<strong>这个总备份已经包含大肥鱼身份级长期记忆。</strong> 不含表情包图片、识图帧、Python/模型缓存、日志、B站登录 Cookie、凭证和独立密钥。JSON 只是备份容器，并不是“只能保存一点数据”；插件仍会设置大小上限避免异常文件拖垮恢复流程。</p>
+<div class="settings-section"><h4>完整业务数据备份</h4><p class="muted">点击后将完整 JSON 备份文件保存在本机目录。<strong>包含表情包检索规则 <code>comment-meme-rules.json</code>、人设、模型设置、梗知识数据库、人生记忆和其他业务记录。</strong><br><strong>不包含表情包图片本体</strong>（请在「表情包管理」单独导出整库 ZIP），也不包含识图帧、缓存、日志、B站登录 Cookie、凭证和独立密钥。</p>
 <div class="toolbar"><button id="backup-export" class="primary">备份全部业务数据</button></div></div>
 <div class="settings-section"><h4>大肥鱼记忆 · 独立备份（建议额外保留）</h4>
 <p class="muted">长期记忆是大肥鱼最重要、最难重新建立的数据之一。这里把<strong>跨 Session 的身份记忆</strong>单独保存成一份 JSON，和完整业务备份形成双保险。它不包含当前 Session 的聊天历史，也不包含 BV/rpid 等精确经历档案。</p>
@@ -119,11 +150,11 @@ border-radius:999px;transition:width .28s ease}
 <p class="muted">这里只列出当前 DSH 中活着的会话，不从硬盘猜“最近会话”。请先在 DSH 里打开你准备作为当前聊天房间的会话，再回来刷新选择。以后换房间不会清空大肥鱼的身份级长期记忆。</p>
 <div class="toolbar"><button id="main-session-save" class="primary">保存主 Session 设置</button><button id="main-session-test">发送连接测试</button></div>
 <p id="main-session-target-status" class="muted" role="status">尚未读取</p></div>
-<div class="settings-section"><h4>2. 经历同步频率</h4><div class="fields">
-<div><label for="main-session-minutes">自动同步最短间隔（15–720 分钟）</label><input id="main-session-minutes" type="number" min="15" max="720" value="60"></div>
-<div><label for="main-session-daily">每天最多触发主 Session（1–24 批）</label><input id="main-session-daily" type="number" min="1" max="24" value="4"></div>
-<div><label for="main-session-batch">每批最多经历（1–20 条）</label><input id="main-session-batch" type="number" min="1" max="20" value="8"></div>
-<div><label for="main-session-comments">同步自己发过的评论/回复</label><input id="main-session-comments" type="checkbox" checked></div></div>
+<div class="settings-section"><h4>2. 把新经历告诉大肥鱼的频率</h4><div class="fields">
+<div><label for="main-session-minutes">两次提醒主 Session 至少间隔多久（15–720 分钟）</label><input id="main-session-minutes" type="number" min="15" max="720" value="60"></div>
+<div><label for="main-session-daily">每天最多给主 Session 汇报几次（1–24 次）</label><input id="main-session-daily" type="number" min="1" max="24" value="4"></div>
+<div><label for="main-session-batch">每次最多汇报多少条经历（1–20 条）</label><input id="main-session-batch" type="number" min="1" max="20" value="8"></div>
+<div><label for="main-session-comments">汇报时也告诉主 Session 我发过的评论/回复</label><input id="main-session-comments" type="checkbox" checked></div></div>
 <p class="muted">同步本身不额外调用“总结 AI”：视频经历和评论正文直接从插件现有账本整理。但投递到主 Session 后，那个 Session 会产生一次很短的模型回复，所以默认最多每天 4 批，避免浪费调用。所有跳过的视频仍留在插件精确档案里，不会塞进人格记忆。</p></div>
 
 <div class="settings-section"><h4>3. 人生记忆与检索设置</h4>
@@ -138,6 +169,7 @@ border-radius:999px;transition:width .28s ease}
 <div><label for="main-memory-semantic">启用独立低成本模型进行语义检索（默认关闭）</label><input id="main-memory-semantic" type="checkbox"></div>
 <div><label for="main-memory-model-provider">检索模型 Provider（必填，例如 DSH 已配置的提供方 ID）</label><input id="main-memory-model-provider" type="text" maxlength="160" placeholder="对应 DSH Provider ID"></div>
 <div><label for="main-memory-model-id">检索模型 ID（必填）</label><input id="main-memory-model-id" type="text" maxlength="160" placeholder="模型 ID"></div>
+   <div><label for="main-memory-model-effort">检索模型思考深度（可留空）</label><input id="main-memory-model-effort" type="text" maxlength="160" placeholder="如 low / medium / high，或该模型支持的 JSON"><small class="field-help">留空由模型默认决定；使用 DSH 支持的原始 reasoningEffort 值。</small></div>
 <div><label for="main-memory-candidates">低成本模型最多看到的候选记忆（12–80）</label><input id="main-memory-candidates" type="number" min="12" max="80" value="48"></div>
 <div><label for="main-memory-search-daily">每日每个检索通道调用上限（0–500，0=禁止）</label><input id="main-memory-search-daily" type="number" min="0" max="500" value="80"></div>
 <div><label for="main-memory-half-life">普通记忆半衰期（15–120 天）</label><input id="main-memory-half-life" type="number" min="15" max="120" value="30"></div>
@@ -149,7 +181,8 @@ border-radius:999px;transition:width .28s ease}
 <p class="muted">主 Session 始终携带少量真实的身份记忆；其他记忆先本地搜索，必要时由专用低成本模型挑选真实 ID，再读取正文。检索模型使用不带文件、Shell、B站 MCP 或浏览器工具的独立安全 headless 会话，必须已在 DSH 配好 Provider/模型。未配置或请求失败会回退本地记忆；不会用模型生成的文字充当过去的事实。</p>
 <div class="toolbar"><button id="main-memory-save" class="primary">保存记忆与反思设置</button></div><p id="main-memory-status" class="muted" role="status">正在读取…</p></div></div></section>
 <section id="panel-life" hidden>
-<div class="life-hero"><div><h2>🧠 人生记忆</h2><p class="muted">真实经历、兴趣趋势、人物关系、长期回忆与反思记录，都集中在这里查看。</p></div><button id="main-life-refresh" class="life-action life-indigo">↻ 刷新人生记忆</button></div>
+<div class="life-hero"><div><div class="status-line"><span id="life-learning-status" class="live-badge">● 正在整理真实经历</span></div><h2>🧠 人生记忆</h2><p class="muted">真实经历、兴趣趋势、人物关系、长期回忆与反思记录，都集中在这里查看。</p></div><button id="main-life-refresh" class="life-action life-indigo">↻ 刷新人生记忆</button></div>
+<nav class="life-jump" aria-label="人生记忆分区快捷跳转"><a href="#life-interest-section">🌱 兴趣趋势</a><a href="#life-relationship-section">🤝 人物关系</a><a href="#life-sync-section">📨 告诉主 Session</a><a href="#life-recall-section">🧠 长期回忆</a></nav>
 <p class="muted"><strong>这里展示大肥鱼记得什么，以及如何从真实生活中变化。</strong>「行为与表达改进」是直接附加在评论提示词里的规则，与这里的事实/经历不同。主人批准的旧版关系、兴趣、视频经历会在历史区只读保留，不再作为第二份提示词叠加。</p>
 <div class="settings-stack">
 <div class="settings-section life-section"><h4>记忆怎样形成</h4>
@@ -161,23 +194,24 @@ border-radius:999px;transition:width .28s ease}
 </div>
 
 </div>
-<div class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">兴趣与偏好 · 真实经历的趋势</h4><span class="muted">由真实选中视频的 BV 证据推断，不自动修改人设与搜索词</span></div>
+<div id="life-interest-section" class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">兴趣与偏好 · 真实经历的趋势</h4><span id="interest-learning-status" class="live-badge">● 正在收集兴趣线索</span><span class="muted">由真实选中视频的 BV 证据推断，不自动修改人设与搜索词</span></div>
 <p class="muted">至少 3 个不同视频、横跨 2 天，才算“开始关注”；持续出现可发展为稳定后天兴趣。近期没有新证据时会显示关注减少。核心人设中的喜好不会被自动覆盖。</p>
 <div id="main-interests-list" class="grid interest-grid" aria-live="polite"></div></div>
-<div class="settings-section life-section"><h4>人物关系与旧资料</h4>
+<div id="life-relationship-section" class="settings-section life-section"><h4>人物关系与旧资料</h4>
 <p class="muted">来自旧「成长经验」的已批准兴趣、视频经历和角色关系原样保留，作为历史事实参与统一检索；已批准关系设定优先于矛盾的自动事实。旧记录不会自动复制为新记忆。</p>
 <div id="main-legacy-growth-list" class="records"></div></div>
-<div class="settings-section life-section"><h4>当前队列与历史</h4><div class="toolbar"><button id="main-session-sync" class="life-action life-green">现在同步待处理经历</button><button id="main-session-backfill" class="life-action life-sky">导入最近 7 天重要经历到队列</button></div>
+<div id="life-sync-section" class="settings-section life-section"><h4>告诉主 Session：大肥鱼最近做了什么</h4><div class="toolbar"><button id="main-session-sync" class="life-action life-green">现在把新经历告诉主 Session</button><button id="main-session-backfill" class="life-action life-sky">补充最近 7 天的经历，稍后告诉主 Session</button></div>
+<p class="muted">这里的“待汇报”是本地保存、准备通知<strong>当前选定的大肥鱼聊天 Session</strong> 的经历。先补充旧经历不会立刻发消息；点击“现在告诉主 Session”，才尝试投递待汇报内容。无在线主 Session 时仍在本机保存。</p>
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
 <div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search" class="life-action life-sky">搜索经历档案</button></div>
 <div id="main-session-history" class="records records-scroll tall"></div></div>
 
-<div class="settings-section life-section"><h4>长期回忆 · 检索、反思和手动管理</h4>
+<div id="life-recall-section" class="settings-section life-section"><h4>长期回忆 · 检索、反思和手动管理</h4>
 <div class="toolbar"><input id="main-memory-test-query" maxlength="180" placeholder="测试长期记忆召回，例如“紫色模型小姐”"><button id="main-memory-test" class="life-action life-purple">测试记忆召回</button></div>
 <p id="main-memory-test-result" class="muted" role="status">尚未测试记忆召回。</p>
 <div class="toolbar"><button id="main-memory-import" class="life-action life-indigo">导入当前主 Session 的旧 dsh-fish-memory 记忆</button></div>
 
-<div class="card" style="margin:12px 0"><div class="toolbar"><h4 style="margin:0">人生反思候选</h4><button id="main-reflection-run" class="life-action life-green">现在反思一次</button><button id="main-reflection-refresh" class="life-action life-sky">刷新候选</button></div>
+<div class="card" style="margin:12px 0"><div class="toolbar"><h4 style="margin:0">人生反思候选</h4><span id="reflection-learning-status" class="live-badge">● 正在积累经历</span><button id="main-reflection-run" class="life-action life-green">现在反思一次</button><button id="main-reflection-refresh" class="life-action life-sky">刷新候选</button></div>
 <p id="main-reflection-status" class="muted" role="status">正在读取…</p>
 <p class="muted">自动反思会使用现有受控 headless 模型，但不给 B站 MCP、文件、Shell 或任意网络工具。视频标题和评论正文全部按不可信数据处理；模型只能输出受限 JSON，插件会再次校验候选 ID 和记忆正文。手动“现在反思一次”会忽略候选数量和间隔限制，但仍执行相同安全校验。</p>
 <div id="main-reflection-list" class="records records-scroll"></div></div>
@@ -321,9 +355,9 @@ border-radius:999px;transition:width .28s ease}
 <div class="card" style="margin-top:14px"><h3>当前附加到提示词的内容（只读）</h3>
 <p class="muted">这里仅预览行为与表达规则，不检索兴趣、经历和关系；后者请到「人生记忆」。</p>
 <div class="toolbar"><input id="growth-preview-query" maxlength="120" placeholder="可输入评论主题"><button id="growth-preview-apply">刷新预览</button><button id="growth-preview-reset">清空</button></div><pre id="growth-context"></pre></div></section>
-<section id="panel-meme" hidden><div class="card" style="margin-bottom:14px"><h3>人工新增梗知识</h3><p class="muted">由主人直接编写，保存后立即作为已批准知识供 AI 参考；不伪造视频来源。</p>
+<section id="panel-meme" hidden><div class="feature-intro"><div><span class="live-badge" id="meme-learning-status">● 大肥鱼正在收集梗知识</span><h2>梗知识库</h2><p class="muted">大肥鱼看视频时会收集有来源的梗线索，主人负责审核；不要把未知含义误当确定事实。</p></div></div><div class="card" style="margin-bottom:14px"><h3>主人手动补充梗知识</h3><p class="muted">你手动保存后直接获批、可以被 AI 搜到；但“是否已批准”和“释义是否有证据”是两件事。没有可靠证据的梗会保留为待核实线索。</p>
 <div class="fields"><div><label for="meme-new-name">名称</label><input id="meme-new-name" maxlength="48" placeholder="例如 某个新梗"></div><div><label for="meme-new-aliases">别名（可选）</label><input id="meme-new-aliases" maxlength="140"></div>
-<div><label for="meme-new-kind">类别</label><select id="meme-new-kind"><option>梗</option><option>角色</option><option>人物</option><option>系列</option><option>其他</option></select></div><div><label for="meme-new-confidence">可信度</label><select id="meme-new-confidence"><option>待核实</option><option>有文字依据</option></select></div></div>
+<div><label for="meme-new-kind">知识类别</label><select id="meme-new-kind"><option>梗</option><option>角色</option><option>人物</option><option>系列</option><option>其他</option></select></div><div><label for="meme-new-confidence">释义证据</label><select id="meme-new-confidence"><option value="待核实">待核实 · 只有线索</option><option value="有文字依据">有文字依据 · 已核对</option></select><small class="field-help">“待核实”仍可作为理解线索，但大肥鱼不能当成确定事实；“有文字依据”表示你核对过可靠的字幕、评论或来源。此选项不代替“批准使用”。</small></div></div>
 <label for="meme-new-meaning">释义（须由主人自行核对）</label><textarea id="meme-new-meaning" maxlength="220" placeholder="描述它是什么意思、适合什么语境"></textarea><div class="toolbar"><button id="meme-new-save" class="primary">新增并启用</button></div></div>
 <div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗先待审核；旧记录自动保留可用。修改后可手动批准或拒绝，不删除原视频证据。</p><div class="grid" id="meme-list"></div></section>
 <section id="panel-stickers" hidden>

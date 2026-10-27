@@ -31,22 +31,14 @@ test('成长经验待审核最前、已批准中间、拒绝最后，组内最�
   assert.deepEqual(entries.map(x=>x.id),['r1','a1','p1','r2','p2','a2'],'不得修改服务端原顺序')
   assert.deepEqual(Array.from(sort(entries.filter(e=>e.status==='pending')),x=>x.id),['p2','p1'])
   assert.match(web,/growthDisplayOrder\(entries\.filter\(/,'真实列表必须调用排序函数')
-  assert.match(html,/待审核 → 已批准 → 已拒绝/)
+  assert.match(html,/待审核与已生效的提示词规则/)
 })
 
-test('主题 Claude 通过已批准的成长正文/标签本地召回，错误拼写不依赖 AI 纠正',()=>{
-  const dir=mkdtempSync(join(tmpdir(),'growth-recall-v2443-'))
+test('新版行为改进禁止新建关系，旧版关系仍可通过统一人生记忆只读查询',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'growth-recall-v2483-'))
   try{
-    const pending=proposeGrowth(dir,{type:'relationship',text:'Claude 小姐和大肥鱼属于同一个虚构 AI 角色世界。'})
-    assert.doesNotMatch(buildGrowthContext(dir,{scene:'video',query:'Claude'}),/属于同一个虚构/,'待审核不能参与召回')
-    updateGrowthSuggestion(dir,pending.id,{origin:'model',suggestion:'Claude 小姐和大肥鱼在虚构角色世界里互相熟悉，能自然调侃。'})
-    reviewGrowth(dir,pending.id,'approved')
-    const found=buildGrowthContext(dir,{scene:'video',query:'claude'})
-    assert.match(found,/Claude 小姐和大肥鱼/)
-    assert.doesNotMatch(buildGrowthContext(dir,{scene:'video',query:'Cluade'}),/Claude 小姐和大肥鱼/)
-    assert.doesNotMatch(buildGrowthContext(dir,{scene:'video'}),/Claude 小姐和大肥鱼/,'关系没有主题就不注入')
-    const entry=listGrowth(dir).entries[0]
-    assert.equal(entry.personName,undefined,'relationship 并无专门的人物字段')
+    assert.throws(()=>proposeGrowth(dir,{type:'relationship',text:'Claude 小姐和大肥鱼属于同一个虚构 AI 角色世界。'}),/人生记忆/)
+    assert.equal(buildGrowthContext(dir,{scene:'comment',query:'Claude'}),'')
+    assert.match(html,/历史的非表达类型已原样放到/)
   } finally {rmSync(dir,{recursive:true,force:true})}
-  assert.match(html,/本地关键词召回预览，不调用 AI/)
 })

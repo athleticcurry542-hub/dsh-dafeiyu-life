@@ -72,11 +72,10 @@ test('成长记忆支持 chat 场景，评论风格不会误灌普通主 Session
   try{
     let x=proposeGrowth(dir,{text:'普通聊天时我更喜欢短一点自然一点',type:'style',source:'owner-direct'})
     reviewGrowth(dir,x.id,'approved')
-    x=proposeGrowth(dir,{text:'我最近越来越喜欢 AI 桌宠和模型娘化内容',type:'interest',source:'owner-direct'})
-    reviewGrowth(dir,x.id,'approved')
+    assert.throws(()=>proposeGrowth(dir,{text:'我最近越来越喜欢 AI 桌宠和模型娘化内容',type:'interest',source:'owner-direct'}),/人生记忆/)
     const out=buildGrowthContext(dir,{scene:'chat',query:'最近喜欢什么',maxChars:1000})
-    assert.match(out,/AI 桌宠/)
-    assert.doesNotMatch(out,/普通聊天时我更喜欢短一点自然一点/)
+    assert.equal(out,'','行为与表达规则只针对公开评论，不向主 Session 灌注兴趣或评论风格')
+    assert.match(buildGrowthContext(dir,{scene:'comment',query:'表达简短',maxChars:1000}),/普通聊天时我更喜欢短一点自然一点/)
   }finally{rmSync(dir,{recursive:true,force:true})}
 })
 

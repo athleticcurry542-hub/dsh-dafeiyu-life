@@ -27,17 +27,12 @@ const apiSetup=(base)=>{
  }
 }
 
-test('relationship 人物名称、别名参与只读召回，只有批准的关系生效',()=>{
+test('新版不能新建关系成长规则，旧版关系仍由统一人生记忆检索负责',()=>{
  const dir=home();try{
-   const row=proposeGrowth(dir,{type:'relationship',text:'Claude 是大肥鱼在虚构世界里的朋友，交流很自然'})
-   updateGrowthPerson(dir,row.id,{personName:'Claude',personAliases:['克劳德','克劳德小姐']})
+   assert.throws(()=>proposeGrowth(dir,{type:'relationship',text:'Claude 是大肥鱼在虚构世界里的朋友，交流很自然'}),/人生记忆/)
    assert.equal(buildGrowthContext(dir,{scene:'video',query:'克劳德'}),'')
-   updateGrowthSuggestion(dir,row.id,{suggestion:'Claude 是大肥鱼在虚构世界中的好友，聊天会互相调侃',origin:'model'})
-   reviewGrowth(dir,row.id,'approved')
-   assert.match(buildGrowthContext(dir,{scene:'video',query:'克劳德',maxChars:1200}),/Claude/)
-   assert.match(buildGrowthContext(dir,{scene:'video',query:'CLAUDE',maxChars:1200}),/Claude/)
-   assert.ok(!buildGrowthContext(dir,{scene:'video',query:'不相关'},).includes('Claude'))
-   assert.deepEqual(listGrowth(dir).entries[0].personAliases,['克劳德','克劳德小姐'])
+   const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
+   assert.match(html,/人物关系与旧资料/)
  }finally{rmSync(dir,{recursive:true,force:true})}
 })
 
@@ -89,5 +84,5 @@ test('管理页提供四类入口，已批准成长经验才需要删除确认',
  assert.match(js,/e.status==='approved'&&\!confirm/)
  for(const name of ['growth-list','meme-new-save','sticker-upload','sticker-list','sticker-search'])assert.ok(html.includes('id="'+name+'"'))
  assert.ok(html.includes('data-tab="stickers"'))
- assert.ok(html.includes('直接提交待审核'))
+ assert.ok(html.includes('自己编写，直接待审核'))
 })

@@ -133,6 +133,24 @@ window.__ModuleLoader__.load({
 [data-bd-kv]{font-size:11px;line-height:18px;color:var(--dsw-alias-label-tertiary,#9aa0a6);word-break:break-all;}
 [data-bd-badge]{font-size:11px;padding:2px 7px;border-radius:6px;
   background:var(--dsw-alias-bg-layer-4,rgba(128,128,128,.14));color:var(--dsw-alias-label-secondary,#c9ccd1);}
+/* v2.4.83 — DSH 原生设置页，保留主题变量并提升交互辨识度 */
+[data-bd-page]{gap:19px;}
+[data-bd-sec]{padding:15px 17px;border:1px solid var(--dsw-alias-bg-layer-3,rgba(128,128,128,.18));border-radius:15px;background:var(--dsw-alias-bg-layer-1,rgba(128,128,128,.05));}
+[data-bd-sub]{padding:10px 0 10px 14px;border-left:3px solid #35a185;}
+[data-bd-sw][data-on]{background:#18966f;box-shadow:0 0 0 3px rgba(24,150,111,.09);}
+[data-bd-h]{font-size:12px;font-weight:750;letter-spacing:.02em;}
+[data-bd-input]{border-radius:10px;padding:9px 11px;transition:border-color .15s,box-shadow .15s;}
+[data-bd-input]:focus{border-color:#2d85c6;box-shadow:0 0 0 3px rgba(45,133,198,.13);}
+[data-bd-btn]{border-radius:10px;font-weight:650;transition:filter .15s,transform .15s;}
+[data-bd-btn]:not(:disabled):hover{transform:translateY(-1px);}
+[data-bd-btn][data-primary]{background:#187c63;border-color:#187c63;color:#fff;}
+[data-bd-tabs]{border-radius:12px;}
+[data-bd-tab][aria-selected=true]{box-shadow:0 3px 10px rgba(40,88,160,.1);}
+[data-bd-item]{box-shadow:0 5px 18px rgba(26,57,98,.07);border-radius:14px;}
+[data-bd-author-link]{display:inline-flex;align-items:center;color:#168a65;font-size:15px;font-weight:750;text-decoration:none;border:1px solid rgba(34,161,116,.3);background:rgba(41,178,120,.1);border-radius:999px;padding:6px 13px;width:fit-content;}
+[data-bd-author-link]:hover{text-decoration:underline;filter:brightness(1.1);}
+@media(max-width:600px){[data-bd-sec]{padding:11px 12px;}}
+
 `
 
 
@@ -1005,8 +1023,7 @@ function WatchTab() {
           h('div', { 'data-bd-note': '' }, '项目包名：dsh-dafeiyu-life · 当前版本：v' + (st.version || '?') + '。B站只是她目前最完整的一块“生活场景”，不是整个项目的边界。'),
           h('div', { 'data-bd-sub': '' },
             h('div', { 'data-bd-h': '' }, '作者的 B站主页'),
-            h('div', { 'data-bd-label': '' }, '长条动物'),
-            h('a', { href:'https://space.bilibili.com/210228238', target:'_blank', rel:'noopener noreferrer' }, '访问「长条动物」的 B站主页 ↗')),
+            h('a', { href:'https://space.bilibili.com/210228238', target:'_blank', rel:'noopener noreferrer', 'data-bd-author-link': '' }, '长条动物')),
           h('div', { 'data-bd-sep': '' }),
           h('div', { 'data-bd-h': '' }, '开源来源与致谢'),
           h('div', { 'data-bd-note': '' }, '这个项目不是凭空出现的。下面这些开源项目提供了直接的代码基础、第三方能力或重要的架构启发；本项目保留相应许可证和署名，并明确区分“直接衍生 / 内置代码 / 架构启发”。'),
