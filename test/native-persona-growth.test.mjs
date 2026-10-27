@@ -81,7 +81,7 @@ test('growth API rejects unexpected actions and remote origins without altering 
 })
 
 test('native DSH settings exposes a compact entry and management center owns growth operations',()=>{
-  for (const keyword of ['新增成长经验','直接提交待审核','不调用 AI，直接审核原始反馈','从日报提取兴趣','撤销最近修改','不同使用场景的成长记忆预览','/persona-growth','AI 提炼建议']) {
+  for (const keyword of ['行为与表达改进','直接提交待审核','不调用 AI，直接审核原始反馈','撤销最近修改','/persona-growth','AI 提炼建议','人生记忆']) {
     assert.ok((managerHtml+managerJs).includes(keyword),keyword)
   }
   assert.ok(client.includes('她会自己去 B站、把重要经历带回主 Session'))

@@ -25,34 +25,22 @@ test('owner feedback cannot bypass model: model suggestion -> owner revision -> 
  assert.doesNotMatch(buildGrowthContext(dir),/原视频台词然后机械评价/)
 }))
 
-test('report interest approved without model as an optional preference, never added to configured search terms',()=>withDir(dir=>{
+test('日报主题不再生成成长审批；后天兴趣交由人生记忆证据档案维护',()=>withDir(dir=>{
  const reports=['BV1aBcD2eF3G','BV1xYzA2bC3D','BV1lMnO2pQ3R'].map(bv=>`### ${bv}\n标题：AI模型拟人：Claude小姐的故事\n档位：值得看\n`).join('\n')
  const result=ingestReportText(dir,reports)
- assert.ok(result.proposals>=1)
- const interest=listGrowth(dir).entries.find(e=>e.type==='interest'&&e.tags.includes('AI模型拟人'))
- assert.equal(interest.source,'report')
- assert.equal(interest.status,'pending')
+ assert.equal(result.proposals,0)
+ assert.deepEqual(listGrowth(dir).entries,[])
  assert.doesNotMatch(buildGrowthContext(dir,{scene:'duty'}),/AI模型拟人/)
- reviewGrowth(dir,interest.id,'approved')
- const context=buildGrowthContext(dir,{scene:'duty'})
- assert.match(context,/AI模型拟人/)
- assert.match(context,/不是搜索关键词/)
- assert.doesNotMatch(buildGrowthContext(dir,{scene:'comment',query:'数学分析'}),/AI模型拟人/)
  const original=readFileSync(new URL('../index.js',import.meta.url),'utf8')
  assert.match(original,/不能把它们自动追加成搜索关键词/)
- assert.match(original,/kws\.join/)
 }))
 
-test('likes rice is a personality preference, not a forced search topic; experiences and relationships require context',()=>withDir(dir=>{
- addApproved(dir,'interest','大肥鱼喜欢吃饭，遇到美食时会更容易被打动，但不用特地搜美食视频。',['白饭与美食'])
- addApproved(dir,'experience','曾在 BV1aBcD2eF3G 视频里看到 Claude小姐大谈 Token 趣事。')
- addApproved(dir,'relationship','Claude小姐是大肥鱼虚构角色背景里的亲密朋友。',['Claude小姐'])
- assert.match(buildGrowthContext(dir,{scene:'duty'}),/喜欢吃饭/)
- assert.doesNotMatch(buildGrowthContext(dir,{scene:'duty'}),/大谈 Token/)
- assert.doesNotMatch(buildGrowthContext(dir,{scene:'duty'}),/亲密朋友/)
- assert.doesNotMatch(buildGrowthContext(dir,{scene:'video',query:'下雨天的数学题'}),/亲密朋友/)
- assert.match(buildGrowthContext(dir,{scene:'video',query:'Claude小姐的故事'}),/亲密朋友/)
- assert.match(buildGrowthContext(dir,{scene:'video',query:'BV1aBcD2eF3G'}),/大谈 Token/)
+test('新的行为改进只允许 style，已批准规则只注入适用提示词',()=>withDir(dir=>{
+ assert.throws(()=>proposeGrowth(dir,{type:'interest',text:'最近喜欢美食视频，并不意味着固定兴趣。'}),/只收录表达或互动规则/)
+ assert.throws(()=>proposeGrowth(dir,{type:'relationship',text:'Claude小姐是熟悉的AI朋友。'}),/只收录表达或互动规则/)
+ addApproved(dir,'style','评论不要机械复述视频，也不要为了完成任务强行提到白饭。')
+ assert.match(buildGrowthContext(dir,{scene:'comment'}),/机械复述/)
+ assert.doesNotMatch(buildGrowthContext(dir,{scene:'dm'}),/机械复述/)
 }))
 
 test('video recall MCP is read-only and never edits the manually configured keywords',()=>withDir(dir=>{
