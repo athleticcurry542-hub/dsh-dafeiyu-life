@@ -84,7 +84,7 @@ test('native DSH settings exposes a compact entry and management center owns gro
   for (const keyword of ['新增成长经验','直接提交待审核','不调用 AI，直接审核原始反馈','从日报提取兴趣','撤销最近修改','不同使用场景的成长记忆预览','/persona-growth','AI 提炼建议']) {
     assert.ok((managerHtml+managerJs).includes(keyword),keyword)
   }
-  assert.ok(client.includes('成长经验审核、梗知识编辑／批准、限额聊天申请统一在宽屏页面管理'))
+  assert.ok(client.includes('她会自己去 B站、把重要经历带回主 Session'))
   assert.ok(host.includes("path === '/api/bili-duty/persona-growth'"))
   assert.ok(host.includes("+ growthDoc"))
   assert.ok(client.includes("what: 'manage'"))

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>大肥鱼 · 管理中心</title>
+<title>大肥鱼 · DSH 生活系统 · 管理中心</title>
 <style>
 :root{color-scheme:light dark;font-family:system-ui,'Microsoft YaHei',sans-serif;--ink:#20272f;--muted:#697685;--page:#f4f7fb;--panel:#fff;--stroke:#dbe3eb;--action:#305fd1;--tint:#edf3ff;--bad:#a33e3e}
 @media(prefers-color-scheme:dark){:root{--ink:#e6ecf3;--muted:#a4b2c4;--page:#131b25;--panel:#1b2733;--stroke:#3a4c5c;--action:#88adff;--tint:#263850;--bad:#ff8585}}
@@ -25,7 +25,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
 <body><main class="wrap">
-<header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">运行控制 · 次数与额度 · 人设与好友 · 诊断与互动记录｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
+<header class="top"><div><h1>🐳 大肥鱼 · DSH 生活系统</h1><p class="muted">管理中心 · 她的家、记忆、好友、B站生活、互动边界与持久化档案</p></div><button id="refresh">刷新当前页</button></header>
 <nav class="tabs" aria-label="管理分类">
 <button data-tab="persona" aria-selected="true">人设与好友</button>
 <button data-tab="home" aria-selected="false">大肥鱼的家</button>
@@ -279,5 +279,5 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>临时视频心愿（仅获批用户）</h3><button id="dm-wishes-refresh">刷新心愿</button></div><p class="muted">对方明确要求找视频后审核；审核通过才加入临时搜索与 @，30天有效。仅计评论接口接受的 @ 尝试，通知送达无法核实。可手动取消。</p><div id="dm-wishes-list" class="records"></div></div>
 <div class="card" style="margin-top:16px"><div class="row" style="justify-content:space-between"><h3>最近私信会话</h3><button id="dm-recent-reload">刷新会话</button></div><p class="muted">只显示本插件已经保存的对话片段；不从 B站 额外拉取完整历史。获批用户可以点击“从本地历史补录视频心愿”，补录会对新心愿进行 AI 审核，不发送私信。记录仅在本机展示。</p><div id="dm-recent-list" class="records"></div></div>
 </section>
-<footer class="muted" style="margin-top:30px">数据只保存在本机 DSH 插件目录；此页面不从第三方加载脚本。若页面打不开，请先从 DSH 的「刷B站」设置点击管理中心入口。</footer>
+<footer class="muted" style="margin-top:30px">数据只保存在本机 DSH 插件目录；此页面不从第三方加载脚本。若页面打不开，请先从 DSH 的「大肥鱼」设置点击管理中心入口。</footer>
 </main></body></html>

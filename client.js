@@ -1,5 +1,5 @@
 /**
- * dsh-bili-scroll-plus —— 浏览器半端（**设置在「设置」里的一页**）
+ * dsh-dafeiyu-life —— 浏览器半端（**设置在「设置」里的一页**）
  * ============================================================================
  * ⭐ **client bundle 不是 ESM，是自注册脚本**（2026-10-14 从官方包里挖到的约定）：
  *
@@ -12,7 +12,7 @@
  *
  *     const slots = ctx.get('slots')
  *     slots.inject('settings.section', () => slots.register(
- *       { name: 'settings.section', id: 'bili-scroll', order: 30, label: '刷B站' },   // label = 左侧导航那一项
+ *       { name: 'settings.section', id: 'dafeiyu-life', order: 30, label: '大肥鱼' },   // label = 左侧导航那一项
  *       () => h(Panel),
  *     ))
  *
@@ -26,7 +26,7 @@
  * ============================================================================
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-bili-scroll-plus',
+  id: 'dsh-dafeiyu-life',
   factory: (require) => {
     const React = require('react')
     const h = React.createElement
@@ -589,7 +589,7 @@ function WatchTab() {
             ? '读不到插件配置（已经试了 ' + fails + ' 次）。常见原因有三个：装的还是 0.1.11 / 0.1.12（那两版有 bug，会卡在这里）；刚装完没重启 dsh；或者插件加载失败。'
             : '读设置中…'),
           fails >= 6 ? h('div', { 'data-bd-note': '' },
-            '可以先试：升级到最新版（dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus）→ 重启 dsh；还不行就把 ' +
+            '可以先试：升级到最新版（dsh plugin --profile web add github:minedalang/dsh-dafeiyu-life）→ 重启 dsh；还不行就把 ' +
             '%USERPROFILE%\\.dsh\\bili-duty\\duty.log 的最后几十行发给作者。') : null)
       }
 
@@ -598,8 +598,8 @@ function WatchTab() {
       return h('div', { 'data-bd-page': '' },
         h('div',{ 'data-bd-sec':'',style:{padding:'12px',borderRadius:'12px',border:'1px solid var(--dsw-alias-bg-layer-3,rgba(127,127,127,.24))'}},
           h('div',{'data-bd-row':'',style:{justifyContent:'space-between',alignItems:'center'}},
-            h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'🐳 大肥鱼管理中心'),
-              h('div',{'data-bd-note':''},'成长经验审核、梗知识编辑／批准、限额聊天申请统一在宽屏页面管理，无需启动 18763 服务。')),
+            h('div',{'data-bd-grow':''},h('div',{'data-bd-label':''},'🐳 大肥鱼 · DSH 生活系统'),
+              h('div',{'data-bd-note':''},'她会自己去 B站、把重要经历带回主 Session、长期记住主人和朋友；精确档案、长期记忆、梗、好友关系与互动状态都保存在本地。')),
             h('button',{type:'button','data-bd-btn':'',onClick:async()=>{
               // 让宿主按实际 HTTP Host 构造绝对 URL；设置页可能运行在自定义 DSH scheme 下。
               try {
@@ -641,7 +641,7 @@ function WatchTab() {
 
         /* ── 定时 ── */
         h('div', { 'data-bd-tabs': '' },
-          [['daily', '日常'], ['taste', '偏好'], ['social', '互动'], ['adv', '高级']].map(([v, label]) =>
+          [['daily', '日常'], ['taste', '偏好'], ['social', '互动'], ['adv', '高级'], ['about', '关于']].map(([v, label]) =>
             h('button', { key: v, 'data-bd-tab': '', 'aria-selected': tab === v ? 'true' : 'false', onClick: () => setTab(v) }, label))),
 
         h('div', { 'data-bd-row': '' },
@@ -998,6 +998,34 @@ function WatchTab() {
             h('button', { 'data-bd-btn': '', onClick: () => onOpenFolder('home') }, '打开家目录'),
             h('button', { 'data-bd-btn': '', disabled: busy === 'verify', onClick: onVerify }, '复核评论'),
             h('button', { 'data-bd-btn': '', onClick: () => copyText(st.report) }, '复制报告路径'))),
+
+        h('div', { 'data-bd-sec': '', 'data-bd-group': 'about', 'data-bd-away': tab === 'about' ? undefined : '' },
+          h('div', { 'data-bd-h': '' }, '大肥鱼 · DSH 生活系统'),
+          h('div', { 'data-bd-label': '' }, '这不是一个只会发评论的机器人，而是一套让“大肥鱼”在 DSH 里持续生活的系统：后台出去看 B站，主 Session 作为她的家，重要经历、主人相处、朋友关系、梗和互动结果都能长期留下。'),
+          h('div', { 'data-bd-note': '' }, '项目包名：dsh-dafeiyu-life · 当前版本：v' + (st.version || '?') + '。B站只是她目前最完整的一块“生活场景”，不是整个项目的边界。'),
+          h('div', { 'data-bd-sep': '' }),
+          h('div', { 'data-bd-h': '' }, '开源来源与致谢'),
+          h('div', { 'data-bd-note': '' }, '这个项目不是凭空出现的。下面这些开源项目提供了直接的代码基础、第三方能力或重要的架构启发；本项目保留相应许可证和署名，并明确区分“直接衍生 / 内置代码 / 架构启发”。'),
+          h('div', { 'data-bd-sub': '' },
+            h('div', { 'data-bd-label': '' }, 'c1overzz/dsh-bili-scroll'),
+            h('div', { 'data-bd-note': '' }, '直接上游与代码血缘基础（MIT）。大肥鱼最初的 B站值班、报告与插件骨架来自这里。'),
+            h('a', { href:'https://github.com/c1overzz/dsh-bili-scroll', target:'_blank', rel:'noreferrer' }, '打开上游仓库 ↗')),
+          h('div', { 'data-bd-sub': '' },
+            h('div', { 'data-bd-label': '' }, 'adoresever/bilibili-mcp · AGI_Ananas'),
+            h('div', { 'data-bd-note': '' }, '内置 Python B站 MCP 的上游（MIT）。登录、视频、字幕、评论等底层能力在其基础上持续修改与加固。'),
+            h('a', { href:'https://github.com/adoresever/bilibili-mcp', target:'_blank', rel:'noreferrer' }, '打开上游仓库 ↗')),
+          h('div', { 'data-bd-sub': '' },
+            h('div', { 'data-bd-label': '' }, 'Yuuyuko-uu/dsh-fish-memory'),
+            h('div', { 'data-bd-note': '' }, '内置长期人格记忆的核心设计与部分实现来源（MIT）：按 Session 存储、淡忘、事实键、取代语义和相关召回。'),
+            h('a', { href:'https://github.com/Yuuyuko-uu/dsh-fish-memory', target:'_blank', rel:'noreferrer' }, '打开上游仓库 ↗')),
+          h('div', { 'data-bd-sub': '' },
+            h('div', { 'data-bd-label': '' }, 'Yuuyuko-uu/dsh-bili-subagent'),
+            h('div', { 'data-bd-note': '' }, '“AI 伙伴有一个长期的家，出去活动后再把经历带回来”的产品/架构思路给了重要启发；本项目没有把该仓库源码作为 vendor 代码打包。'),
+            h('a', { href:'https://github.com/Yuuyuko-uu/dsh-bili-subagent', target:'_blank', rel:'noreferrer' }, '打开参考仓库 ↗')),
+          h('div', { 'data-bd-note': '' }, '完整许可证、修改边界与第三方声明见仓库根目录 NOTICE.md、THIRD_PARTY_NOTICES.md、CONTRIBUTORS.md。感谢所有上游作者与社区贡献者。'),
+          h('div', { 'data-bd-row': '' },
+            h('a', { 'data-bd-btn':'', href:'https://github.com/minedalang/dsh-dafeiyu-life', target:'_blank', rel:'noreferrer' }, '项目仓库 ↗'),
+            h('a', { 'data-bd-btn':'', href:'https://github.com/minedalang/dsh-dafeiyu-life/blob/main/THIRD_PARTY_NOTICES.md', target:'_blank', rel:'noreferrer' }, '第三方声明 ↗'))),
       )
     }
 
@@ -1005,16 +1033,16 @@ function WatchTab() {
       inject: ['slots'],
       apply(ctx) {
         const style = document.createElement('style')
-        style.setAttribute('data-plugin-css', 'dsh-bili-scroll-plus')
+        style.setAttribute('data-plugin-css', 'dsh-dafeiyu-life')
         style.textContent = CSS
         document.head.appendChild(style)
-        ctx.effect(() => () => style.remove(), 'dsh-bili-scroll-plus: 设置页样式')
+        ctx.effect(() => () => style.remove(), 'dsh-dafeiyu-life: 设置页样式')
 
         // ⭐ 进「设置」：label 就是左侧导航里那一项（抄 dsh-meme 的写法）
         const slots = (typeof ctx.get === 'function' ? ctx.get('slots') : undefined) || ctx.slots
         if (!slots) return
         slots.inject('settings.section', () => slots.register(
-          { name: 'settings.section', id: 'bili-scroll', order: 30, label: '刷B站' },
+          { name: 'settings.section', id: 'dafeiyu-life', order: 30, label: '大肥鱼' },
           () => h(Panel),
         ))
 
@@ -1024,7 +1052,7 @@ function WatchTab() {
       name: 'conversation.view',
       id: 'bili-watched',
       order: 20,
-      label: '刷过的视频',
+      label: '大肥鱼足迹',
       scope: 'session',
     }, () => h(WatchTab)))
   } catch (e) { /* 没有这个槽位就算了 */ }

@@ -62,7 +62,7 @@ test('本地经历可关键词检索，且业务备份允许该文件但不涉�
 
 test('同步提示固定为历史资料，不授权主 Session 执行外部动作',()=>{
   const msg=__test.buildMessage([{kind:'watch',day:'2026-10-27',bvid:'BV1234567890',title:'测试'}])
-  assert.match(msg,/不是主人下达的新任务/);assert.match(msg,/不要.*调用任何工具/);assert.match(msg,/精确 BV.*以刷B站插件档案为准/)
+  assert.match(msg,/不是主人下达的新任务/);assert.match(msg,/不要.*调用任何工具/);assert.match(msg,/精确 BV.*以大肥鱼本地档案为准/)
 })
 
 test('在线会话列表优先使用 DSH sessionTitle，不读取会话文件猜标题',()=>{
@@ -85,6 +85,6 @@ test('实际源码只通过 ctx.agents 绑定主 Session，并提供管理中心
   assert.doesNotMatch(bridge,/\breaddirSync\b/)
   assert.doesNotMatch(bridge,/join\([^\n]*['\"]sessions['\"]/)
   assert.match(bridge,/agent\.followup|\.followup\(/)
-  assert.match(bridge,/plugin:dsh-bili-scroll-plus/)
+  assert.match(bridge,/plugin:dsh-dafeiyu-life/)
   assert.match(index,/name: 'bili_experience_recall'/)
 })

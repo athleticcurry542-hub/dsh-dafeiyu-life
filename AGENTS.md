@@ -1,6 +1,6 @@
 # 给 AI 助手看的（本仓库 = 一个 DSH 插件）
 
-`dsh-bili-scroll-plus`（中文名「**刷B站**」）：每天替用户刷一轮 B 站 —— 搜、**读字幕原文**判断、写一份日报，特别值得的会发一条评论 **@ 用户**。
+`dsh-dafeiyu-life`（展示名「**大肥鱼 · DSH 生活系统**」）：让大肥鱼以一个长期角色在 DSH 中生活；B站后台只是目前最完整的外出场景。
 
 ## 帮用户安装时，按这个顺序
 
@@ -11,13 +11,13 @@
    · ⚠️ 若用户机器上的**杀软拦了这次下载**：让他把 `%USERPROFILE%\.dsh\bili-duty\bin\` 加白，或干脆自己装 uv / Python 3.10+ ✓
    · ⭐ **万一下载链路都不通**（有用户反馈"桌面版上这条链路经常不通"）：**手动放一份 `uv.exe` 到 `<家目录>\bin\` 就行**
      —— 插件会**用那一份、跳过下载** ✓（他 `PATH` 里本来就有 `uv` 的话，直接用那个 ✓）
-  2. `dsh plugin --profile web add github:minedalang/dsh-bili-scroll-plus`（Plus 版唯一推荐安装源；Plus npm `dsh-bili-scroll-plus` 未独立发布前不可使用，严禁退回原版包）。
+  2. `dsh plugin --profile web add github:minedalang/dsh-dafeiyu-life`（当前唯一推荐安装源；新 npm `dsh-dafeiyu-life` 未独立发布前不可使用，严禁退回原版包）。
    · 备选：`dsh plugin --profile web add github:c1overzz/dsh-bili-scroll`
    · ⚠️ **升级旧版**：如果用户在设置页看到的按钮叫「**重装依赖**」（不是「**重装主依赖**」），
      说明装的还是 **0.1.0** —— 那一版建 Python 环境时缺一个参数，**依赖装不上、二维码也画不出来**。
      让用户重跑一次上面那条 `add` 就是升级（然后再重启一次）。
 3. ⚠️ **提醒用户重启一次 dsh**（必须，bundle 层要重启才组装）。
-4. 让用户进 **设置 → 刷B站**：点「**装主依赖**」→ 点「**扫码登录**」（手机扫码，选"记住我 / 长期"）。
+4. 让用户进 **设置 → 大肥鱼**：点「**装主依赖**」→ 点「**扫码登录**」（手机扫码，选"记住我 / 长期"）。
    · 装完可以用设置页的「**测一下**」自检：它真跑一次登录检查 + 一次搜索，直接回答"能不能用"。
 5. **别擅自打开「自动评论并 @ 你」** —— 那是拿用户的号说话；要用得让用户自己填「要 @ 谁」。
 
@@ -56,7 +56,7 @@
 
 ## 分支来源与发布纪律
 
-- 当前独立维护版：https://github.com/minedalang/dsh-bili-scroll-plus，npm 包名 `dsh-bili-scroll-plus`；宿主挂载清单中的 `name` 必须同包名一致。
-- 原作者 / 原仓库：https://github.com/c1overzz/dsh-bili-scroll。保留原项目 MIT 版权、第三方署名，不将 Plus 说成官方版本。
-- GitHub Releases 发布 `dsh-bili-scroll-plus-<version>.tgz`，插件自动升级必须查询 **Plus** Releases；未发布 npm 前，不引导用户安装 npm 包。
-- `bili-scroll` 原 Cordis 插件 id 和 `bili-duty` 用户数据目录暂不改动，以防破坏旧设置。不要在同一 profile 同时启用原版与 Plus。
+- 当前独立维护版：https://github.com/minedalang/dsh-dafeiyu-life，npm 包名 `dsh-dafeiyu-life`；宿主挂载清单中的 `name` 必须同包名一致。
+- 原作者 / 原仓库：https://github.com/c1overzz/dsh-bili-scroll。保留原项目 MIT 版权、第三方署名，不将本衍生项目说成官方版本。
+- GitHub Releases 发布 `dsh-dafeiyu-life-<version>.tgz`，插件自动升级必须查询本项目 Releases；未发布 npm 前，不引导用户安装 npm 包。
+- Cordis 插件 id 已统一为 `dafeiyu-life`；`bili-duty` 用户数据目录和 `/api/bili-duty` 内部前缀暂时保留，避免无意义的数据搬迁。不要在同一 profile 同时启用旧包和新包。

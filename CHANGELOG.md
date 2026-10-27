@@ -1,3 +1,10 @@
+## v2.4.77 — 大肥鱼 · DSH 生活系统：品牌收束、README 重写与开源致谢前置（2026-10-27)
+
+- 对外包名由 `dsh-bili-scroll-plus` 改为 `dsh-dafeiyu-life`，DSH 设置入口改为「大肥鱼」，仓库更新源切换到 `minedalang/dsh-dafeiyu-life`。
+- README 不再堆叠版本流水账，改为围绕“主 Session 是家、后台插件是身体、精确账本是档案、长期记忆是生活连续性”的完整交互系统讲述产品。
+- README 前部与 DSH 设置页新增正式开源来源与致谢，明确区分直接上游、内置第三方代码、长期记忆整合和架构启发。
+- 新备份写为 `dsh-dafeiyu-life-backup`，仍接受旧 `dsh-bili-scroll-plus-backup` 供当前使用者迁移。`bili-duty` 数据目录和内部 API 前缀暂时保留，避免无意义的数据搬迁。
+
 ## v2.4.76 — 内置长期人格记忆 + dsh-fish-memory 合规整合（2026-10-27）
 
 - 将 `Yuuyuko-uu/dsh-fish-memory` 的核心长期记忆设计整合到「大肥鱼的家」：按主 Session 独立存储、时间淡忘、长期事实、事实键、取代语义、相关召回和 scoped remember 工具；保留上游 MIT 版权与许可证，新增 `THIRD_PARTY_NOTICES.md` 与 `vendor/fish-memory/LICENSE`。
