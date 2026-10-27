@@ -43,15 +43,21 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <p id="message" role="status" aria-live="polite"></p>
 <section id="panel-backup" hidden>
 <div class="toolbar"><h2 style="margin:0">数据备份与恢复</h2></div>
-<p class="muted">一键备份本机所有生效设置（含人设、好友权限、模型选项、额度）、已审核梗知识、成长经验、视频心愿、评论/私信状态和现有历史记录。全程在本机处理，无额外 AI 调用，也不会上传到网络。</p>
+<p class="muted">一键备份本机所有生效设置（含人设、好友权限、模型选项、额度）、已审核梗知识、成长经验、视频心愿、评论/私信状态、<strong>大肥鱼身份级长期记忆</strong>和现有历史记录。全程在本机处理，无额外 AI 调用，也不会上传到网络。重要记忆另外提供独立备份，建议两份都保留。</p>
 <div class="settings-stack">
 <div class="settings-section"><h4>本地备份目录（先设置）</h4>
 <p class="muted">请填写你有写入权限的本机文件夹完整路径，如 <code>D:\大肥鱼备份</code>。不存在时将尝试创建。备份将直接保存到这个文件夹，不使用系统 Temp，也不会触发浏览器下载。</p>
 <div class="fields"><div style="grid-column:1/-1"><label for="backup-directory">Windows 本机绝对路径</label><input id="backup-directory" type="text" placeholder="D:\大肥鱼备份" autocomplete="off" style="width:100%"></div></div>
 <div class="toolbar"><button id="backup-directory-save" class="primary">确认备份目录</button></div>
 <p id="backup-directory-status" class="muted" role="status" aria-live="polite">尚未设置备份目录</p></div>
-<div class="settings-section"><h4>备份数据</h4><p class="muted">点击后将完整 JSON 备份文件直接保存到上面配置的本机目录，不会额外下载。<strong>不含：</strong>表情包图片、识图帧、Python/模型缓存、日志、B站登录 Cookie、凭证和独立密钥。备份仍含个人资料、UID、私信记录等敏感信息，切勿公开分享。</p>
-<div class="toolbar"><button id="backup-export" class="primary">备份数据</button></div></div>
+<div class="settings-section"><h4>完整业务数据备份</h4><p class="muted">点击后将完整 JSON 备份文件直接保存到上面配置的本机目录，不会额外下载。<strong>这个总备份已经包含大肥鱼身份级长期记忆。</strong> 不含表情包图片、识图帧、Python/模型缓存、日志、B站登录 Cookie、凭证和独立密钥。JSON 只是备份容器，并不是“只能保存一点数据”；插件仍会设置大小上限避免异常文件拖垮恢复流程。</p>
+<div class="toolbar"><button id="backup-export" class="primary">备份全部业务数据</button></div></div>
+<div class="settings-section"><h4>大肥鱼记忆 · 独立备份（建议额外保留）</h4>
+<p class="muted">长期记忆是大肥鱼最重要、最难重新建立的数据之一。这里把<strong>跨 Session 的身份记忆</strong>单独保存成一份 JSON，和完整业务备份形成双保险。它不包含当前 Session 的聊天历史，也不包含 BV/rpid 等精确经历档案。</p>
+<div class="toolbar"><button id="memory-backup-export" class="primary">单独备份大肥鱼长期记忆</button><span id="memory-backup-export-status" class="muted"></span></div>
+<div class="inset"><label for="memory-backup-import-file">恢复一份大肥鱼记忆备份</label><input id="memory-backup-import-file" type="file" accept=".json,application/json" aria-label="选择大肥鱼长期记忆备份文件">
+<p id="memory-backup-inspect" class="muted" role="status" aria-live="polite">尚未选择记忆备份</p>
+<div class="toolbar"><button id="memory-backup-restore" class="danger" disabled>恢复选中的长期记忆</button></div></div></div>
 <div class="settings-section"><h4>从备份恢复</h4><p class="muted">选择由本插件生成的 .json 文件，先校验数据清单，再人工确认覆盖。恢复前会自动在上面配置的备份目录保存一份当前数据。恢复期间建议暂停自动任务；恢复完成后需要完全重启 DSH。</p>
 <input id="backup-import-file" type="file" accept=".json,application/json" aria-label="选择大肥鱼数据备份文件">
 <p id="backup-inspect" class="muted" role="status" aria-live="polite">尚未选择文件</p>
@@ -86,14 +92,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <article class="record"><div class="title-line">② 大肥鱼长期记忆 · 身份级</div><p class="muted">主人称呼、稳定偏好、重要约定、关系变化、长期状态和重要经历。开启下面的开关后，所有未来主 Session 共用同一份记忆。</p></article>
 <article class="record"><div class="title-line">③ 精确经历档案 · 可核对账本</div><p class="muted">BV、rpid、评论原文、时间、发送状态等继续由插件精确账本保存。长期记忆负责“我记得”，精确档案负责“到底是哪一条”。</p></article>
 </div>
-<p class="muted">明确且可结构化的长期事实会由插件本地规则直接落盘，不额外调用 AI；复杂的约定、关系和经历仍可由大肥鱼调用 <code>dafeiyu_remember</code> 保存。事实键会让新事实取代旧事实，避免相互冲突。</p>
+<p class="muted"><strong>长期记忆现在由大肥鱼在当前这一次聊天思考里做语义判断。</strong> 如果主人明确表达了称呼、稳定偏好、长期状态、约定或关系变化，大肥鱼会在正常回复前调用 <code>dafeiyu_remember</code> 写入身份记忆；不会额外再启动一次“记忆判断 AI”。插件只负责本地安全校验、去重和事实键更新。单纯问“我喜欢什么？”这类召回问题只会读取，不允许反向写入。</p>
 <div class="fields"><div><label for="main-memory-enabled">启用大肥鱼跨 Session 长期记忆（身份级）</label><input id="main-memory-enabled" type="checkbox"></div>
 <div><label for="main-memory-auto-bili">自动记住重要 B站经历</label><input id="main-memory-auto-bili" type="checkbox" checked></div>
 <div><label for="main-memory-half-life">普通记忆半衰期（15–120 天）</label><input id="main-memory-half-life" type="number" min="15" max="120" value="30"></div>
 <div><label for="main-memory-threshold">召回证据门槛（0.10–0.80）</label><input id="main-memory-threshold" type="number" min="0.1" max="0.8" step="0.05" value="0.35"></div>
 <div><label for="main-memory-max-items">每轮最多召回（1–12 条）</label><input id="main-memory-max-items" type="number" min="1" max="12" value="6"></div>
 <div><label for="main-memory-max-chars">每轮记忆字数上限（200–3000）</label><input id="main-memory-max-chars" type="number" min="200" max="3000" value="800"></div>
-<div><label for="main-memory-daily">模型主动补记每日最多（1–30 条）</label><input id="main-memory-daily" type="number" min="1" max="30" value="8"></div>
+<div><label for="main-memory-daily">AI 语义长期记忆每日最多（1–30 条）</label><input id="main-memory-daily" type="number" min="1" max="30" value="8"></div>
 <div><label for="main-memory-facts">长期事实最多占召回（0–6 条）</label><input id="main-memory-facts" type="number" min="0" max="6" value="2"></div></div>
 <div class="toolbar"><button id="main-memory-save" class="primary">保存长期记忆设置</button><button id="main-memory-import">导入当前主 Session 的旧 dsh-fish-memory 记忆</button></div>
 <p id="main-memory-status" class="muted" role="status">正在读取…</p>
@@ -258,11 +264,15 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <div class="toolbar" aria-label="表情包检索规则翻页" style="margin-top:12px"><button id="meme-rule-prev" disabled>上一页</button><span id="meme-rule-page-status" class="muted" aria-live="polite">第 1 / 1 页</span><button id="meme-rule-next" disabled>下一页</button></div>
 <div class="settings-section" style="margin-top:12px"><h4>测试本地匹配（无需 AI）</h4><label for="meme-rule-test-text">输入一条评论；测试直接使用当前编辑区规则（即使尚未保存），仅测试不会覆盖已保存的规则</label><textarea id="meme-rule-test-text" maxlength="280" rows="2" placeholder="例如：这中转站我看不下去了，白饭先从冰箱里拿出来"></textarea><div class="toolbar"><button id="meme-rule-test">测试当前编辑规则</button></div><div id="meme-rule-test-result" class="records" role="status" aria-live="polite"></div></div>
 </div>
-<div class="card"><h3>上传评论表情包</h3><p class="muted">支持 PNG、JPG、GIF、WebP，单张最多 8 MB；名称可使用分类/图片名。仅上传自己有权使用且适合公开发表评论的图片。图片会放在已有的 comment-memes 目录中。</p>
+<div class="card"><h3>表情包整库 · ZIP 导出 / 批量导入</h3>
+<p class="muted"><strong>整库导出</strong>会把当前 comment-memes 中的表情包按原目录结构打成 ZIP。<strong>批量导入</strong>不会逐张询问名称：请先在 ZIP 里自己整理好文件夹、文件名和扩展名，再一次性导入。导入是追加式的，遇到现有同名路径会直接拒绝，不会覆盖已有图片。</p>
+<div class="toolbar"><button id="sticker-archive-export">导出全部表情包 ZIP</button><label for="sticker-archive-import" style="margin:0">批量导入 ZIP</label><input id="sticker-archive-import" type="file" accept=".zip,application/zip" style="max-width:260px"><button id="sticker-archive-import-button" class="primary">导入 ZIP</button></div>
+<p id="sticker-archive-status" class="muted" role="status" aria-live="polite">ZIP 最多 128 MB；最多三级分类目录；单张图片仍按现有格式、尺寸和 8 MB 上限校验。</p></div>
+<div class="card"><h3>单张导入表情包</h3><p class="muted">支持 PNG、JPG、GIF、WebP，单张最多 8 MB。选中图片后会自动带入原文件名，你可以在真正导入前修改分类和名称；这就是单张导入时的重命名步骤。仅导入自己有权使用且适合公开发表评论的图片。</p>
 <div class="fields"><div><label for="sticker-file">选择图片</label><input id="sticker-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp"></div>
 <div><label for="sticker-category">分类（可留空）</label><input id="sticker-category" maxlength="48" placeholder="例如 开心"></div>
-<div><label for="sticker-name">显示名称（不含扩展名）</label><input id="sticker-name" maxlength="64" placeholder="例如 笑哭"></div></div>
-<div class="toolbar" style="margin-top:12px"><button id="sticker-upload" class="primary">上传表情包</button><span id="sticker-upload-status" class="muted"></span></div></div>
+<div><label for="sticker-name">导入名称（可修改，不含扩展名）</label><input id="sticker-name" maxlength="64" placeholder="例如 笑哭"></div></div>
+<div class="toolbar" style="margin-top:12px"><button id="sticker-upload" class="primary">导入这张表情包</button><span id="sticker-upload-status" class="muted"></span></div></div>
 <div class="toolbar" style="margin-top:20px"><h2 style="margin:0">已保存的表情包</h2><label for="sticker-folder-filter" style="margin:0">文件夹分类</label><select id="sticker-folder-filter" aria-label="按文件夹筛选表情包"><option value="all">全部文件夹</option></select><input id="sticker-search" placeholder="搜索名称或分类"><button id="sticker-reload">刷新图库</button><button id="sticker-export-names">导出所有表情包名称 TXT</button></div>
 <p id="sticker-summary" class="muted">正在读取…</p><div id="sticker-list" class="grid sticker-grid"></div><div class="toolbar" aria-label="表情包翻页" style="margin-top:16px"><button id="sticker-page-prev" disabled>上一页</button><span id="sticker-page-status" class="muted" aria-live="polite">第 1 / 1 页</span><button id="sticker-page-next" disabled>下一页</button></div>
 <p class="muted">重命名后，AI 下次读取图库将使用新名称；已经发表的评论图片不受影响。删除后无法恢复，请先备份重要素材。</p>

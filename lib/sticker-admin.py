@@ -16,6 +16,7 @@ from PIL import Image, UnidentifiedImageError
 
 EXTS={'.png':'PNG','.jpg':'JPEG','.jpeg':'JPEG','.gif':'GIF','.webp':'WEBP'}
 MAX_BYTES=8*1024*1024
+MAX_FILES=2000
 NAME=re.compile(r'^[^/\\\x00-\x1f<>:"|?*]{1,64}$')
 
 
@@ -108,7 +109,7 @@ def main():
             print(json.dumps({'ok':True,'total':len(rows),'items':[{k:v for k,v in x.items() if k!='file'} for x in rows]},ensure_ascii=False));return
         data=json.load(sys.stdin)
         if op=='upload':
-            if len(rows)>=300:raise ValueError('表情包最多保留300张，请先整理')
+            if len(rows)>=MAX_FILES:raise ValueError('表情包最多保留2000张，请先整理')
             ext=str(data.get('ext','')).lower()
             if ext not in EXTS:raise ValueError('仅支持 PNG、JPG、GIF、WEBP')
             content=base64.b64decode(data.get('data',''),validate=True)

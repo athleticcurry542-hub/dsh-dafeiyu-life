@@ -17,42 +17,47 @@ function config(id='room-a'){
   return {mainSessionId:id,mainSessionMemoryEnabled:true,mainSessionMemoryAutoBili:true,mainSessionMemoryHalfLifeDays:30,mainSessionMemoryThreshold:.35,mainSessionMemoryMaxItems:6,mainSessionMemoryMaxChars:800,mainSessionMemoryDailyQuota:8,mainSessionMemoryFactsMax:3}
 }
 
-test('高置信主人事实可本地确定性提取，并支持同 fact_key 更新',()=>{
-  assert.equal(__test.extractDeterministicFacts('以后叫我浪哥')[0].fact_key,'主人.称呼')
-  assert.equal(__test.extractDeterministicFacts('我现在最喜欢喝可乐。')[0].fact_key,'主人.偏好.饮料')
-  assert.match(__test.extractDeterministicFacts('其实我最近不怎么喝可乐了，现在最喜欢冰美式。')[0].text,/冰美式/)
-  assert.equal(__test.extractDeterministicFacts('我不喜欢你每句话都用表情包')[0].fact_key,'主人.互动偏好.表情包')
-  assert.equal(__test.extractDeterministicFacts('今天天气不错').length,0)
+test('v2.4.80 不再用本地正则直接生成长期事实，改为 AI 语义判断 + 本地安全闸',()=>{
+  assert.equal(__test.isPureMemoryQuery('我现在最喜欢喝什么？'),true)
+  assert.equal(__test.isPureMemoryQuery('你还记得我平时喜欢喝什么吗？'),true)
+  assert.equal(__test.isPureMemoryQuery('记住：我现在最喜欢喝冰美式。'),false)
+  assert.equal(__test.proposedMemoryHasPlaceholder('主人目前最喜欢喝「什么」。'),true)
+  assert.equal(__test.proposedMemoryHasPlaceholder('主人目前最喜欢喝「冰美式」。'),false)
+  let r=__test.validateSemanticMemoryProposal({text:'主人目前最喜欢喝「什么」。',importance:.98,fact_key:'主人.偏好.饮料'},'我现在最喜欢喝什么？')
+  assert.equal(r.ok,false)
+  r=__test.validateSemanticMemoryProposal({text:'主人目前最喜欢喝「冰美式」。',importance:.98,fact_key:'主人.偏好.饮料'},'我现在最喜欢喝冰美式。')
+  assert.equal(r.ok,true);assert.equal(r.value.fact_key,'主人.偏好.饮料')
 })
 
-test('主人明确事实在收到消息时直接落入身份记忆，不依赖模型主动调用工具',()=>{
+test('收到主人消息本身不再直接写记忆；同一次模型回复通过 remember 语义落盘并支持 fact_key 更新',async()=>{
   const dir=temp(),f=fakeAgent('room-a')
   try{
     const mem=createLongTermMemory({dataDir:dir,dshHome:dir,agents:{get:()=>f.agent,list:()=>[f.agent]},getConfig:()=>config(),defineTool})
-    mem.start()
+    mem.start();const tool=f.tools[0]
     f.handlers['agent/inbox/inserted']({message:{content:[{type:'text',text:'以后叫我浪哥'}]}})
-    let rows=mem.list('称呼');assert.equal(rows.filter(x=>!x.已被取代).length,1);assert.match(rows.find(x=>!x.已被取代).text,/浪哥/)
+    assert.equal(mem.list('称呼').length,0)
+    let r=await tool.execute({text:'主人希望我以后使用称呼「浪哥」。',importance:.99,tags:['主人','称呼'],fact_key:'主人.称呼'})
+    assert.equal(r.ok,true);let rows=mem.list('称呼');assert.equal(rows.filter(x=>!x.已被取代).length,1);assert.match(rows.find(x=>!x.已被取代).text,/浪哥/);assert.equal(rows[0].source,'main-session-ai')
     f.handlers['agent/inbox/inserted']({message:{content:[{type:'text',text:'以后还是叫我主人吧'}]}})
-    rows=mem.list('称呼');assert.equal(rows.filter(x=>!x.已被取代).length,1);assert.match(rows.find(x=>!x.已被取代).text,/「主人」/)
-    assert.equal(existsSync(join(dir,'long-term-memory','dafeiyu.json')),true)
-    assert.equal(existsSync(join(dir,'long-term-memory','room-a.json')),false)
+    r=await tool.execute({text:'主人现在希望我使用称呼「主人」。',importance:.99,tags:['主人','称呼'],fact_key:'主人.称呼'})
+    assert.equal(r.ok,true);rows=mem.list('称呼');assert.equal(rows.filter(x=>!x.已被取代).length,1);assert.match(rows.find(x=>!x.已被取代).text,/「主人」/)
+    assert.equal(existsSync(join(dir,'long-term-memory','dafeiyu.json')),true);assert.equal(existsSync(join(dir,'long-term-memory','room-a.json')),false)
     mem.stop()
   }finally{rmSync(dir,{recursive:true,force:true})}
 })
 
-test('切换主 Session 后读取同一份大肥鱼身份记忆',async()=>{
+test('切换主 Session 后读取同一份身份记忆；召回问题不能反向污染记忆',async()=>{
   const dir=temp(),a=fakeAgent('room-a'),b=fakeAgent('room-b');let room='room-a'
   try{
     const mem=createLongTermMemory({dataDir:dir,dshHome:dir,agents:{get:id=>id.replace(/^session-/,'')==='room-a'?a.agent:b.agent,list:()=>[a.agent,b.agent]},getConfig:()=>config(room),defineTool})
-    mem.start();a.handlers['agent/inbox/inserted']({message:{content:[{type:'text',text:'我现在最喜欢喝可乐'}]}})
-    assert.match(mem.list('饮料').find(x=>!x.已被取代).text,/可乐/)
-    room='room-b';await sleep(900)
-    assert.equal(typeof b.handlers['agent/inbox/inserted'],'function')
-    b.handlers['agent/inbox/inserted']({message:{content:[{type:'text',text:'我现在喜欢喝什么来着？'}]}})
-    const recall=b.contexts.find(x=>x.name==='dafeiyu-memory')?.text?.()||''
-    assert.match(recall,/可乐/)
-    assert.equal(mem.status().sessionId,'room-b');assert.equal(mem.status().scope,'identity')
-    mem.stop()
+    mem.start();a.handlers['agent/inbox/inserted']({message:{content:[{type:'text',text:'我现在最喜欢喝可乐。'}]}})
+    let r=await a.tools[0].execute({text:'主人目前最喜欢喝「可乐」。',importance:.98,tags:['主人','饮料'],fact_key:'主人.偏好.饮料'});assert.equal(r.ok,true)
+    room='room-b';await sleep(900);assert.equal(typeof b.handlers['agent/inbox/inserted'],'function')
+    b.handlers['agent/inbox/inserted']({message:{content:[{type:'text',text:'我现在最喜欢喝什么？'}]}})
+    r=await b.tools[0].execute({text:'主人目前最喜欢喝「什么」。',importance:.98,tags:['主人','饮料'],fact_key:'主人.偏好.饮料'});assert.equal(r.ok,false)
+    assert.equal(mem.list('饮料').filter(x=>!x.已被取代).length,1);assert.match(mem.list('饮料').find(x=>!x.已被取代).text,/可乐/)
+    const recall=b.contexts.find(x=>x.name==='dafeiyu-memory')?.text?.()||'';assert.match(recall,/可乐/)
+    assert.equal(mem.status().sessionId,'room-b');assert.equal(mem.status().scope,'identity');mem.stop()
   }finally{rmSync(dir,{recursive:true,force:true})}
 })
 
@@ -73,7 +78,7 @@ test('README 与管理中心明确展示三层记忆架构和表情包 AI 更新
   const root=new URL('..',import.meta.url),html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8'),js=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8'),readme=readFileSync(new URL('../README.md',import.meta.url),'utf8'),pkg=readFileSync(new URL('../package.json',import.meta.url),'utf8')
   assert.match(html,/大肥鱼的家 · 当前房间、身份记忆与经历档案/);assert.doesNotMatch(html,/把一个长期 DSH 会话当作“大肥鱼本人”/);assert.match(html,/大肥鱼长期记忆 · 跨 Session 共用/);assert.match(html,/当前主 Session · 短期上下文/);assert.match(html,/大肥鱼长期记忆 · 身份级/);assert.match(html,/精确经历档案/)
   assert.match(html,/导出最新表情包名称 TXT/);assert.match(html,/导出当前规则 JSON/);assert.match(html,/一起交给 AI/)
-  assert.match(js,/sticker-workflow-export-names/);assert.match(js,/sticker-workflow-export-rules/);assert.match(js,/跨 Session 共用/);assert.match(js,/本地自动识别/);assert.match(js,/旧 Session 记忆迁移/)
+  assert.match(js,/sticker-workflow-export-names/);assert.match(js,/sticker-workflow-export-rules/);assert.match(js,/跨 Session 共用/);assert.match(js,/大肥鱼语义记忆|大肥鱼主动记住/);assert.match(js,/旧 Session 记忆迁移/)
   assert.match(readme,/三层记忆架构：换房间，不换脑子/);assert.match(readme,/dafeiyu\.json/);assert.match(readme,/当前全部表情包名称 TXT \+ 当前规则 JSON/)
-  assert.match(pkg,/"version": "2\.4\.79"/)
+  assert.match(pkg,/"version": "2\.4\.80"/)
 })

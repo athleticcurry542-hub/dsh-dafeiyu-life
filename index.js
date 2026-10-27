@@ -2122,6 +2122,14 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     req.on('error', () => finish({}))
   })
 
+  const readRawBody = (req, maxBytes=128*1024*1024) => new Promise((resolve) => {
+    const chunks=[];let total=0,overflow=false,done=false
+    const finish=v=>{if(!done){done=true;resolve(v)}}
+    req.on('data',c=>{if(overflow)return;total+=c.length;if(total>maxBytes){overflow=true;chunks.length=0;return}chunks.push(c)})
+    req.on('end',()=>finish(overflow?null:Buffer.concat(chunks,total)))
+    req.on('error',()=>finish(null))
+  })
+
   const venvPython = () => process.platform === 'win32'
     ? join(stateDir, '.venv', 'Scripts', 'python.exe')
     : join(stateDir, '.venv', 'bin', 'python')
@@ -2832,7 +2840,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.79'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.80'})
         }
         if (action === 'export') {
           refreshCfg()
@@ -3081,6 +3089,50 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         return res.end(readFileSync(file.location))
       }catch{return sendJson(res,404,{ok:false,error:'无法打开表情包'})}
     }
+    if (path === '/api/bili-duty/stickers/archive/export' && req.method === 'GET') {
+      try{
+        const py=existsSync(venvPython())?venvPython():String(cfg.pythonPath||'python')
+        const helper=join(pluginDir,'lib','sticker-archive.py')
+        const result=await new Promise(resolve=>{
+          const child=spawn(py,[helper,stateDir,'export'],{cwd:stateDir,shell:false,windowsHide:true,env:pyEnv(),stdio:['ignore','pipe','pipe']})
+          const chunks=[];let bytes=0,err='',done=false
+          const finish=v=>{if(done)return;done=true;clearTimeout(timer);resolve(v)}
+          const timer=setTimeout(()=>{try{child.kill()}catch{};finish({ok:false,error:'表情包 ZIP 导出超时'})},90000)
+          child.stdout?.on('data',b=>{bytes+=b.length;if(bytes>135*1024*1024){try{child.kill()}catch{};return finish({ok:false,error:'表情包 ZIP 超过导出大小限制'})}chunks.push(b)})
+          child.stderr?.on('data',b=>{err=(err+String(b)).slice(-1000)})
+          child.on('error',()=>finish({ok:false,error:'无法运行表情包压缩工具，请检查 Python 和 Pillow 依赖'}))
+          child.on('close',code=>finish(code===0?{ok:true,data:Buffer.concat(chunks,bytes)}:{ok:false,error:err.trim()||'表情包 ZIP 导出失败'}))
+        })
+        if(!result.ok)return sendJson(res,400,result)
+        const day=new Date().toISOString().slice(0,10)
+        res.writeHead(200,{'content-type':'application/zip','content-length':String(result.data.length),'content-disposition':`attachment; filename="dafeiyu-stickers-${day}.zip"`,'cache-control':'no-store','x-content-type-options':'nosniff'})
+        return res.end(result.data)
+      }catch(e){return sendJson(res,400,{ok:false,error:'表情包 ZIP 导出失败：'+String(e?.message||e).slice(0,220)})}
+    }
+    if (path === '/api/bili-duty/stickers/archive/import' && req.method === 'POST') {
+      const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
+      if(origin&&(!host||![`http://${host}`,`https://${host}`].includes(origin)))return sendJson(res,403,{ok:false,error:'仅允许管理中心同源导入表情包'})
+      if(String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')return sendJson(res,403,{ok:false,error:'拒绝来自其他网站的表情包导入请求'})
+      const raw=await readRawBody(req,128*1024*1024)
+      if(!raw||!raw.length)return sendJson(res,413,{ok:false,error:'ZIP 为空或超过 128MB'})
+      try{
+        const py=existsSync(venvPython())?venvPython():String(cfg.pythonPath||'python')
+        const helper=join(pluginDir,'lib','sticker-archive.py')
+        const result=await new Promise(resolve=>{
+          const child=spawn(py,[helper,stateDir,'import'],{cwd:stateDir,shell:false,windowsHide:true,env:pyEnv(),stdio:['pipe','pipe','pipe']})
+          let out='',err='',done=false
+          const finish=v=>{if(done)return;done=true;clearTimeout(timer);resolve(v)}
+          const timer=setTimeout(()=>{try{child.kill()}catch{};finish({ok:false,error:'表情包 ZIP 导入超时'})},120000)
+          child.stdout?.on('data',b=>{out=(out+String(b)).slice(-1_000_000)})
+          child.stderr?.on('data',b=>{err=(err+String(b)).slice(-2000)})
+          child.on('error',()=>finish({ok:false,error:'无法运行表情包压缩工具，请检查 Python 和 Pillow 依赖'}))
+          child.stdin.on('error',()=>{})
+          child.on('close',code=>{if(code!==0)return finish({ok:false,error:err.trim()||'表情包 ZIP 导入失败'});try{finish(JSON.parse(out.trim()))}catch{finish({ok:false,error:'表情包 ZIP 导入工具返回异常'})}})
+          child.stdin.end(raw)
+        })
+        return sendJson(res,result.ok?200:400,result)
+      }catch(e){return sendJson(res,400,{ok:false,error:'表情包 ZIP 导入失败：'+String(e?.message||e).slice(0,220)})}
+    }
     if (path === '/api/bili-duty/stickers' && ['GET','POST'].includes(req.method)) {
       const operation=req.method==='GET'?'list':String(url.searchParams.get('action')||'')
       if (!['list','upload','rename','delete'].includes(operation))return sendJson(res,400,{ok:false,error:'不支持的表情包操作'})
@@ -3230,6 +3282,32 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (req.method === 'POST' && path === '/api/bili-duty/main-session/memory/import-fish') {
       try { const r=longTermMemory.importExternal();return sendJson(res,r.ok?200:404,r) }
       catch(e){ return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,220)}) }
+    }
+
+    if (req.method === 'POST' && ['/api/bili-duty/main-session/memory/backup/export','/api/bili-duty/main-session/memory/backup/inspect','/api/bili-duty/main-session/memory/backup/restore'].includes(path)) {
+      const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
+      if(origin&&(!host||![`http://${host}`,`https://${host}`].includes(origin)))return sendJson(res,403,{ok:false,error:'仅允许管理中心同源访问记忆备份接口'})
+      if(String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')return sendJson(res,403,{ok:false,error:'拒绝来自其他网站的记忆备份请求'})
+      const action=path.split('/').pop()
+      try{
+        refreshCfg()
+        if(action==='export'){
+          const folder=requireBackupDirectory(cfg.backupDirectory)
+          const backup=longTermMemory.exportBackup(),filePath=saveBackupJson(folder,backup,'dafeiyu-memory')
+          const summary=longTermMemory.inspectBackup(backup)
+          log('大肥鱼身份记忆已单独备份到：'+filePath)
+          return sendJson(res,200,{ok:true,filePath,summary})
+        }
+        const body=await readBody(req,12_000_000),backup=body?.backup
+        const summary=longTermMemory.inspectBackup(backup)
+        if(action==='inspect')return sendJson(res,200,{ok:true,summary})
+        if(body?.confirm!=='RESTORE_DAFEIYU_MEMORY')return sendJson(res,400,{ok:false,error:'未完成记忆恢复前人工确认'})
+        const folder=requireBackupDirectory(cfg.backupDirectory)
+        const safeguard=longTermMemory.exportBackup(),safeguardPath=saveBackupJson(folder,safeguard,'pre-memory-restore')
+        const restored=longTermMemory.restoreBackup(backup)
+        log('大肥鱼身份记忆恢复成功；恢复前快照：'+safeguardPath)
+        return sendJson(res,200,{ok:true,summary:restored,safeguardPath})
+      }catch(e){return sendJson(res,400,{ok:false,error:'长期记忆备份操作失败：'+String(e?.message||e).slice(0,300)})}
     }
 
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
