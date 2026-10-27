@@ -307,7 +307,7 @@ function WatchTab() {
     const [watchedTier, setWatchedTier] = React.useState('')
     const [watchedOffset, setWatchedOffset] = React.useState(0)
     const [watchedTotal, setWatchedTotal] = React.useState(0)
-    const tab = 'daily' // v2.4.85: 原生设置只保留日常；详细配置集中到管理中心
+    const tab = 'daily' // v2.4.86: 原生设置只保留日常；详细配置集中到管理中心
       const [diag, setDiag] = React.useState(null)      // 诊断信息文本
       const [checks, setChecks] = React.useState(null)   // 环境自检结果 [{name, ok, detail, fix}]
       const [loginState, setLoginState] = React.useState('')
@@ -669,7 +669,7 @@ function WatchTab() {
           st.installTail?h('pre',{'data-bd-pre':''},String(st.installTail).slice(-2500)):null),
 
         /* ── 定时 ── */
-        /* v2.4.85: 偏好、互动、高级的配置统一搬到管理中心；不再显示原生设置多标签。 */
+        /* v2.4.86: 偏好、互动、高级的配置统一搬到管理中心；不再显示原生设置多标签。 */
         h('div',{'data-bd-note':''},'日常页只负责启停、运行时间和立即运行；模型、选片、点赞、动态、记忆及额度都在管理中心统一设置。'),
 
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },
@@ -1021,6 +1021,9 @@ function WatchTab() {
           h('div', { 'data-bd-h': '' }, '作者与开源致谢'),
           h('div', { 'data-bd-label': '' }, '这不是一个只会发评论的机器人，而是一套让“大肥鱼”在 DSH 里持续生活的系统：后台出去看 B站，主 Session 作为她的家，重要经历、主人相处、朋友关系、梗和互动结果都能长期留下。'),
           h('div', { 'data-bd-note': '' }, '项目包名：dsh-dafeiyu-life · 当前版本：v' + (st.version || '?') + '。B站只是她目前最完整的一块“生活场景”，不是整个项目的边界。'),
+          h('div', { 'data-bd-row': '' },
+            h('a', { 'data-bd-btn':'', href:'https://github.com/minedalang/dsh-dafeiyu-life', target:'_blank', rel:'noreferrer' }, '项目仓库 ↗'),
+            h('a', { 'data-bd-btn':'', href:'https://github.com/minedalang/dsh-dafeiyu-life/blob/main/THIRD_PARTY_NOTICES.md', target:'_blank', rel:'noreferrer' }, '第三方声明 ↗')),
           h('div', { 'data-bd-sub': '' },
             h('div', { 'data-bd-h': '' }, '作者的 B站主页'),
             h('a', { href:'https://space.bilibili.com/210228238', target:'_blank', rel:'noopener noreferrer', 'data-bd-author-link': '' }, '长条动物')),
@@ -1043,10 +1046,7 @@ function WatchTab() {
             h('div', { 'data-bd-label': '' }, 'Yuuyuko-uu/dsh-bili-subagent'),
             h('div', { 'data-bd-note': '' }, '“AI 伙伴有一个长期的家，出去活动后再把经历带回来”的产品/架构思路给了重要启发；本项目没有把该仓库源码作为 vendor 代码打包。'),
             h('a', { href:'https://github.com/Yuuyuko-uu/dsh-bili-subagent', target:'_blank', rel:'noreferrer' }, '打开参考仓库 ↗')),
-          h('div', { 'data-bd-note': '' }, '完整许可证、修改边界与第三方声明见仓库根目录 NOTICE.md、THIRD_PARTY_NOTICES.md、CONTRIBUTORS.md。感谢所有上游作者与社区贡献者。'),
-          h('div', { 'data-bd-row': '' },
-            h('a', { 'data-bd-btn':'', href:'https://github.com/minedalang/dsh-dafeiyu-life', target:'_blank', rel:'noreferrer' }, '项目仓库 ↗'),
-            h('a', { 'data-bd-btn':'', href:'https://github.com/minedalang/dsh-dafeiyu-life/blob/main/THIRD_PARTY_NOTICES.md', target:'_blank', rel:'noreferrer' }, '第三方声明 ↗'))),
+          h('div', { 'data-bd-note': '' }, '完整许可证、修改边界与第三方声明见仓库根目录 NOTICE.md、THIRD_PARTY_NOTICES.md、CONTRIBUTORS.md。感谢所有上游作者与社区贡献者。')),
       )
     }
 

@@ -10,7 +10,7 @@ const h=read('lib/management-console.html'),j=read('lib/management-console.js')
 const index=read('index.js'),client=read('client.js'),pkg=JSON.parse(read('package.json'))
 
 test('v2.4.84 使用新版版本号，原有数据目录保持不变',()=>{
- assert.equal(pkg.version,'2.4.85')
+ assert.equal(pkg.version,'2.4.86')
  assert.match(index,/mainSessionMemoryReasoningEffort/)
  assert.match(read('lib/data-backup.mjs'),/main-session-memory\.json/)
 })
@@ -39,10 +39,10 @@ test('学习状态反映配置，关闭状态不能展示正在收集',()=>{
  assert.match(j,/cfg\.config\?\.mainSessionMemoryAutoBili/)
 })
 test('主 Session 和经历同步更名，补历史明确只暂存待汇报',()=>{
- for(const txt of ['把新经历告诉大肥鱼的频率','现在把新经历告诉主 Session','补充最近 7 天的经历，稍后告诉主 Session','等待告诉主 Session'])assert.ok(h.includes(txt)||j.includes(txt),txt)
+ for(const txt of ['把新经历告诉大肥鱼的频率','现在把新经历告诉主 Session','把过去 7 天遗漏的经历加入待汇报','等待告诉主 Session'])assert.ok(h.includes(txt)||j.includes(txt),txt)
  assert.doesNotMatch(h,/>经历同步频率</)
  assert.doesNotMatch(h,/>当前队列与历史</)
- assert.match(j,/不会直接发消息/)
+ assert.match(j,/不会立即发送/)
 })
 test('完整备份包含表情包规则 JSON，但不会混入表情包素材目录',()=>{
  assert.equal(allowedPath('comment-meme-rules.json'),true)

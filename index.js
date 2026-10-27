@@ -2517,7 +2517,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
   mainSessionBridge.start()
   ctx.effect(() => () => mainSessionBridge.stop(), 'bili-duty: 主 Session 记忆桥')
 
-  // v2.4.85: 生活动态是独立内容，不从评论自动复制；只使用公开已选视频的真实证据。
+  // v2.4.86: 生活动态是独立内容，不从评论自动复制；只使用公开已选视频的真实证据。
   // 公开发布与模型生成严格分离：生成模型不挂 B站发送工具，实际发布由受限 Python 路径执行。
   dailyDynamic=createDailyDynamic({
     dataDir:stateDir,getConfig:()=>{refreshCfg();return cfg},
@@ -3381,8 +3381,10 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (req.method === 'POST' && path === '/api/bili-duty/main-session/backfill') {
       const body=await readBody(req)
       const days=Math.max(1,Math.min(30,Math.floor(Number(body?.days)||7)))
-      mainSessionBridge.collect({backfillDays:days})
-      return sendJson(res,200,{ok:true,...mainSessionBridge.status(),days})
+      const target=mainSessionBridge.status().config?.id
+      if(!target)return sendJson(res,409,{ok:false,error:'请先在「大肥鱼的家」选择并保存主 Session，再补充过去的经历'})
+      const result=mainSessionBridge.collect({backfillDays:days,forceQueue:true})
+      return sendJson(res,200,{ok:true,...mainSessionBridge.status(),days,added:result.added})
     }
 
     // 独立的人生记忆页：兴趣趋势只读展示，不重新触发模型；

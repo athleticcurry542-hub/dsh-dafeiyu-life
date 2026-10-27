@@ -134,8 +134,9 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="settings-section"><h4>刷视频与内容理解</h4><p class="muted">负责搜索、阅读视频、选片、评论决策与点赞收藏决策。</p><div class="fields" id="models-video"></div></div>
 <div class="settings-section"><h4>后台评论与私信</h4><p class="muted">后台互动、人生反思与生活动态草稿目前复用此模型。</p><div class="fields" id="models-interaction"></div></div>
 <div class="settings-section"><h4>独立视觉识图</h4><p class="muted">只有开启独立视觉模式时才使用；普通模式复用视频模型。</p><div class="fields" id="models-vision"></div>
-<div class="fields"><div><label for="models-vision-mode">识图方式</label><select id="models-vision-mode"><option value="reuse_video_model">复用视频模型（默认）</option><option value="independent_dsh">独立 DSH 视觉模型</option></select></div>
-<div><label class="checkline"><input id="models-vision-enabled" type="checkbox">启用视频预览识图</label></div></div>
+<div class="fields"><div><label for="models-vision-mode">识图方式</label><select id="models-vision-mode"><option value="reuse_video_model">复用视频模型（默认）</option><option value="independent_dsh">独立 DSH 视觉模型</option><option value="auto">自动（历史兼容：当前等同复用视频模型）</option></select></div>
+<div><label class="checkline"><input id="models-vision-enabled" type="checkbox">启用视频预览识图</label></div>
+<div><label class="checkline"><input id="models-vision-debug" type="checkbox">开启视觉识图调试日志（排障用）</label></div></div>
 </div>
 <div class="settings-section"><h4>低成本人生记忆检索</h4><p class="muted">仅挑选真实记忆 ID，不能发送 B站消息或修改记忆。是否启用及检索额度仍在「大肥鱼的家」设置。</p><div class="fields" id="models-memory"></div></div>
 <div class="toolbar"><button id="models-save" class="primary">保存全部模型配置</button><button id="models-refresh">重新读取</button></div>
@@ -256,8 +257,8 @@ input[type=checkbox]{accent-color:#16865f}
 <div id="life-relationship-section" class="settings-section life-section"><h4>人物关系与旧资料</h4>
 <p class="muted">来自旧「成长经验」的已批准兴趣、视频经历和角色关系原样保留，作为历史事实参与统一检索；已批准关系设定优先于矛盾的自动事实。旧记录不会自动复制为新记忆。</p>
 <div id="main-legacy-growth-list" class="records"></div></div>
-<div id="life-sync-section" class="settings-section life-section"><h4>告诉主 Session：大肥鱼最近做了什么</h4><div class="toolbar"><button id="main-session-sync" class="life-action life-green">现在把新经历告诉主 Session</button><button id="main-session-backfill" class="life-action life-sky">补充最近 7 天的经历，稍后告诉主 Session</button></div>
-<p class="muted">这里的“待汇报”是本地保存、准备通知<strong>当前选定的大肥鱼聊天 Session</strong> 的经历。先补充旧经历不会立刻发消息；点击“现在告诉主 Session”，才尝试投递待汇报内容。无在线主 Session 时仍在本机保存。</p>
+<div id="life-sync-section" class="settings-section life-section"><h4>告诉主 Session：大肥鱼最近做了什么</h4><div class="toolbar"><button id="main-session-sync" class="life-action life-green">现在把新经历告诉主 Session</button><button id="main-session-backfill" class="life-action life-sky">把过去 7 天遗漏的经历加入待汇报</button></div>
+<p class="muted">“过去 7 天”是<strong>从现在往回数 7 天</strong>，不是再等待 7 天。点击补充后只将尚未汇报的已选视频和已发评论放进本地待汇报队列，操作本身不会发送消息。启用主 Session 桥接和自动同步后，下一次符合间隔与每日额度的定时检查会尝试发送；否则可点击“现在把新经历告诉主 Session”手动发送。目标会话不在线时仍留在本地。此操作不直接写入人生长期记忆。</p>
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
 <div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search" class="life-action life-sky">搜索经历档案</button></div>
 <div id="main-session-history" class="records records-scroll tall"></div></div>
