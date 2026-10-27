@@ -1,3 +1,14 @@
+## v2.4.74 — Headless 隐私隔离与新机安全启动（2026-10-27）
+
+- 基于 v2.4.73 实际源码重新审计所有 DSH Agent 启动路径：主动刷视频/主评论、私信/评论/@ 互动、独立视觉。
+- 插件加载时自动生成 `headless-overlay.yml` 与 `headless-dm-overlay.yml`；每次启动前再次刷新和复检，新电脑不依赖历史残留 yml。
+- 三类无人值守 Agent 固定使用官方 `headless`；旧 `headlessProfile` 仅保留配置兼容，不能再带回自定义 profile 的额外工具。
+- 新增 `lib/headless-security.mjs`：48 项 shell/文件/会话/Web/子代理/代码执行能力必须全部 `disabled: true`，并限制每类 overlay 允许插入的 MCP。
+- overlay 采用临时文件写入→校验→替换，不跟随同名符号链接；生成后与启动前均重新读取验证，异常 fail-closed。
+- `lib/vision_dsh.py` 同步加固：固定 headless、只允许一个 `--profile`/`--patch`、校验视觉 overlay 与临时 proof overlay，且视觉 MCP 只能是 `bili_preview_vision`。
+- 管理中心「环境自检」新增主值班/互动（及启用时的独立视觉）安全 overlay 状态。
+- 不改变 v2.4.73 的备份、表情包规则、评论/私信/动态/成长记忆业务逻辑。
+
 ## v2.4.73 — 本地备份简化、规则预览纠偏及备份恢复校验（2026-10-26）
 
 - 「数据备份」页面将「保存并检测目录」更名为「确认备份目录」；将「下载完整数据备份」更名为「备份数据」。备份只写入用户指定的本机文件夹，不再创建 Blob/触发浏览器下载。

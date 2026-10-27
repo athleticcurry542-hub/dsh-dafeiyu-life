@@ -41,7 +41,13 @@ class VisionDailyLimitV2457(unittest.TestCase):
     def test_independent_dsh_uses_its_env_daily_limit(self):
         with TemporaryDirectory() as temp:
             home=Path(temp)
-            (home/'headless-vision-overlay.yml').write_text('test',encoding='utf8')
+            rows=[]
+            for ident in vision_dsh._HEADLESS_DENY_TOOLS:
+                rows.extend([f'- id: {ident}','  disabled: true',''])
+            for ident in ('credentials','authorization','deepseek-account'):
+                rows.extend([f'- id: {ident}','  disabled: false',''])
+            rows.extend(['- insert:','    - id: mcp-bili-vision-readonly',"      name: '@deepseek-ai/dsh-mcp-client'",'      config:','        serverName: bilivision','        transport: stdio','        env:',"          BILI_MCP_TOOLS: 'bili_preview_vision'",''])
+            (home/'headless-vision-overlay.yml').write_text('\n'.join(rows),encoding='utf8')
             env={'BILI_VISION_DSH_ARGV':json.dumps(['/absolute/path/dsh','--profile','headless','--patch',str(home/'headless-vision-overlay.yml')]),
                  'BILI_VISION_DSH_PROVIDER':'mock','BILI_VISION_DSH_MODEL':'vision',
                  'BILI_VISION_DAILY_LIMIT':'41'}

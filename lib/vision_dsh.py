@@ -16,6 +16,73 @@ from pathlib import Path
 _BV = re.compile(r'BV[0-9A-Za-z]{10}\Z')
 _DESC = re.compile(r'(?m)^VISION_DESC:\s*(.+?)\s*$')
 
+_HEADLESS_DENY_TOOLS = (
+    'tool-bash','tool-pwsh','tool-terminal','tool-bash-persistent','tool-pwsh-persistent','tool-jobs',
+    'tool-fs','tool-fs-search','tool-working-directory','tool-str-replace-editor',
+    'tool-web','web-fetch-http','tool-web-search','tool-browser',
+    'tool-subagent','tool-subagent-fork','tool-subagent-control','tool-subagent-list-agents',
+    'tool-workflow','workflow-ptc','tool-skill','skill','skill-filesystem',
+    'tool-plugin-manager','plugin-manager','goal','goal-round-driver','tool-goal',
+    'tool-session-query','tool-cordis','tool-ralph','tool-ask-user','tool-present','tool-todo',
+    'tool-lsp','tool-workspace-dependencies','agent-instructions','session-reference',
+    'file-reference-local','file-reference','tool-ptc','tool-cua','cua','tool-execute','tool-process',
+    'tool-python','tool-code','tool-ripgrep',
+)
+
+
+def _overlay_states(text):
+    states={}
+    current=None
+    for line in str(text).replace('\r','').split('\n'):
+        m=re.fullmatch(r'- id:\s*([^\s#]+)\s*',line)
+        if m:
+            current=m.group(1); continue
+        m=re.fullmatch(r'\s{2}disabled:\s*(true|false)\s*(?:#.*)?',line)
+        if current and m:
+            states[current]=(m.group(1)=='true'); current=None
+        elif line and not line[:1].isspace() and not line.startswith('#'):
+            current=None
+    return states
+
+
+def _validate_vision_overlay_text(text):
+    if not text or len(text.encode('utf8'))>160_000:
+        raise ValueError('视觉安全 overlay 为空或过大')
+    for line in str(text).replace('\r','').split('\n'):
+        if line.startswith('- ') and not re.fullmatch(r'- (?:id:\s*[^\s#]+|insert:)\s*',line):
+            raise ValueError('视觉安全 overlay 含未知顶层 patch 指令')
+    inserted=re.findall(r'^\s{4}- id:\s*([^\s#]+)\s*$',text,re.M)
+    if inserted != ['mcp-bili-vision-readonly']:
+        raise ValueError('视觉安全 overlay 插入了非预期插件')
+    states=_overlay_states(text)
+    allowed=set(_HEADLESS_DENY_TOOLS)|{'credentials','authorization','deepseek-account','agent-default-model'}
+    unexpected=[x for x in states if x not in allowed]
+    if unexpected:
+        raise ValueError('视觉安全 overlay 修改了非预期服务：'+unexpected[0])
+    missing=[x for x in _HEADLESS_DENY_TOOLS if states.get(x) is not True]
+    if missing:
+        raise ValueError('视觉安全 overlay 缺少禁用项：'+','.join(missing[:8]))
+    for ident in ('credentials','authorization','deepseek-account'):
+        if states.get(ident) is not False:
+            raise ValueError('视觉模型登录服务配置不完整：'+ident)
+    if not re.search(r'^\s{4}- id:\s*mcp-bili-vision-readonly\s*$',text,re.M):
+        raise ValueError('视觉安全 overlay 缺少只读 MCP')
+    if not re.search(r'^\s{8}serverName:\s*bilivision\s*$',text,re.M):
+        raise ValueError('视觉安全 overlay serverName 异常')
+    if not re.search(r"^\s{10}BILI_MCP_TOOLS:\s*'bili_preview_vision'\s*$",text,re.M):
+        raise ValueError('视觉安全 overlay 工具白名单异常')
+    return True
+
+
+def _validate_vision_overlay_file(path, home):
+    path=Path(path)
+    if path.name!='headless-vision-overlay.yml' or path.parent.resolve()!=Path(home).resolve():
+        raise ValueError('视觉 Agent 隔离配置位置不安全')
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('视觉 Agent 隔离配置缺失或不是普通文件')
+    _validate_vision_overlay_text(path.read_text(encoding='utf8'))
+    return path.resolve()
+
 
 def describe_with_dsh(bvid, home, env=None, runner=None):
     if not _BV.fullmatch(str(bvid)):
@@ -28,11 +95,14 @@ def describe_with_dsh(bvid, home, env=None, runner=None):
             raise ValueError('DSH 视觉模型执行路由未配置')
         if not Path(argv[0]).is_absolute():
             raise ValueError('DSH 视觉模型执行路径必须是绝对路径')
-        if not '--patch' in argv or not '--profile' in argv:
-            raise ValueError('DSH 视觉隔离参数不完整')
-        overlay=Path(argv[argv.index('--patch')+1]).resolve()
-        if overlay != home/'headless-vision-overlay.yml' or not overlay.is_file():
-            raise ValueError('视觉 Agent 隔离配置缺失或位置不安全')
+        if argv.count('--patch')!=1 or argv.count('--profile')!=1:
+            raise ValueError('DSH 视觉隔离参数必须且只能包含一个 profile/patch')
+        pi=argv.index('--profile'); oi=argv.index('--patch')
+        if pi+1>=len(argv) or argv[pi+1] != 'headless':
+            raise ValueError('独立视觉固定使用受控 headless profile')
+        if oi+1>=len(argv):
+            raise ValueError('DSH 视觉隔离 patch 参数缺失')
+        overlay=_validate_vision_overlay_file(argv[oi+1],home)
         provider=env.get('BILI_VISION_DSH_PROVIDER','').strip()
         model=env.get('BILI_VISION_DSH_MODEL','').strip()
         frames=max(1,min(3,int(env.get('BILI_VISION_FRAMES','2'))))
@@ -57,7 +127,11 @@ def describe_with_dsh(bvid, home, env=None, runner=None):
         if not _claim_vision_quota(home,daily_limit):
             return {'ok':False,'status':'daily_limit','error':f'今日独立视觉模型调用已达 {daily_limit} 次上限'}
         proof_dir=home/'vision-proof'
+        if proof_dir.is_symlink():
+            raise ValueError('视觉证明目录不能是符号链接')
         proof_dir.mkdir(parents=True,exist_ok=True)
+        if proof_dir.is_symlink() or not proof_dir.is_dir():
+            raise ValueError('视觉证明目录不安全')
         nonce=uuid.uuid4().hex
         proof=proof_dir/f'{nonce}.json'
         # The MCP client may launch its stdio server with a restricted environment.
@@ -65,8 +139,16 @@ def describe_with_dsh(bvid, home, env=None, runner=None):
         # rather than relying on inherited environment variables.
         private_overlay=proof_dir/f'{nonce}.yml'
         text=overlay.read_text(encoding='utf8')
+        _validate_vision_overlay_text(text)
         proof_yaml="'"+str(proof).replace('\\','/').replace("'","''")+"'"
-        private_overlay.write_text(text.rstrip()+"\n          BILI_VISION_PROOF_FILE: "+proof_yaml+"\n",encoding='utf8')
+        private_text=text.rstrip()+"\n          BILI_VISION_PROOF_FILE: "+proof_yaml+"\n"
+        _validate_vision_overlay_text(private_text)
+        with private_overlay.open('x',encoding='utf8') as fp:
+            fp.write(private_text)
+        try: os.chmod(private_overlay,0o600)
+        except OSError: pass
+        if private_overlay.is_symlink() or not private_overlay.is_file():
+            raise ValueError('临时视觉 overlay 创建失败')
         child_args=list(argv)
         child_args[child_args.index('--patch')+1]=str(private_overlay)
         child_env=dict(env)

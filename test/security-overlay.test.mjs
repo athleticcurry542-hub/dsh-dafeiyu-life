@@ -2,11 +2,12 @@ import {test} from 'node:test'
 import {strict as assert} from 'node:assert'
 import {readFileSync} from 'node:fs'
 const code=readFileSync(new URL('../index.js',import.meta.url),'utf8')
+const security=readFileSync(new URL('../lib/headless-security.mjs',import.meta.url),'utf8')
 const python=readFileSync(new URL('../vendor/bilibili-mcp/mcp_server.py',import.meta.url),'utf8')
 const client=readFileSync(new URL('../client.js',import.meta.url),'utf8')
 test('two headless paths share a tool-disabling overlay',()=>{
   assert.match(code, /HEADLESS_DENY_TOOLS/)
-  for(const id of ['tool-fs','tool-bash','tool-pwsh','tool-subagent','tool-workflow','tool-session-query','agent-instructions']) assert.ok(code.includes(`"${id}"`),id)
+  for(const id of ['tool-fs','tool-bash','tool-pwsh','tool-subagent','tool-workflow','tool-session-query','agent-instructions']) assert.ok(security.includes(`'${id}'`),id)
   assert.match(code,/for \(const id of HEADLESS_DENY_TOOLS\)/)
   assert.match(code,/ensureOverlay\(true\)/)
   assert.match(code,/if \(!overlay\) return \{ started:false/)

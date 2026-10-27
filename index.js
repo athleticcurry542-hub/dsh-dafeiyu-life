@@ -60,6 +60,7 @@ import { DEFAULT_CHARACTER_LORE, normalizeCharacterLore, normalizeMentionProfile
 import { normalizeFriendDirectory } from './lib/friend-directory.mjs'
 import { shouldRunWindow, parsePeakWindows, readPeakWindows, activePeakWindow, DEFAULT_PEAK_INTERVAL_MINUTES } from './lib/peak-schedule.mjs'
 import { effectiveModelSelection } from './lib/model-routing.mjs'
+import { HEADLESS_DENY_TOOLS, writeSecureHeadlessOverlay, validateHeadlessOverlayFile, assertSafeHeadlessLaunch } from './lib/headless-security.mjs'
 import { mergeWatchedRows } from './lib/watched.mjs'
 
 export const name = 'bili-scroll'
@@ -162,7 +163,7 @@ export const Config = !z ? undefined : z.object({
   pythonPath: z.string().default('python').extra('volatile', true),
   /** dsh 的 bin.js（不填就试自动探测，再退化成 shell 里的 dsh） */
   dshBin: z.string().default('').extra('volatile', true),
-  /** headless 那一轮用哪个 profile */
+  /** 兼容旧配置：无人值守安全轮固定使用官方 headless；其它值会被忽略。 */
   headlessProfile: z.string().default('headless').extra('volatile', true),
   /** 给那一轮叠一份插件自己的 patch（把 B站 MCP 挂上）—— 用户 profile 一个字都不用改 */
   overlayMcp: z.boolean().default(true).extra('volatile', true),
@@ -1433,7 +1434,7 @@ function reportMeta() {
   }
 
   // 不依赖模型自觉，不由外部网页/评论决定工具权限。
-  const HEADLESS_DENY_TOOLS = Object.freeze(["tool-bash", "tool-pwsh", "tool-terminal", "tool-bash-persistent", "tool-pwsh-persistent", "tool-jobs", "tool-fs", "tool-fs-search", "tool-working-directory", "tool-str-replace-editor", "tool-web", "web-fetch-http", "tool-subagent", "tool-subagent-fork", "tool-subagent-control", "tool-subagent-list-agents", "tool-workflow", "workflow-ptc", "tool-skill", "skill", "skill-filesystem", "tool-plugin-manager", "plugin-manager", "goal", "goal-round-driver", "tool-goal", "tool-session-query", "tool-cordis", "tool-ralph", "tool-ask-user", "tool-browser", "tool-present", "tool-todo", "tool-lsp", "tool-workspace-dependencies", "agent-instructions", "session-reference", "file-reference-local", "file-reference", "tool-ptc", "tool-cua", "cua", "tool-execute", "tool-process", "tool-web-search", "tool-python", "tool-code", "tool-ripgrep"])
+
 
   // 独立视觉 DSH Agent 使用独立的模型选择，但只拿到一个只读的图片工具。
   // 视觉与评论分开，且不会读取用户的视觉 API Key 或 DPAPI 密钥。
@@ -1471,8 +1472,12 @@ function reportMeta() {
       '          BILI_VISION_FRAMES: '+yq(cfg.visionFrames),
       '          BILI_VISION_DAILY_LIMIT: '+yq(cfg.visionDailyLimit),
       '')
-    writeFileSync(out,rows.join('\n'),'utf8')
-    return out
+    try {
+      return writeSecureHeadlessOverlay(out, rows.join('\n'), { kind:'vision', stateDir })
+    } catch (e) {
+      log('🔒 写视觉安全 overlay 失败：'+String(e?.message||e))
+      return null
+    }
   }
 
   const ensureOverlay = (dmSafe = false) => {
@@ -1533,7 +1538,11 @@ function reportMeta() {
       try {
         const vdsh=resolveDsh()
         if (vdsh.missing || vdsh.shell) throw new Error('未找到可安全直接执行的 DSH CLI')
-        independentVisionArgv=JSON.stringify([vdsh.command,...vdsh.args,'--profile',cfg.headlessProfile||'headless','--patch',ensureVisionOverlay()])
+        const visionOverlay=ensureVisionOverlay()
+        if (!visionOverlay) throw new Error('独立视觉安全 overlay 生成失败')
+        const visionArgs=[...vdsh.args,'--profile','headless','--patch',visionOverlay]
+        assertSafeHeadlessLaunch(visionArgs,visionOverlay,{kind:'vision',stateDir})
+        independentVisionArgv=JSON.stringify([vdsh.command,...visionArgs])
       } catch (e) {log('独立视觉 DSH 初始化失败：'+String(e?.message||e));}
     }
     if (!dmSafe) {
@@ -1584,8 +1593,21 @@ function reportMeta() {
         '',
       )
     }
-    try { writeFileSync(file, yml.join('\n'), 'utf8'); return file } catch (e) { log(`写 overlay 失败：${e?.message ?? e}`); return null }
+    try {
+      return writeSecureHeadlessOverlay(file, yml.join('\n'), { kind: dmSafe ? 'dm' : 'main', stateDir })
+    } catch (e) {
+      log(`🔒 写安全 overlay 失败：${e?.message ?? e}`)
+      return null
+    }
   }
+
+  // 新电脑首次启用也会在插件加载时生成两份；真正启动 AI 前还会再次刷新并复检。
+  // 这里失败不会让整个插件失活，但任何 AI 子进程都会 fail-closed。
+  try {
+    const mainOverlayAtBoot=ensureOverlay(false)
+    const dmOverlayAtBoot=ensureOverlay(true)
+    if (!mainOverlayAtBoot || !dmOverlayAtBoot) log('🔒 安全 overlay 初始化不完整；后台 AI 将保持停用直到问题修复')
+  } catch (e) { log('🔒 安全 overlay 初始化失败：'+String(e?.message||e)) }
 
   /**
    * ⭐ 评论发出后复核（2026-10-16 加的行 —— 起因是用户在评论区反馈
@@ -1674,9 +1696,11 @@ function reportMeta() {
       return { started: false, why, error: msg }
     }
     const overlay = ensureOverlay()
-    const args = [...dsh.args, '--profile', cfg.headlessProfile || 'headless']
+    const args = [...dsh.args, '--profile', 'headless']
     if (!overlay) return { started:false, why, error:'安全隔离 overlay 创建失败，已拒绝启动刷视频 Agent' }
     args.push('--patch', overlay)
+    try { assertSafeHeadlessLaunch(args,overlay,{kind:'main',stateDir}) }
+    catch (e) { return {started:false,why,error:'安全隔离校验失败，已拒绝启动：'+String(e?.message||e)} }
     const pickedBeforeRun = countPickedToday()
     const roundLimitAtStart = picksThisRound(cfg.perDay, cfg.pickPerRound, pickedBeforeRun)
     args.push(promptFor())
@@ -1751,7 +1775,7 @@ function reportMeta() {
     child.on('error', (e) => log(`刷B站起不来：${e?.message ?? e}`))
     // ⭐ 起不来/被杀掉也要把锁放开，否则之后每一轮都会被判成'上一轮还没结束' ✗
     child.on('close', () => { if (dutyChild === child) dutyChild = null })
-    return { started: true, why, profile: cfg.headlessProfile, cwd, log: logFile }
+    return { started: true, why, profile: 'headless', cwd, log: logFile }
    } catch (e) {
     log(`刷B站开跑失败（${why}）：${e?.stack ?? e}`)
     return { started: false, why, error: String(e?.message ?? e) }
@@ -1863,7 +1887,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     // 专用 overlay 只保留账号模型相关配置，不给私信 Agent 装载 B站 MCP 发送工具。
     const overlay = ensureOverlay(true)
     if (!overlay) throw new Error('生成私信专用 DSH overlay 失败')
-    const args = [...dsh.args, '--profile', cfg.headlessProfile || 'headless', '--patch', overlay, promptText]
+    const args = [...dsh.args, '--profile', 'headless', '--patch', overlay, promptText]
+    assertSafeHeadlessLaunch(args,overlay,{kind:'dm',stateDir})
     return new Promise((resolve, reject) => {
       const child = spawn(dsh.command, args, {
         cwd: stateDir, shell: dsh.shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
@@ -2715,7 +2740,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.73'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.74'})
         }
         if (action === 'export') {
           refreshCfg()
@@ -3389,7 +3414,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         '版本：' + myVersion(),
         '平台：' + process.platform + ' ' + process.arch + ' · node ' + process.versions.node + (process.versions.electron ? ' · electron ' + process.versions.electron : ''),
         'dsh：' + (() => { try { const d = resolveDsh(); return d.missing ? '没找到（' + d.hint + '）' : d.command + ' ' + d.args.join(' ') } catch (e) { return '探测失败：' + e?.message } })(),
-        'headless profile：' + (cfg.headlessProfile || 'headless'),
+        'headless profile：headless（无人值守安全固定值；旧 headlessProfile 配置仅保留兼容）',
         'pythonPath：' + cfg.pythonPath,
         'venv 就绪：' + (venvReadyNow() ? '是' : '否') + (missingVenvDeps().length ? '（缺：' + missingVenvDeps().join(' / ') + '）' : ''),
         '转写环境：' + (existsSync(join(stateDir, '.venv-asr')) ? '在' : '没装'),
@@ -3414,7 +3439,28 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       // ① dsh
       try { const d = resolveDsh(); put('能找到 dsh（跑一轮要用）', !d.missing, d.missing ? '没找到：' + d.hint : (d.command + ' ' + (d.args || []).join(' ')), '在设置页「dsh 路径」里填上 …/@deepseek-ai/dsh/lib/bin.js') }
       catch (e) { put('能找到 dsh（跑一轮要用）', false, String(e?.message ?? e), '同上') }
-      // ② Python
+      // ② 无人值守安全 overlay：新机启动会自动生成；这里显示最终校验结果。
+      for (const [label,file,kind] of [
+        ['主值班安全 overlay',join(stateDir,'headless-overlay.yml'),'main'],
+        ['互动安全 overlay',join(stateDir,'headless-dm-overlay.yml'),'dm'],
+      ]) {
+        try {
+          const r=validateHeadlessOverlayFile(file,{kind,stateDir})
+          put(label,true,`${r.denied}/${r.denied} 项高危能力已关闭`,'')
+        } catch (e) {
+          put(label,false,String(e?.message||e),'完全重启插件；仍失败时检查 bili-duty 目录权限，不要手工放宽 yml')
+        }
+      }
+      if (cfg.visionEnabled && resolvedVisionMode()==='independent_dsh') {
+        try {
+          const vf=join(stateDir,'headless-vision-overlay.yml')
+          const r=validateHeadlessOverlayFile(vf,{kind:'vision',stateDir})
+          put('独立视觉安全 overlay',true,`${r.denied}/${r.denied} 项高危能力已关闭，且只允许预览图片工具`,'')
+        } catch (e) {
+          put('独立视觉安全 overlay',false,String(e?.message||e),'检查 DSH 路径后重启插件，视觉轮不会在不安全状态下降级运行')
+        }
+      }
+      // ③ Python
       put('Python 主依赖装好了', venvReadyNow(), missingVenvDeps().length ? '缺：' + missingVenvDeps().join(' / ') : '就绪', '点「重装主依赖」，等它跑完再看这里')
       // ③ 凭证 —— ⭐ 2.0.4（第三方体检第 6 条）：以前只看"文件在不在"，登录过期了照样显示"已登录" ✗
       //    现在真带 cookie 问一次 nav，isLogin=false 就明确报不 OK

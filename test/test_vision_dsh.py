@@ -13,7 +13,13 @@ spec.loader.exec_module(module)
 
 
 def configured(tmp_path):
-    (tmp_path/'headless-vision-overlay.yml').write_text('safe read only overlay',encoding='utf8')
+    rows=[]
+    for ident in module._HEADLESS_DENY_TOOLS:
+        rows.extend([f'- id: {ident}','  disabled: true',''])
+    for ident in ('credentials','authorization','deepseek-account'):
+        rows.extend([f'- id: {ident}','  disabled: false',''])
+    rows.extend(['- insert:','    - id: mcp-bili-vision-readonly',"      name: '@deepseek-ai/dsh-mcp-client'",'      config:','        serverName: bilivision','        transport: stdio','        env:',"          BILI_MCP_TOOLS: 'bili_preview_vision'",''])
+    (tmp_path/'headless-vision-overlay.yml').write_text('\n'.join(rows),encoding='utf8')
     args=['/some/absolute/dsh','--profile','headless','--patch',str(tmp_path/'headless-vision-overlay.yml')]
     env={'BILI_VISION_DSH_ARGV':json.dumps(args),'BILI_VISION_DSH_MODEL':'claude-haiku-5-5',
          'BILI_VISION_DSH_PROVIDER':'claude','BILI_VISION_FRAMES':'2'}
@@ -63,6 +69,25 @@ def test_daily_quota_applies_to_independent_dsh(tmp_path):
     with patch('preview_vision._claim_vision_quota',return_value=False):
         result=module.describe_with_dsh('BV1234567890',tmp_path,env=env,runner=lambda *a,**kw: 1/0)
     assert result['status']=='daily_limit'
+
+
+def test_tampered_vision_overlay_fails_closed(tmp_path):
+    env=configured(tmp_path)
+    overlay=tmp_path/'headless-vision-overlay.yml'
+    text=overlay.read_text(encoding='utf8').replace('- id: tool-fs\n  disabled: true','- id: tool-fs\n  disabled: false')
+    overlay.write_text(text,encoding='utf8')
+    result=module.describe_with_dsh('BV1234567890',tmp_path,env=env,runner=lambda *a,**kw: 1/0)
+    assert not result['ok'] and result['status']=='vision_config_error'
+    assert 'tool-fs' in result['error']
+
+
+def test_extra_profile_or_patch_is_rejected(tmp_path):
+    env=configured(tmp_path)
+    argv=json.loads(env['BILI_VISION_DSH_ARGV'])
+    argv.extend(['--patch',str(tmp_path/'headless-vision-overlay.yml')])
+    env['BILI_VISION_DSH_ARGV']=json.dumps(argv)
+    result=module.describe_with_dsh('BV1234567890',tmp_path,env=env,runner=lambda *a,**kw: 1/0)
+    assert not result['ok'] and result['status']=='vision_config_error'
 
 
 def test_preview_only_does_not_need_key_or_debug(tmp_path):
