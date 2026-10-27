@@ -1,3 +1,12 @@
+## v2.4.76 — 内置长期人格记忆 + dsh-fish-memory 合规整合（2026-10-27）
+
+- 将 `Yuuyuko-uu/dsh-fish-memory` 的核心长期记忆设计整合到「大肥鱼的家」：按主 Session 独立存储、时间淡忘、长期事实、事实键、取代语义、相关召回和 scoped remember 工具；保留上游 MIT 版权与许可证，新增 `THIRD_PARTY_NOTICES.md` 与 `vendor/fish-memory/LICENSE`。
+- 新增 `dafeiyu_remember`，只挂在主人明确选择且已开启记忆的主 Session；模型可见参数统一为 `text / importance / tags / supersedes / fact_key`，避免 Claude/Anthropic 对中文 tool schema 字段名返回 400。
+- 重要 B站经历直接从现有本地账本确定性进入长期记忆，不增加总结 AI 调用；首次启用仍只建立历史基线，不会突然把全部旧记录导入。
+- 管理中心可开启/关闭长期记忆、调整半衰期/召回门槛/条数/字数/每日配额、查看和删除记忆、手动补记，并可一键合并同 Session 的旧 `%DSH_HOME%/fish-memory/<session>.json`。旧文件只读、不自动删除。
+- 内置长期记忆保存在 `bili-duty/long-term-memory/`，纳入业务备份恢复并做路径/结构校验；外部 fish-memory 目录不进入本插件备份。
+- 独立 `dsh-fish-memory` 不再是运行依赖；如已安装，导入旧数据后应卸载，避免同一 Session 出现重复记忆工具和重复注入。
+
 ## v2.4.75 — 主 Session 人格记忆桥（2026-10-27）
 
 - 新增「大肥鱼的家」：用户明确选择一个当前在线的长期 DSH Session，插件把它作为主人聊天和人格记忆的归宿；后台自动刷 B站仍保持 v2.4.74 的受限 headless 安全架构。

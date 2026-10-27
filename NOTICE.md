@@ -26,5 +26,17 @@ Plus 由独立维护者维护，不代表原项目作者、DeepSeek 或哔哩哔
 `LICENSE` 第一行写的是 `Copyright (c) 2026 c1overzz`。
 如果你要基于本仓库做二次分发，保留这一行和 MIT 正文即可，不必另行取得授权（MIT 本身就允许改、再发、商用）。
 
+## 内置长期记忆：dsh-fish-memory
+
+自 v2.4.76 起，“大肥鱼的家”长期记忆模块基于 **Yuuyuko-uu/dsh-fish-memory** 的设计和部分实现整合。
+
+- 上游：https://github.com/Yuuyuko-uu/dsh-fish-memory
+- 原作者：Yuuyuko-uu / Yuuyuko
+- 许可证：MIT
+- 完整上游许可证：`vendor/fish-memory/LICENSE`
+- 更详细的修改边界：`THIRD_PARTY_NOTICES.md`
+
+本整合版由 `dsh-bili-scroll-plus` 独立维护，不代表上游作者为本整合版背书或提供支持。
+
 ---
 *本文件只是说明，不构成额外限制。*

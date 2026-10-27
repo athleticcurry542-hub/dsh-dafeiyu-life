@@ -63,9 +63,10 @@ import { effectiveModelSelection } from './lib/model-routing.mjs'
 import { HEADLESS_DENY_TOOLS, writeSecureHeadlessOverlay, validateHeadlessOverlayFile, assertSafeHeadlessLaunch } from './lib/headless-security.mjs'
 import { mergeWatchedRows } from './lib/watched.mjs'
 import { createMainSessionBridge } from './lib/main-session-bridge.mjs'
+import { createLongTermMemory } from './lib/long-term-memory.mjs'
 
 export const name = 'bili-scroll'
-export const inject = ['webServer', 'tools', 'settings', 'agents', 'sessionTitle']
+export const inject = ['webServer', 'tools', 'settings', 'agents', 'sessionTitle', 'systemPrompt']
 
 /**
  * 🔴 每个字段都要 `.extra('volatile', true)`：DSH 的 settings.update() 只认 volatile 字段
@@ -222,6 +223,15 @@ export const Config = !z ? undefined : z.object({
   mainSessionDailyBatches: z.natural().default(4).extra('volatile', true),
   mainSessionBatchSize: z.natural().default(8).extra('volatile', true),
   mainSessionIncludeComments: z.boolean().default(true).extra('volatile', true),
+  /** 内置长期人格记忆：基于 MIT 上游 dsh-fish-memory 的核心设计，仅绑定主人明确选择的主 Session。 */
+  mainSessionMemoryEnabled: z.boolean().default(false).extra('volatile', true),
+  mainSessionMemoryAutoBili: z.boolean().default(true).extra('volatile', true),
+  mainSessionMemoryHalfLifeDays: z.number().default(30).extra('volatile', true),
+  mainSessionMemoryThreshold: z.number().default(0.35).extra('volatile', true),
+  mainSessionMemoryMaxItems: z.natural().default(6).extra('volatile', true),
+  mainSessionMemoryMaxChars: z.natural().default(800).extra('volatile', true),
+  mainSessionMemoryDailyQuota: z.natural().default(8).extra('volatile', true),
+  mainSessionMemoryFactsMax: z.natural().default(2).extra('volatile', true),
   workspace: z.string().default('').extra('volatile', true),
   /** 日报形态：full=完整（现状）· brief=每条一两行 · off=不写报告（只发评论） */
   reportLevel: z.string().default('full').extra('volatile', true),
@@ -369,6 +379,7 @@ function reportMeta() {
     commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12, backupDirectory: '',
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     mainSessionBridgeEnabled: false, mainSessionId: '', mainSessionAutoSync: true, mainSessionSyncMinutes: 60, mainSessionDailyBatches: 4, mainSessionBatchSize: 8, mainSessionIncludeComments: true,
+    mainSessionMemoryEnabled: false, mainSessionMemoryAutoBili: true, mainSessionMemoryHalfLifeDays: 30, mainSessionMemoryThreshold: 0.35, mainSessionMemoryMaxItems: 6, mainSessionMemoryMaxChars: 800, mainSessionMemoryDailyQuota: 8, mainSessionMemoryFactsMax: 2,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
@@ -441,6 +452,14 @@ function reportMeta() {
     if ('mainSessionDailyBatches' in p) p.mainSessionDailyBatches = Math.max(1,Math.min(24,Math.floor(Number(p.mainSessionDailyBatches)||4)))
     if ('mainSessionBatchSize' in p) p.mainSessionBatchSize = Math.max(1,Math.min(20,Math.floor(Number(p.mainSessionBatchSize)||8)))
     if ('mainSessionIncludeComments' in p) p.mainSessionIncludeComments = p.mainSessionIncludeComments !== false
+    if ('mainSessionMemoryEnabled' in p) p.mainSessionMemoryEnabled = p.mainSessionMemoryEnabled === true
+    if ('mainSessionMemoryAutoBili' in p) p.mainSessionMemoryAutoBili = p.mainSessionMemoryAutoBili !== false
+    if ('mainSessionMemoryHalfLifeDays' in p) p.mainSessionMemoryHalfLifeDays = Math.max(15,Math.min(120,Number(p.mainSessionMemoryHalfLifeDays)||30))
+    if ('mainSessionMemoryThreshold' in p) p.mainSessionMemoryThreshold = Math.max(0.1,Math.min(0.8,Number(p.mainSessionMemoryThreshold)||0.35))
+    if ('mainSessionMemoryMaxItems' in p) p.mainSessionMemoryMaxItems = Math.max(1,Math.min(12,Math.floor(Number(p.mainSessionMemoryMaxItems)||6)))
+    if ('mainSessionMemoryMaxChars' in p) p.mainSessionMemoryMaxChars = Math.max(200,Math.min(3000,Math.floor(Number(p.mainSessionMemoryMaxChars)||800)))
+    if ('mainSessionMemoryDailyQuota' in p) p.mainSessionMemoryDailyQuota = Math.max(1,Math.min(30,Math.floor(Number(p.mainSessionMemoryDailyQuota)||8)))
+    if ('mainSessionMemoryFactsMax' in p) p.mainSessionMemoryFactsMax = Math.max(0,Math.min(6,Math.floor(Number(p.mainSessionMemoryFactsMax)||2)))
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     for (const k of ['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort']) if(k in p) p[k]=String(p[k]||'').trim().slice(0,160).replace(/[\r\n\0]/g,'')
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
@@ -570,8 +589,9 @@ function reportMeta() {
     return clampPatch(out)
   }
   const cfg = loadCfg()
-  // v2.4.75: 运行时挂接长期主 Session。工具先注册，桥在后面的本地账本初始化完成后赋值。
+  // v2.4.76: 运行时挂接长期主 Session 与内置长期记忆。工具先注册，桥在后面的本地账本初始化完成后赋值。
   let mainSessionBridge = null
+  let longTermMemory = null
   const pauseFile = join(stateDir, '.bili-duty-paused')
   let lastPauseState = null
   let cancelActiveDuty = () => {}
@@ -794,7 +814,7 @@ function reportMeta() {
       const query=String(args?.query||'').trim().slice(0,120)
       const limit=Math.max(1,Math.min(20,Math.floor(Number(args?.limit)||8)))
       if (!mainSessionBridge) return {ok:false,error:'主 Session 经历档案尚未初始化，请稍后再试'}
-      return {ok:true,rows:mainSessionBridge.recall(query,limit),note:'这是本插件的精确本地经历索引；长期人格记忆由主 Session / fish-memory 自己管理。'}
+      return {ok:true,rows:mainSessionBridge.recall(query,limit),note:'这是本插件的精确 B站 经历索引；人格长期记忆由“大肥鱼的家”内置记忆模块管理。'}
     },
   })
 
@@ -2378,7 +2398,21 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     return mergeWatchedRows(out, stateDir)
   }
 
-  // v2.4.75：大肥鱼主 Session 是“家/人格记忆”，现有插件仍是“后台身体/精确档案”。
+  // v2.4.76：把 fish-memory 的核心长期记忆能力整合进“大肥鱼的家”。
+  // 仅绑定主人明确选择的主 Session；模型侧只有 scoped dafeiyu_remember 工具，
+  // B站经历由插件本地确定性入库，不额外调用模型。
+  longTermMemory = createLongTermMemory({
+    dataDir: stateDir,
+    dshHome: dirname(stateDir),
+    agents: ctx.agents,
+    getConfig: () => cfg,
+    defineTool,
+    logger: {warn:(m)=>log('⚠️ '+m),info:(m)=>log(m)},
+  })
+  longTermMemory.start()
+  ctx.effect(() => () => longTermMemory.stop(), 'bili-duty: 内置长期记忆')
+
+  // 大肥鱼主 Session 是“家/人格记忆”，现有插件仍是“后台身体/精确档案”。
   // 这里只枚举 DSH 当前活着的 agent；绝不扫描 ~/.dsh/sessions，也不读取其它会话历史。
   mainSessionBridge = createMainSessionBridge({
     dataDir: stateDir,
@@ -2389,6 +2423,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     getConfig: () => cfg,
     getWatched: () => { const meta=reportMeta(); return parseSeenTable().map(x=>({...x,...(meta.get(x.bvid)||{})})) },
     getComments: (opt) => recentComments(stateDir,opt),
+    onNewEvents: (sid,events) => longTermMemory?.importBiliEvents(sid,events),
     logger: {warn:(m)=>log('⚠️ '+m),info:(m)=>log(m)},
   })
   mainSessionBridge.start()
@@ -2791,7 +2826,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.75'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.76'})
         }
         if (action === 'export') {
           refreshCfg()
@@ -3171,6 +3206,26 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return sendJson(res,200,{ok:true,...mainSessionBridge.status(),days})
     }
 
+    if (req.method === 'GET' && path === '/api/bili-duty/main-session/memory') {
+      const q=String(url.searchParams.get('q')||'').trim().slice(0,120)
+      const limit=Math.max(1,Math.min(300,Number(url.searchParams.get('limit'))||100))
+      return sendJson(res,200,{...longTermMemory.status(),rows:longTermMemory.list(q,limit)})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/main-session/memory/add') {
+      const body=await readBody(req)
+      try { return sendJson(res,200,{ok:true,result:longTermMemory.addManual(String(body?.text||''),Number(body?.importance)||0.7,Array.isArray(body?.tags)?body.tags:[])}) }
+      catch(e){ return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,220)}) }
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/main-session/memory/delete') {
+      const body=await readBody(req)
+      try { return sendJson(res,200,{ok:true,deleted:longTermMemory.remove(String(body?.id||''))}) }
+      catch(e){ return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,220)}) }
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/main-session/memory/import-fish') {
+      try { const r=longTermMemory.importExternal();return sendJson(res,r.ok?200:404,r) }
+      catch(e){ return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,220)}) }
+    }
+
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
       return sendJson(res, 200, { ok: true, config: cfg, windows: readPeakWindows(cfg.peakWindows), home: stateDir })
     }
@@ -3182,7 +3237,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
-        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'favFolderId']) {
+        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，

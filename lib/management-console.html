@@ -79,9 +79,22 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
 <div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search">搜索经历档案</button></div>
 <div id="main-session-history" class="records records-scroll tall"></div></div>
-<div class="settings-section"><h4>4. 推荐搭配：dsh-fish-memory</h4>
-<p class="muted">本插件负责把 B站经历送回主 Session；“主人和大肥鱼长期相处的聊天记忆”建议交给 <code>dsh-fish-memory</code>。安装后只给你选中的“大肥鱼主 Session”开启记忆即可。它不是本插件的硬依赖：不安装时经历仍会出现在主 Session，但超长会话如何长期提炼由 DSH 自身决定。</p>
-<p class="muted">安全边界：fish-memory 管的是主 Session 的生活记忆；本插件的 BV、rpid、评论/私信状态、额度和权限仍以插件本地档案为准。不要把 B站登录凭证或其它 DSH 会话内容复制进记忆。</p></div>
+<div class="settings-section"><h4>4. 内置长期记忆 · 大肥鱼真正“记得”</h4>
+<p class="muted">v2.4.76 已把 <code>Yuuyuko-uu/dsh-fish-memory</code> 的核心长期记忆设计整合进项目：按主 Session 独立保存、时间淡忘、事实键、相关召回和 scoped remember 工具。上游项目与 MIT 许可证见仓库 <code>THIRD_PARTY_NOTICES.md</code>。Claude/Anthropic 使用 ASCII 工具参数，不会再因为中文 schema 字段报 400。</p>
+<div class="fields"><div><label for="main-memory-enabled">启用内置长期记忆</label><input id="main-memory-enabled" type="checkbox"></div>
+<div><label for="main-memory-auto-bili">自动记住重要 B站经历</label><input id="main-memory-auto-bili" type="checkbox" checked></div>
+<div><label for="main-memory-half-life">普通记忆半衰期（15–120 天）</label><input id="main-memory-half-life" type="number" min="15" max="120" value="30"></div>
+<div><label for="main-memory-threshold">召回证据门槛（0.10–0.80）</label><input id="main-memory-threshold" type="number" min="0.1" max="0.8" step="0.05" value="0.35"></div>
+<div><label for="main-memory-max-items">每轮最多召回（1–12 条）</label><input id="main-memory-max-items" type="number" min="1" max="12" value="6"></div>
+<div><label for="main-memory-max-chars">每轮记忆字数上限（200–3000）</label><input id="main-memory-max-chars" type="number" min="200" max="3000" value="800"></div>
+<div><label for="main-memory-daily">主人相处记忆每日最多（1–30 条）</label><input id="main-memory-daily" type="number" min="1" max="30" value="8"></div>
+<div><label for="main-memory-facts">长期事实最多占召回（0–6 条）</label><input id="main-memory-facts" type="number" min="0" max="6" value="2"></div></div>
+<div class="toolbar"><button id="main-memory-save" class="primary">保存长期记忆设置</button><button id="main-memory-import">导入旧 dsh-fish-memory 记忆</button></div>
+<p id="main-memory-status" class="muted" role="status">正在读取…</p>
+<p class="muted">如果你已经安装独立版 <code>dsh-fish-memory</code>：先关闭它对这个 Session 的管理，或直接卸载并重启 DSH；旧记忆文件不会随卸载删除。然后再用上面的导入按钮合并旧数据。两份记忆插件不要同时管理同一个 Session，否则可能重复工具/重复注入。</p>
+<div class="toolbar"><input id="main-memory-add-text" maxlength="1000" placeholder="主人手动补一条长期记忆（可选）"><button id="main-memory-add">手动加入记忆</button></div>
+<div class="toolbar"><input id="main-memory-query" maxlength="120" placeholder="搜索长期记忆"><button id="main-memory-search">搜索记忆</button></div>
+<div id="main-memory-list" class="records records-scroll tall"></div></div>
 </div>
 </section>
 <section id="panel-diagnostics" hidden>
