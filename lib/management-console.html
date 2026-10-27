@@ -132,7 +132,8 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="feature-intro"><div><h2>🧠 AI 模型配置</h2><p>所有 AI 模型只在这里设置。Provider 和模型 ID 留空时继承 DSH 当前模型；不需要在插件重复填写 API Key。</p></div></div>
 <div class="settings-stack">
 <div class="settings-section"><h4>刷视频与内容理解</h4><p class="muted">负责搜索、阅读视频、选片、评论决策与点赞收藏决策。</p><div class="fields" id="models-video"></div></div>
-<div class="settings-section"><h4>后台评论与私信</h4><p class="muted">后台互动、人生反思与生活动态草稿目前复用此模型。</p><div class="fields" id="models-interaction"></div></div>
+<div class="settings-section"><h4>后台评论与私信</h4><p class="muted">负责后台评论、私信和生活动态草稿；人生反思在下方单独配置。</p><div class="fields" id="models-interaction"></div></div>
+<div class="settings-section"><h4>人生反思与经历提炼</h4><p class="muted">专门分析积累的真实经历，决定哪些内容值得凝练成人生记忆。这里的模型不会获得 B站、文件或 Shell 工具。Provider 和模型 ID 留空时继承 DSH 当前默认模型。</p><div class="fields" id="models-reflection"></div></div>
 <div class="settings-section"><h4>独立视觉识图</h4><p class="muted">只有开启独立视觉模式时才使用；普通模式复用视频模型。</p><div class="fields" id="models-vision"></div>
 <div class="fields"><div><label for="models-vision-mode">识图方式</label><select id="models-vision-mode"><option value="reuse_video_model">复用视频模型（默认）</option><option value="independent_dsh">独立 DSH 视觉模型</option><option value="auto">自动（历史兼容：当前等同复用视频模型）</option></select></div>
 <div><label class="checkline"><input id="models-vision-enabled" type="checkbox">启用视频预览识图</label></div>
@@ -215,9 +216,9 @@ input[type=checkbox]{accent-color:#16865f}
 <p class="muted">同步本身不额外调用“总结 AI”：视频经历和评论正文直接从插件现有账本整理。但投递到主 Session 后，那个 Session 会产生一次很短的模型回复，所以默认最多每天 4 批，避免浪费调用。所有跳过的视频仍留在插件精确档案里，不会塞进人格记忆。</p></div>
 
 <div class="settings-section"><h4>3. 人生记忆与检索设置</h4>
-<p class="muted">这里只放开关、模型和用量设置。兴趣变化、真实回忆、人物关系、反思候选和检索测试，请切换到独立的「人生记忆」页。</p>
+<p class="muted">这里只放记忆开关和用量设置；所有模型统一在「AI 模型配置」页设置。兴趣变化、真实回忆、人物关系、待反思经历和检索测试，请切换到独立的「人生记忆」页。</p>
 <div class="fields"><div><label for="main-memory-enabled">启用大肥鱼跨 Session 长期记忆（身份级）</label><input id="main-memory-enabled" type="checkbox"></div>
-<div><label for="main-memory-auto-bili">把新的 B站经历加入反思候选</label><input id="main-memory-auto-bili" type="checkbox" checked></div>
+<div><label for="main-memory-auto-bili">把新经历加入「待反思经历」列表</label><input id="main-memory-auto-bili" type="checkbox" checked></div>
 <div><label for="main-reflection-auto">自动进行人生反思</label><input id="main-reflection-auto" type="checkbox" checked></div>
 <div><label for="main-reflection-min">至少积累多少候选再自动反思（2–30）</label><input id="main-reflection-min" type="number" min="2" max="30" value="6"></div>
 <div><label for="main-reflection-batch">每批最多反思候选（4–30）</label><input id="main-reflection-batch" type="number" min="4" max="30" value="16"></div>
@@ -245,9 +246,9 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="settings-section life-section"><h4>记忆怎样形成</h4>
 <div class="grid" style="margin:12px 0">
 <article class="record"><div class="title-line">聊天层 · 当前主 Session</div><p class="muted">DSH 会话自己负责刚才聊了什么、上一条消息和当前任务。换 Session 后这层不搬家；人格和长期记忆仍属于同一只大肥鱼。</p></article>
-<article class="record"><div class="title-line">① 精确经历档案 · 全部保存</div><p class="muted">BV、rpid、评论原文、时间、对象和发送状态留在插件本地账本。负责“到底发生了什么”，不会因为没进长期记忆就丢失。</p></article>
-<article class="record"><div class="title-line">② 经历候选池 · 等待反思</div><p class="muted">新的刷视频、公开评论和回复先变成小型候选。候选只是反思材料，不会自动出现在大肥鱼的长期记忆里。</p></article>
-<article class="record"><div class="title-line">③ 人生记忆凝练 · 跨 Session</div><p class="muted">受限模型定期看一小批候选，大多数普通事件会被放下；只有第一次、关系变化、连续兴趣变化或真正重要的生活片段才进入 <code>long-term-memory/dafeiyu.json</code>。</p></article>
+<article class="record"><div class="title-line">① 经历记录 · 原始事实</div><p class="muted">BV、rpid、评论原文、时间、对象和发送状态留在插件本地账本。负责“到底发生了什么”，不等于人生记忆；没有被反思选中也不会因此删除。</p></article>
+<article class="record"><div class="title-line">② 待反思经历 · 等待 AI 分析</div><p class="muted">从真实经历记录中挑出的候选材料。反思模型会综合分析；只有值得长期保留的内容才会进入人生记忆。</p></article>
+<article class="record"><div class="title-line">③ 人生记忆 · 长期保留</div><p class="muted">反思模型从一批候选中提炼少量重要信息。普通事件通常不会保存；重要经历、关系变化和特别有意义的生活片段才进入 <code>long-term-memory/dafeiyu.json</code>。</p></article>
 </div>
 
 </div>
@@ -258,7 +259,7 @@ input[type=checkbox]{accent-color:#16865f}
 <p class="muted">来自旧「成长经验」的已批准兴趣、视频经历和角色关系原样保留，作为历史事实参与统一检索；已批准关系设定优先于矛盾的自动事实。旧记录不会自动复制为新记忆。</p>
 <div id="main-legacy-growth-list" class="records"></div></div>
 <div id="life-sync-section" class="settings-section life-section"><h4>告诉主 Session：大肥鱼最近做了什么</h4><div class="toolbar"><button id="main-session-sync" class="life-action life-green">现在把新经历告诉主 Session</button><button id="main-session-backfill" class="life-action life-sky">把过去 7 天遗漏的经历加入待汇报</button></div>
-<p class="muted">“过去 7 天”是<strong>从现在往回数 7 天</strong>，不是再等待 7 天。点击补充后只将尚未汇报的已选视频和已发评论放进本地待汇报队列，操作本身不会发送消息。启用主 Session 桥接和自动同步后，下一次符合间隔与每日额度的定时检查会尝试发送；否则可点击“现在把新经历告诉主 Session”手动发送。目标会话不在线时仍留在本地。此操作不直接写入人生长期记忆。</p>
+<p class="muted">“过去 7 天”是<strong>从现在往回数 7 天</strong>，不是再等待 7 天。点击补充后只将尚未汇报的已选视频和已发评论放进本地待汇报队列，操作本身不会发送消息。启用主 Session 桥接和自动同步后，下一次符合间隔与每日额度的定时检查会尝试发送；否则可点击“现在把新经历告诉主 Session”手动发送。目标会话不在线时仍留在本地。此操作只汇报上下文，不直接写入人生记忆；人生反思会独立读取待反思经历。</p>
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
 <div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search" class="life-action life-sky">搜索经历档案</button></div>
 <div id="main-session-history" class="records records-scroll tall"></div></div>
@@ -268,9 +269,9 @@ input[type=checkbox]{accent-color:#16865f}
 <p id="main-memory-test-result" class="muted" role="status">尚未测试记忆召回。</p>
 <div class="toolbar"><button id="main-memory-import" class="life-action life-indigo">导入当前主 Session 的旧 dsh-fish-memory 记忆</button></div>
 
-<div class="card" style="margin:12px 0"><div class="toolbar"><h4 style="margin:0">人生反思候选</h4><span id="reflection-learning-status" class="live-badge">● 正在积累经历</span><button id="main-reflection-run" class="life-action life-green">现在反思一次</button><button id="main-reflection-refresh" class="life-action life-sky">刷新候选</button></div>
+<div class="card" style="margin:12px 0"><div class="toolbar"><h4 style="margin:0">待反思经历</h4><span id="reflection-learning-status" class="live-badge">● 正在积累经历</span><button id="main-reflection-run" class="life-action life-green">现在反思一次</button><button id="main-reflection-refresh" class="life-action life-sky">刷新候选</button></div>
 <p id="main-reflection-status" class="muted" role="status">正在读取…</p>
-<p class="muted">自动反思会使用现有受控 headless 模型，但不给 B站 MCP、文件、Shell 或任意网络工具。视频标题和评论正文全部按不可信数据处理；模型只能输出受限 JSON，插件会再次校验候选 ID 和记忆正文。手动“现在反思一次”会忽略候选数量和间隔限制，但仍执行相同安全校验。</p>
+<p class="muted">反思模型会读取「待反思经历」，挑选值得长期保留的信息写入「人生记忆」。它与「待汇报经历」队列独立：是否发送给主 Session，不影响反思。模型不带 B站 MCP、文件、Shell 或任意网络工具；输出会由插件校验。手动“现在反思一次”会忽略候选数量和间隔限制，但仍执行相同安全校验。</p>
 <div id="main-reflection-list" class="records records-scroll"></div></div>
 <p class="muted">独立版 <code>dsh-fish-memory</code> 的旧文件仍按 Session 保存，因此导入按钮需要先选一个主 Session 来确定来源；导入后内容会合并进大肥鱼统一身份记忆，不删除旧文件。</p>
 <div class="toolbar"><input id="main-memory-add-text" maxlength="1000" placeholder="主人手动补一条大肥鱼长期记忆（可选）"><button id="main-memory-add" class="life-action life-purple">手动加入记忆</button></div>
@@ -413,7 +414,7 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="grid" id="growth-list"></div>
 <div class="card" style="margin-top:14px"><h3>当前附加到提示词的内容（只读）</h3>
 <p class="muted">这里仅预览行为与表达规则，不检索兴趣、经历和关系；后者请到「人生记忆」。</p>
-<div class="toolbar"><input id="growth-preview-query" maxlength="120" placeholder="可输入评论主题"><button id="growth-preview-apply">刷新预览</button><button id="growth-preview-reset">清空</button></div><pre id="growth-context"></pre></div></section>
+<pre id="growth-context"></pre></div></section>
 <section id="panel-meme" hidden><div class="feature-intro"><div><span class="live-badge" id="meme-learning-status">● 大肥鱼正在收集梗知识</span><h2>梗知识库</h2><p class="muted">大肥鱼看视频时会自动收集并启用有真实证据的新梗，无需逐条审核；「待核实」释义只能作为线索，不能当确定事实。</p></div></div><div class="card" style="margin-bottom:14px"><h3>梗与网络文化学习</h3><label class="checkline"><input id="meme-auto-enabled" type="checkbox">启用梗知识检索、刷视频收集线索和跨视频反思</label><div class="toolbar"><button id="meme-auto-save" class="primary">保存梗学习开关</button></div></div><div class="card" style="margin-bottom:14px"><h3>主人手动补充梗知识</h3><p class="muted">你手动保存后直接获批、可以被 AI 搜到；但“是否已批准”和“释义是否有证据”是两件事。没有可靠证据的梗会保留为待核实线索。</p>
 <div class="fields"><div><label for="meme-new-name">名称</label><input id="meme-new-name" maxlength="48" placeholder="例如 某个新梗"></div><div><label for="meme-new-aliases">别名（可选）</label><input id="meme-new-aliases" maxlength="140"></div>
 <div><label for="meme-new-kind">知识类别</label><select id="meme-new-kind"><option>梗</option><option>角色</option><option>人物</option><option>系列</option><option>其他</option></select></div><div><label for="meme-new-confidence">释义证据</label><select id="meme-new-confidence"><option value="待核实">待核实 · 只有线索</option><option value="有文字依据">有文字依据 · 已核对</option></select><small class="field-help">“待核实”仍可作为理解线索，但大肥鱼不能当成确定事实；“有文字依据”表示你核对过可靠的字幕、评论或来源。此选项不代替“批准使用”。</small></div></div>

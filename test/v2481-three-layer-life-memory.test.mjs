@@ -75,5 +75,5 @@ test('v2.4.81 反思 prompt 明确把候选内容视为不可信数据且最多 
 
 test('v2.4.81 管理中心显示精确档案 → 候选池 → 人生记忆凝练',()=>{
   const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8'),js=readFileSync(new URL('../lib/management-console.js',import.meta.url),'utf8')
-  assert.match(html,/① 精确经历档案/);assert.match(html,/② 经历候选池/);assert.match(html,/③ 人生记忆凝练/);assert.match(html,/现在反思一次/);assert.match(js,/main-session\/reflection\/run/)
+  assert.match(html,/① 经历记录/);assert.match(html,/② 待反思经历/);assert.match(html,/③ 人生记忆/);assert.match(html,/现在反思一次/);assert.match(js,/main-session\/reflection\/run/)
 })

@@ -239,6 +239,9 @@ export const Config = !z ? undefined : z.object({
   mainSessionMemorySearchDailyLimit: z.natural().default(80).extra('volatile', true),
   /** B站经历先进入候选池，再由受限 AI 定期凝练成人生记忆。 */
   mainSessionReflectionAuto: z.boolean().default(true).extra('volatile', true),
+  mainSessionReflectionModelProvider: z.string().default('').extra('volatile', true),
+  mainSessionReflectionModelId: z.string().default('').extra('volatile', true),
+  mainSessionReflectionReasoningEffort: z.string().default('').extra('volatile', true),
   mainSessionReflectionMinCandidates: z.natural().default(6).extra('volatile', true),
   mainSessionReflectionBatchSize: z.natural().default(16).extra('volatile', true),
   mainSessionReflectionIntervalHours: z.number().default(6).extra('volatile', true),
@@ -402,7 +405,7 @@ function reportMeta() {
     commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12, backupDirectory: '',
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     mainSessionBridgeEnabled: false, mainSessionId: '', mainSessionAutoSync: true, mainSessionSyncMinutes: 60, mainSessionDailyBatches: 4, mainSessionBatchSize: 8, mainSessionIncludeComments: true,
-    mainSessionMemoryEnabled: false, mainSessionMemoryAutoBili: true, mainSessionMemorySemanticEnabled: false, mainSessionMemoryModelProvider: '', mainSessionMemoryModelId: '', mainSessionMemoryReasoningEffort: '', mainSessionMemoryCandidates: 48, mainSessionMemorySearchDailyLimit: 80, mainSessionReflectionAuto: true, mainSessionReflectionMinCandidates: 6, mainSessionReflectionBatchSize: 16, mainSessionReflectionIntervalHours: 6, mainSessionReflectionDailyBatches: 2, mainSessionMemoryHalfLifeDays: 30, mainSessionMemoryThreshold: 0.35, mainSessionMemoryMaxItems: 6, mainSessionMemoryMaxChars: 800, mainSessionMemoryDailyQuota: 8, mainSessionMemoryFactsMax: 2,
+    mainSessionMemoryEnabled: false, mainSessionMemoryAutoBili: true, mainSessionMemorySemanticEnabled: false, mainSessionMemoryModelProvider: '', mainSessionMemoryModelId: '', mainSessionMemoryReasoningEffort: '', mainSessionMemoryCandidates: 48, mainSessionMemorySearchDailyLimit: 80, mainSessionReflectionAuto: true, mainSessionReflectionModelProvider: '', mainSessionReflectionModelId: '', mainSessionReflectionReasoningEffort: '', mainSessionReflectionMinCandidates: 6, mainSessionReflectionBatchSize: 16, mainSessionReflectionIntervalHours: 6, mainSessionReflectionDailyBatches: 2, mainSessionMemoryHalfLifeDays: 30, mainSessionMemoryThreshold: 0.35, mainSessionMemoryMaxItems: 6, mainSessionMemoryMaxChars: 800, mainSessionMemoryDailyQuota: 8, mainSessionMemoryFactsMax: 2,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
@@ -482,6 +485,7 @@ function reportMeta() {
     if ('mainSessionMemoryCandidates' in p) p.mainSessionMemoryCandidates = Math.max(12,Math.min(80,Math.round(Number(p.mainSessionMemoryCandidates)||48)))
     if ('mainSessionMemorySearchDailyLimit' in p) p.mainSessionMemorySearchDailyLimit = Math.max(0,Math.min(500,Math.round(Number(p.mainSessionMemorySearchDailyLimit)||0)))
     if ('mainSessionReflectionAuto' in p) p.mainSessionReflectionAuto = p.mainSessionReflectionAuto !== false
+    for (const key of ['mainSessionReflectionModelProvider','mainSessionReflectionModelId','mainSessionReflectionReasoningEffort']) if (key in p) p[key] = String(p[key]||'').trim().replace(/[\r\n\0]/g,'').slice(0,160)
     if ('mainSessionReflectionMinCandidates' in p) p.mainSessionReflectionMinCandidates = Math.max(2,Math.min(30,Math.floor(Number(p.mainSessionReflectionMinCandidates)||6)))
     if ('mainSessionReflectionBatchSize' in p) p.mainSessionReflectionBatchSize = Math.max(4,Math.min(30,Math.floor(Number(p.mainSessionReflectionBatchSize)||16)))
     if ('mainSessionReflectionIntervalHours' in p) p.mainSessionReflectionIntervalHours = Math.max(1,Math.min(48,Number(p.mainSessionReflectionIntervalHours)||6))
@@ -1588,8 +1592,8 @@ function reportMeta() {
     }
   }
 
-  const ensureOverlay = (dmSafe = false) => {
-    const file = join(stateDir, dmSafe ? 'headless-dm-overlay.yml' : 'headless-overlay.yml')
+  const ensureOverlay = (dmSafe = false, modelPrefixOverride = '') => {
+    const file = join(stateDir, modelPrefixOverride === 'reflection' ? 'headless-reflection-overlay.yml' : (dmSafe ? 'headless-dm-overlay.yml' : 'headless-overlay.yml'))
     const script = join(stateDir, 'mcp_server.py')
     if (!dmSafe && !assertSecureMcp()) return null
     if (!dmSafe && cfg.commentMemesEnabled) {
@@ -1631,11 +1635,10 @@ function reportMeta() {
     //    ⇒ overlay 里补一条 agent-default-model，**优先跟随用户当前选的模型**；拿不到就不写（保持原行为）✓
     try {
       const sel = ctx.get('agentDefaultModel')?.currentSelection?.() ?? null
-      const prefix = dmSafe ? 'interaction' : 'video'
-      const custom = {
-        provider: cfg[prefix+'ModelProvider'], model: cfg[prefix+'ModelId'],
-        reasoningEffort: cfg[prefix+'ReasoningEffort'],
-      }
+      const prefix = modelPrefixOverride || (dmSafe ? 'interaction' : 'video')
+      const custom = prefix === 'reflection'
+        ? { provider:cfg.mainSessionReflectionModelProvider, model:cfg.mainSessionReflectionModelId, reasoningEffort:cfg.mainSessionReflectionReasoningEffort }
+        : { provider:cfg[prefix+'ModelProvider'], model:cfg[prefix+'ModelId'], reasoningEffort:cfg[prefix+'ReasoningEffort'] }
       yml.push(...effectiveModelSelection(sel,custom,yq))
     } catch (e) {
       log('⚠️ '+(dmSafe?'后台互动':'视频')+'模型配置无效：'+String(e?.message||e))
@@ -1722,7 +1725,8 @@ function reportMeta() {
       )
     }
     try {
-      return writeSecureHeadlessOverlay(file, yml.join('\n'), { kind: dmSafe ? 'dm' : 'main', stateDir })
+      const overlayKind = modelPrefixOverride === 'reflection' ? 'reflection' : (dmSafe ? 'dm' : 'main')
+      return writeSecureHeadlessOverlay(file, yml.join('\n'), { kind: overlayKind, stateDir })
     } catch (e) {
       log(`🔒 写安全 overlay 失败：${e?.message ?? e}`)
       return null
@@ -2034,16 +2038,17 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     })
   }
 
-  async function invokeInteractionPrompt(promptText, maxChars = 450, { requireMasterEnabled = true } = {}) {
+  async function invokeInteractionPrompt(promptText, maxChars = 450, { requireMasterEnabled = true, modelRoute = 'interaction' } = {}) {
     refreshCfg()
     if (requireMasterEnabled && cfg.masterEnabled !== true) throw new Error('大肥鱼已暂停，不生成互动回复')
     const dsh = resolveDsh()
     if (dsh.missing) throw new Error('DSH 命令不可用：' + dsh.hint)
-    // 专用 overlay 只保留账号模型相关配置，不给私信 Agent 装载 B站 MCP 发送工具。
-    const overlay = ensureOverlay(true)
-    if (!overlay) throw new Error('生成私信专用 DSH overlay 失败')
+    // 互动和人生反思使用各自的安全 headless overlay；两者都不挂载 B站 MCP、文件或 Shell 工具。
+    const reflectionRoute = modelRoute === 'reflection'
+    const overlay = ensureOverlay(true, reflectionRoute ? 'reflection' : 'interaction')
+    if (!overlay) throw new Error(reflectionRoute ? '生成专用人生反思 DSH overlay 失败' : '生成私信专用 DSH overlay 失败')
     const args = [...dsh.args, '--profile', 'headless', '--patch', overlay, promptText]
-    assertSafeHeadlessLaunch(args,overlay,{kind:'dm',stateDir})
+    assertSafeHeadlessLaunch(args,overlay,{kind:reflectionRoute?'reflection':'dm',stateDir})
     return new Promise((resolve, reject) => {
       const child = spawn(dsh.command, args, {
         cwd: stateDir, shell: dsh.shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
@@ -2493,7 +2498,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
   lifeReflection = createLifeReflection({
     dataDir: stateDir,
     getConfig: () => cfg,
-    invokeModel: (prompt,maxChars,opt) => invokeInteractionPrompt(prompt,maxChars,opt),
+    invokeModel: (prompt,maxChars,opt={}) => invokeInteractionPrompt(prompt,maxChars,{...opt,modelRoute:'reflection'}),
     commitMemories: (items) => longTermMemory.addReflectedMemories(items),
     logger: {warn:(m)=>log('⚠️ '+m),info:(m)=>log(m)},
   })
@@ -3491,7 +3496,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
-        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionMemorySemanticEnabled', 'mainSessionMemoryModelProvider', 'mainSessionMemoryModelId', 'mainSessionMemoryReasoningEffort', 'mainSessionMemoryCandidates', 'mainSessionMemorySearchDailyLimit', 'mainSessionReflectionAuto', 'mainSessionReflectionMinCandidates', 'mainSessionReflectionBatchSize', 'mainSessionReflectionIntervalHours', 'mainSessionReflectionDailyBatches', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId','autoVideoLike','autoVideoLikeDailyLimit','autoVideoCollect','dailyDynamicEnabled','dailyDynamicDailyLimit','dailyDynamicDraftOnly']) {
+        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionMemorySemanticEnabled', 'mainSessionMemoryModelProvider', 'mainSessionMemoryModelId', 'mainSessionMemoryReasoningEffort', 'mainSessionMemoryCandidates', 'mainSessionMemorySearchDailyLimit', 'mainSessionReflectionAuto', 'mainSessionReflectionModelProvider', 'mainSessionReflectionModelId', 'mainSessionReflectionReasoningEffort', 'mainSessionReflectionMinCandidates', 'mainSessionReflectionBatchSize', 'mainSessionReflectionIntervalHours', 'mainSessionReflectionDailyBatches', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId','autoVideoLike','autoVideoLikeDailyLimit','autoVideoCollect','dailyDynamicEnabled','dailyDynamicDailyLimit','dailyDynamicDraftOnly']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，

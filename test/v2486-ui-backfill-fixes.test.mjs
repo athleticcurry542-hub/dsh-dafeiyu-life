@@ -42,7 +42,8 @@ test('真实模拟打开模型页刷新时不会因缺失 DOM 的 checked 属性
   }
   for(const id of htmlIds){const e=new Element();e.id=id}
   const document={getElementById:id=>registry.get(id)||null,createElement:()=>new Element(),querySelectorAll:()=>[],querySelector:()=>new Element()}
-  const fetch=async()=>({ok:true,status:200,json:async()=>({ok:true,config:{visionEnabled:true,visionDebug:true,visionMode:'auto',mainSessionMemoryModelId:'retriever'}})})
+  const fetchCalls=[]
+  const fetch=async(path,options={})=>{fetchCalls.push({path,options});return {ok:true,status:200,json:async()=>({ok:true,config:{visionEnabled:true,visionDebug:true,visionMode:'auto',mainSessionMemoryModelId:'retriever',mainSessionReflectionModelProvider:'reflect-provider',mainSessionReflectionModelId:'reflect-model',mainSessionReflectionReasoningEffort:'high'}})}}
   runInNewContext(script,{document,fetch,console,setTimeout,clearTimeout,confirm:()=>true,Date,URL,Blob,TextDecoder,Uint8Array}, {timeout:1500})
   const refresh=listeners.get('models-refresh:click');assert.equal(typeof refresh,'function')
   refresh()
@@ -51,6 +52,17 @@ test('真实模拟打开模型页刷新时不会因缺失 DOM 的 checked 属性
   assert.equal(registry.get('models-vision-debug').checked,true)
   assert.equal(registry.get('models-vision-mode').value,'auto')
   assert.equal(registry.get('main-memory-model-id').value,'retriever')
+  assert.equal(registry.get('model-mainSessionReflectionModelProvider').value,'reflect-provider')
+  assert.equal(registry.get('model-mainSessionReflectionModelId').value,'reflect-model')
+  assert.equal(registry.get('model-mainSessionReflectionReasoningEffort').value,'high')
+  const save=listeners.get('models-save:click');assert.equal(typeof save,'function');save()
+  await new Promise(resolve=>setTimeout(resolve,15))
+  const post=fetchCalls.find(x=>x.options.method==='POST'&&x.path.endsWith('/config'))
+  assert.ok(post,'saving model page must POST config')
+  const payload=JSON.parse(post.options.body)
+  assert.equal(payload.mainSessionReflectionModelProvider,'reflect-provider')
+  assert.equal(payload.mainSessionReflectionModelId,'reflect-model')
+  assert.equal(payload.mainSessionReflectionReasoningEffort,'high')
   assert.notEqual(registry.get('message').style.color,'var(--bad)')
 })
 
