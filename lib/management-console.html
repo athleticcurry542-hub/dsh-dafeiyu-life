@@ -28,6 +28,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <header class="top"><div><h1>🐳 大肥鱼管理中心</h1><p class="muted">运行控制 · 次数与额度 · 人设与好友 · 诊断与互动记录｜随 DSH 插件自动提供，不启动额外服务</p></div><button id="refresh">刷新当前页</button></header>
 <nav class="tabs" aria-label="管理分类">
 <button data-tab="persona" aria-selected="true">人设与好友</button>
+<button data-tab="home" aria-selected="false">大肥鱼的家</button>
 <button data-tab="comments" aria-selected="false">最近评论</button>
 <button data-tab="dm" aria-selected="false">后台私信 <span id="dm-count" class="queue-badge" hidden></span></button>
 <button data-tab="growth" aria-selected="false">成长记忆 <span id="growth-count" class="queue-badge" hidden></span></button>
@@ -56,6 +57,32 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <p id="backup-inspect" class="muted" role="status" aria-live="polite">尚未选择文件</p>
 <div class="toolbar"><button id="backup-restore" class="danger" disabled>校验并恢复选中的备份</button></div></div>
 </div><p id="backup-progress" role="status" aria-live="polite" class="muted"></p>
+</section>
+<section id="panel-home" hidden>
+<div class="toolbar"><h2 style="margin:0">🏠 大肥鱼的家 · 主 Session 记忆桥</h2><button id="main-session-refresh">刷新在线会话</button></div>
+<p class="muted">把一个长期 DSH 会话当作“大肥鱼本人”：主人平时在那个会话里和她相处；本插件继续负责安全地自动刷 B站、精确账本和发送权限。插件只把<strong>已发生的重要经历</strong>同步回主 Session，不让主 Session 接管后台任务，也不会扫描 <code>~/.dsh/sessions</code> 或读取其它会话记录。</p>
+<div class="settings-stack">
+<div class="settings-section"><h4>1. 选择“大肥鱼主 Session”</h4>
+<div class="fields"><div><label for="main-session-enabled">启用主 Session 记忆桥</label><input id="main-session-enabled" type="checkbox"></div>
+<div style="grid-column:span 2"><label for="main-session-id">当前在线的 DSH 会话</label><select id="main-session-id"><option value="">尚未选择</option></select></div>
+<div><label for="main-session-auto">有新经历时自动同步</label><input id="main-session-auto" type="checkbox" checked></div></div>
+<p class="muted">这里只列出当前 DSH 中活着的会话，不从硬盘猜“最近会话”。请先在 DSH 里打开你准备长期养大肥鱼的那个会话，再回来刷新选择。</p>
+<div class="toolbar"><button id="main-session-save" class="primary">保存主 Session 设置</button><button id="main-session-test">发送连接测试</button></div>
+<p id="main-session-target-status" class="muted" role="status">尚未读取</p></div>
+<div class="settings-section"><h4>2. 经历同步频率</h4><div class="fields">
+<div><label for="main-session-minutes">自动同步最短间隔（15–720 分钟）</label><input id="main-session-minutes" type="number" min="15" max="720" value="60"></div>
+<div><label for="main-session-daily">每天最多触发主 Session（1–24 批）</label><input id="main-session-daily" type="number" min="1" max="24" value="4"></div>
+<div><label for="main-session-batch">每批最多经历（1–20 条）</label><input id="main-session-batch" type="number" min="1" max="20" value="8"></div>
+<div><label for="main-session-comments">同步自己发过的评论/回复</label><input id="main-session-comments" type="checkbox" checked></div></div>
+<p class="muted">同步本身不额外调用“总结 AI”：视频经历和评论正文直接从插件现有账本整理。但投递到主 Session 后，那个 Session 会产生一次很短的模型回复，所以默认最多每天 4 批，避免浪费调用。所有跳过的视频仍留在插件精确档案里，不会塞进人格记忆。</p></div>
+<div class="settings-section"><h4>3. 当前队列与历史</h4><div class="toolbar"><button id="main-session-sync" class="primary">现在同步待处理经历</button><button id="main-session-backfill">导入最近 7 天重要经历到队列</button></div>
+<p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
+<div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search">搜索经历档案</button></div>
+<div id="main-session-history" class="records records-scroll tall"></div></div>
+<div class="settings-section"><h4>4. 推荐搭配：dsh-fish-memory</h4>
+<p class="muted">本插件负责把 B站经历送回主 Session；“主人和大肥鱼长期相处的聊天记忆”建议交给 <code>dsh-fish-memory</code>。安装后只给你选中的“大肥鱼主 Session”开启记忆即可。它不是本插件的硬依赖：不安装时经历仍会出现在主 Session，但超长会话如何长期提炼由 DSH 自身决定。</p>
+<p class="muted">安全边界：fish-memory 管的是主 Session 的生活记忆；本插件的 BV、rpid、评论/私信状态、额度和权限仍以插件本地档案为准。不要把 B站登录凭证或其它 DSH 会话内容复制进记忆。</p></div>
+</div>
 </section>
 <section id="panel-diagnostics" hidden>
 <div class="toolbar"><h2 style="margin:0">今日诊断</h2><button id="diag-refresh" class="primary">刷新诊断</button><button id="diag-save">保存诊断开关</button></div>

@@ -62,9 +62,10 @@ import { shouldRunWindow, parsePeakWindows, readPeakWindows, activePeakWindow, D
 import { effectiveModelSelection } from './lib/model-routing.mjs'
 import { HEADLESS_DENY_TOOLS, writeSecureHeadlessOverlay, validateHeadlessOverlayFile, assertSafeHeadlessLaunch } from './lib/headless-security.mjs'
 import { mergeWatchedRows } from './lib/watched.mjs'
+import { createMainSessionBridge } from './lib/main-session-bridge.mjs'
 
 export const name = 'bili-scroll'
-export const inject = ['webServer', 'tools', 'settings']
+export const inject = ['webServer', 'tools', 'settings', 'agents', 'sessionTitle']
 
 /**
  * 🔴 每个字段都要 `.extra('volatile', true)`：DSH 的 settings.update() 只认 volatile 字段
@@ -213,6 +214,14 @@ export const Config = !z ? undefined : z.object({
   commentReplyPerDay: z.natural().default(5).extra('volatile', true),
   commentOwnTopPerUser: z.natural().default(5).extra('volatile', true),
   commentOwnNestedPerUser: z.natural().default(3).extra('volatile', true),
+  /** 把重要 B站经历安全同步回主人明确选择的长期 DSH Session；不扫描其它 Session 文件。 */
+  mainSessionBridgeEnabled: z.boolean().default(false).extra('volatile', true),
+  mainSessionId: z.string().default('').extra('volatile', true),
+  mainSessionAutoSync: z.boolean().default(true).extra('volatile', true),
+  mainSessionSyncMinutes: z.natural().default(60).extra('volatile', true),
+  mainSessionDailyBatches: z.natural().default(4).extra('volatile', true),
+  mainSessionBatchSize: z.natural().default(8).extra('volatile', true),
+  mainSessionIncludeComments: z.boolean().default(true).extra('volatile', true),
   workspace: z.string().default('').extra('volatile', true),
   /** 日报形态：full=完整（现状）· brief=每条一两行 · off=不写报告（只发评论） */
   reportLevel: z.string().default('full').extra('volatile', true),
@@ -359,6 +368,7 @@ function reportMeta() {
     videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '',
     commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12, backupDirectory: '',
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
+    mainSessionBridgeEnabled: false, mainSessionId: '', mainSessionAutoSync: true, mainSessionSyncMinutes: 60, mainSessionDailyBatches: 4, mainSessionBatchSize: 8, mainSessionIncludeComments: true,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
@@ -424,6 +434,13 @@ function reportMeta() {
       p.peakIntervalMinutes = Number.isFinite(n) && n >= 1 ? Math.min(720, n) : DEFAULT_PEAK_INTERVAL_MINUTES
     }
     if ('backupDirectory' in p) p.backupDirectory = String(p.backupDirectory || '').trim().slice(0,420)
+    if ('mainSessionBridgeEnabled' in p) p.mainSessionBridgeEnabled = p.mainSessionBridgeEnabled === true
+    if ('mainSessionId' in p) p.mainSessionId = String(p.mainSessionId || '').trim().replace(/^session-/,'').replace(/[\r\n\0]/g,'').slice(0,180)
+    if ('mainSessionAutoSync' in p) p.mainSessionAutoSync = p.mainSessionAutoSync !== false
+    if ('mainSessionSyncMinutes' in p) p.mainSessionSyncMinutes = Math.max(15,Math.min(720,Math.floor(Number(p.mainSessionSyncMinutes)||60)))
+    if ('mainSessionDailyBatches' in p) p.mainSessionDailyBatches = Math.max(1,Math.min(24,Math.floor(Number(p.mainSessionDailyBatches)||4)))
+    if ('mainSessionBatchSize' in p) p.mainSessionBatchSize = Math.max(1,Math.min(20,Math.floor(Number(p.mainSessionBatchSize)||8)))
+    if ('mainSessionIncludeComments' in p) p.mainSessionIncludeComments = p.mainSessionIncludeComments !== false
     if ('reportLevel' in p) p.reportLevel = ['full', 'brief', 'off'].includes(String(p.reportLevel)) ? String(p.reportLevel) : 'full'
     for (const k of ['videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort']) if(k in p) p[k]=String(p[k]||'').trim().slice(0,160).replace(/[\r\n\0]/g,'')
     if ('personaPrompt' in p) p.personaPrompt = String(p.personaPrompt || '').slice(0, 8000)
@@ -553,6 +570,8 @@ function reportMeta() {
     return clampPatch(out)
   }
   const cfg = loadCfg()
+  // v2.4.75: 运行时挂接长期主 Session。工具先注册，桥在后面的本地账本初始化完成后赋值。
+  let mainSessionBridge = null
   const pauseFile = join(stateDir, '.bili-duty-paused')
   let lastPauseState = null
   let cancelActiveDuty = () => {}
@@ -761,6 +780,21 @@ function reportMeta() {
       const query=String(args?.query||'').trim().slice(0,180)
       if(query.length<2)return {ok:false,error:'请提供具体视频或话题关键词'}
       return {ok:true,context:buildGrowthContext(stateDir,{scene:'video',query,maxChars:850})||'没有匹配的已批准成长经历或关系'}
+    },
+  })
+
+  tool({
+    name: 'bili_experience_recall',
+    description: '只读检索大肥鱼自己过去已经记录的 B站经历：挑中过的视频、自己实际发出的公开评论/回复。只查本插件本地经历档案，不读取其它 DSH 会话、陌生人私信或网络。',
+    parameters: {
+      query: { type: 'string', description: '可选关键词，如 Claude、某个 BV 号、自己说过的一小段话；留空返回最近经历' },
+      limit: { type: 'number', description: '返回条数，默认 8，最大 20' },
+    },
+    async execute(args) {
+      const query=String(args?.query||'').trim().slice(0,120)
+      const limit=Math.max(1,Math.min(20,Math.floor(Number(args?.limit)||8)))
+      if (!mainSessionBridge) return {ok:false,error:'主 Session 经历档案尚未初始化，请稍后再试'}
+      return {ok:true,rows:mainSessionBridge.recall(query,limit),note:'这是本插件的精确本地经历索引；长期人格记忆由主 Session / fish-memory 自己管理。'}
     },
   })
 
@@ -2344,6 +2378,22 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     return mergeWatchedRows(out, stateDir)
   }
 
+  // v2.4.75：大肥鱼主 Session 是“家/人格记忆”，现有插件仍是“后台身体/精确档案”。
+  // 这里只枚举 DSH 当前活着的 agent；绝不扫描 ~/.dsh/sessions，也不读取其它会话历史。
+  mainSessionBridge = createMainSessionBridge({
+    dataDir: stateDir,
+    agents: ctx.agents,
+    titleOf: (agent) => {
+      try { const row=ctx.sessionTitle?.get?.(agent?.session); return typeof row==='string'?row:String(row?.title||'') } catch { return '' }
+    },
+    getConfig: () => cfg,
+    getWatched: () => { const meta=reportMeta(); return parseSeenTable().map(x=>({...x,...(meta.get(x.bvid)||{})})) },
+    getComments: (opt) => recentComments(stateDir,opt),
+    logger: {warn:(m)=>log('⚠️ '+m),info:(m)=>log(m)},
+  })
+  mainSessionBridge.start()
+  ctx.effect(() => () => mainSessionBridge.stop(), 'bili-duty: 主 Session 记忆桥')
+
   /** 封面代理：浏览器不能直连 i0.hdslb.com（防盗链 403 + 等于把用户 IP 交出去）⇒ 宿主取回来再转发 */
   const coverFor = async (bv) => {
     if (!/^BV[0-9A-Za-z]{10}$/.test(bv)) return null
@@ -2620,6 +2670,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       dmAutoReplyStatus: dmAutoreply.status(),
       commentInteractStatus: commentInteract.status(),
       interactionSchedulerStatus: interactionScheduler.status(),
+      mainSessionBridgeStatus: mainSessionBridge.status(),
       // ⭐ 人设：老用户（只填过工作区）可以一键导入他那份 AGENTS.md
       personaFromWs: (() => {
         if (String(cfg.personaPrompt || '').trim()) return ''
@@ -2740,7 +2791,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.74'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.75'})
         }
         if (action === 'export') {
           refreshCfg()
@@ -3095,6 +3146,31 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         return sendJson(res,400,{ok:false,error:'成长记忆操作失败：'+String(e?.message || e).slice(0,220)})
       }
     }
+    // 大肥鱼主 Session：只看当前 DSH 里活着的会话，不扫描磁盘上的 sessions 目录。
+    if (req.method === 'GET' && path === '/api/bili-duty/main-session') {
+      return sendJson(res,200,mainSessionBridge.status())
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/main-session/history') {
+      const q=String(url.searchParams.get('q')||'').trim().slice(0,120)
+      const limit=Math.max(1,Math.min(50,Number(url.searchParams.get('limit'))||20))
+      return sendJson(res,200,{ok:true,rows:mainSessionBridge.recall(q,limit)})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/main-session/test') {
+      try { return sendJson(res,200,await mainSessionBridge.test()) }
+      catch(e){ return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,220)}) }
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/main-session/sync') {
+      const body=await readBody(req)
+      const r=await mainSessionBridge.deliver({force:body?.force===true,backfillDays:0})
+      return sendJson(res,r.ok?200:409,r)
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/main-session/backfill') {
+      const body=await readBody(req)
+      const days=Math.max(1,Math.min(30,Math.floor(Number(body?.days)||7)))
+      mainSessionBridge.collect({backfillDays:days})
+      return sendJson(res,200,{ok:true,...mainSessionBridge.status(),days})
+    }
+
     if (req.method === 'GET' && path === '/api/bili-duty/config') {
       return sendJson(res, 200, { ok: true, config: cfg, windows: readPeakWindows(cfg.peakWindows), home: stateDir })
     }
@@ -3106,7 +3182,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
-        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'favFolderId']) {
+        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'favFolderId']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，
@@ -3133,6 +3209,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         try { parsePeakWindows(patch.peakWindows) } catch (e) { return sendJson(res, 400, {ok:false,error:String(e?.message||e)}) }
       }
       const { clean, host } = await persistCfg(patch)
+      // 启用主 Session 桥的这一刻就建立基线，避免“保存后到下一次定时检查之间”的旧经历被误当成新经历。
+      if (clean.mainSessionBridgeEnabled === true) { try { mainSessionBridge.collect() } catch (e) { log('主 Session 基线建立失败：'+String(e?.message||e)) } }
       log(`设置已更新：${JSON.stringify({...clean, ...('mentionProfiles' in clean ? {mentionProfiles:'[好友画像已更新]'} : {}), ...('personaPrompt' in clean ? {personaPrompt:'[人设提示词已更新]'} : {}), ...('characterLore' in clean ? {characterLore:'[角色关系设定已更新]'} : {}), ...('commentMemePrompt' in clean ? {commentMemePrompt: '[选图提示词已更新]'} : {}), ...('visionPrompt' in clean ? {visionPrompt: '[识图提示词已更新]'} : {})})}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
       return sendJson(res, 200, { ok: true, config: cfg, host })
     }
