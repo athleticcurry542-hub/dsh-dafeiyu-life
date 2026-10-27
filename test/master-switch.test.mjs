@@ -7,7 +7,7 @@ import { Readable } from 'node:stream'
 import { apply } from '../index.js'
 
 // 真正通过假宿主 HTTP 路由保存配置；不是仅检验字符串是否存在。
-test('总开关可关闭/重启后保持/恢复：关闭时不能跑一轮或手动补收藏', async () => {
+test('总开关可关闭/重启后保持/恢复：关闭时不能跑一轮，旧批量收藏已停用', async () => {
   const home = mkdtempSync(join(tmpdir(), 'dsh-master-switch-'))
   let route
   const ctx = {
@@ -45,7 +45,7 @@ test('总开关可关闭/重启后保持/恢复：关闭时不能跑一轮或手
     assert.equal(run.started,false)
     assert.equal(run.paused,true)
     const favorite=await request('POST','/api/bili-duty/fav-today',{})
-    assert.equal(favorite.paused,true)
+    assert.match(favorite.error,/整轮批量收藏已经取消/)
     const on=await request('POST','/api/bili-duty/config',{masterEnabled:true})
     assert.equal(on.config.masterEnabled,true)
     assert.equal(existsSync(pause),false)
@@ -60,7 +60,9 @@ test('总开关覆盖定时器、后台互动和 Python MCP 外发', () => {
   assert.match(index,/cfg\.masterEnabled !== true \|\| !cfg\.peakValley/)
   assert.match(index,/enabled: cfg\.masterEnabled === true && cfg\.dmWatch/)
   assert.match(index,/watchReplies: cfg\.masterEnabled === true && cfg\.commentWatchReplies/)
-  assert.match(index,/cfg\.masterEnabled === true && Number\(cfg\.favFolderId\)/)
+  assert.doesNotMatch(index,/favToday\('auto'\)/)
+  assert.match(mcp,/_guard\('bili_video_like'\)/)
+  assert.match(mcp,/_guard\('bili_video_collect'\)/)
   assert.match(index,/if \('masterEnabled' in args\.patch\) return/)
   assert.match(scheduler,/if\(cfg\.masterEnabled===false\)return/)
   assert.match(mcp,/bili-duty-paused/)

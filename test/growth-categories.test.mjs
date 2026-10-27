@@ -32,7 +32,7 @@ test('日报主题不再生成成长审批；后天兴趣交由人生记忆证�
  assert.deepEqual(listGrowth(dir).entries,[])
  assert.doesNotMatch(buildGrowthContext(dir,{scene:'duty'}),/AI模型拟人/)
  const original=readFileSync(new URL('../index.js',import.meta.url),'utf8')
- assert.match(original,/不能把它们自动追加成搜索关键词/)
+ assert.match(original,/兴趣主导搜索/)
 }))
 
 test('新的行为改进只允许 style，已批准规则只注入适用提示词',()=>withDir(dir=>{

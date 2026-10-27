@@ -41,6 +41,6 @@ test('persona settings contain core persona only; approved growth is joined at m
   const html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8')
   assert.match(html,/大肥鱼人设/)
   assert.match(html,/恢复默认只清除这一项的自定义/)
-  assert.match(client,/人设、模型角色关系及各类自定义提示词已统一在管理中心/)
+  assert.match(client,/主人额外指定的关注主题/)
   assert.match(index,/buildGrowthContext\(stateDir,\{scene:/)
 })

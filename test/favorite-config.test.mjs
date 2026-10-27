@@ -20,9 +20,11 @@ test('favorite selection is validated against server response before success', (
   assert.match(frontend, /savedFid !== wantedFid/)
 })
 
-test('backfill is disabled until a folder has actually been saved', () => {
-  assert.match(frontend, /Number\(cfg\.favFolderId\) > 0/)
-  assert.match(backend, /if \(fid <= 0\) return \{ ok: false, error: '还没选收藏夹/)
+test('v2.4.84 removes mass backfill and provides opt-in AI-controlled actions', () => {
+  assert.match(frontend, /允许大肥鱼自己决定点赞/)
+  assert.match(frontend, /允许大肥鱼自己建夹、选择性收藏/)
+  assert.match(backend, /整轮批量收藏已经取消/)
+  assert.doesNotMatch(backend, /favToday\('auto'\)/)
 })
 
 // 真走宿主 HTTP 路由，避免配置项已在 schema/clampPatch 定义但忘加到 POST 白名单。

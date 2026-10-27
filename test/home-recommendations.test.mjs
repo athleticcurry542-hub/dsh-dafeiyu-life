@@ -12,7 +12,7 @@ test('homepage recommendations are independent opt-in source and enabled by defa
 })
 test('Agent combines home recommendations and keyword search under the same quota',()=>{
  const code=src('index.js')
- for (const txt of ['必须**同时使用关键词搜索**','两类来源一起比较','只看一次','共用每天','不强制按来源配比','放弃首页推荐并继续关键词搜索']) {
+ for (const txt of ['必须**同时使用兴趣主导的关键词搜索**','两类来源一起比较','只看一次','共用每天','不强制按来源配比','放弃首页推荐并继续关键词搜索']) {
   assert.ok(code.includes(txt),txt)
  }
 })

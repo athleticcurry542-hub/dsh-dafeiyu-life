@@ -9,8 +9,8 @@ const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const h=read('lib/management-console.html'),j=read('lib/management-console.js')
 const index=read('index.js'),client=read('client.js'),pkg=JSON.parse(read('package.json'))
 
-test('v2.4.83 使用新版版本号，原有数据目录保持不变',()=>{
- assert.equal(pkg.version,'2.4.83')
+test('v2.4.84 使用新版版本号，原有数据目录保持不变',()=>{
+ assert.equal(pkg.version,'2.4.84')
  assert.match(index,/mainSessionMemoryReasoningEffort/)
  assert.match(read('lib/data-backup.mjs'),/main-session-memory\.json/)
 })
@@ -48,7 +48,7 @@ test('完整备份包含表情包规则 JSON，但不会混入表情包素材目
  assert.equal(allowedPath('comment-meme-rules.json'),true)
  assert.equal(allowedPath('comment-memes/demo.png'),false)
  const dir=mkdtempSync(join(tmpdir(),'v2483-backup-'))
- try{const backup=createBackup({root:dir,config:{},version:'2.4.83',sqlite:{}});assert.equal(validateBackup(backup).count,0)}finally{rmSync(dir,{recursive:true,force:true})}
+ try{const backup=createBackup({root:dir,config:{},version:'2.4.84',sqlite:{}});assert.equal(validateBackup(backup).count,0)}finally{rmSync(dir,{recursive:true,force:true})}
  assert.match(h,/包含表情包检索规则/)
  assert.match(h,/不包含表情包图片本体/)
 })

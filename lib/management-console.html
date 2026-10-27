@@ -355,11 +355,11 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="card" style="margin-top:14px"><h3>当前附加到提示词的内容（只读）</h3>
 <p class="muted">这里仅预览行为与表达规则，不检索兴趣、经历和关系；后者请到「人生记忆」。</p>
 <div class="toolbar"><input id="growth-preview-query" maxlength="120" placeholder="可输入评论主题"><button id="growth-preview-apply">刷新预览</button><button id="growth-preview-reset">清空</button></div><pre id="growth-context"></pre></div></section>
-<section id="panel-meme" hidden><div class="feature-intro"><div><span class="live-badge" id="meme-learning-status">● 大肥鱼正在收集梗知识</span><h2>梗知识库</h2><p class="muted">大肥鱼看视频时会收集有来源的梗线索，主人负责审核；不要把未知含义误当确定事实。</p></div></div><div class="card" style="margin-bottom:14px"><h3>主人手动补充梗知识</h3><p class="muted">你手动保存后直接获批、可以被 AI 搜到；但“是否已批准”和“释义是否有证据”是两件事。没有可靠证据的梗会保留为待核实线索。</p>
+<section id="panel-meme" hidden><div class="feature-intro"><div><span class="live-badge" id="meme-learning-status">● 大肥鱼正在收集梗知识</span><h2>梗知识库</h2><p class="muted">大肥鱼看视频时会自动收集并启用有真实证据的新梗，无需逐条审核；「待核实」释义只能作为线索，不能当确定事实。</p></div></div><div class="card" style="margin-bottom:14px"><h3>主人手动补充梗知识</h3><p class="muted">你手动保存后直接获批、可以被 AI 搜到；但“是否已批准”和“释义是否有证据”是两件事。没有可靠证据的梗会保留为待核实线索。</p>
 <div class="fields"><div><label for="meme-new-name">名称</label><input id="meme-new-name" maxlength="48" placeholder="例如 某个新梗"></div><div><label for="meme-new-aliases">别名（可选）</label><input id="meme-new-aliases" maxlength="140"></div>
 <div><label for="meme-new-kind">知识类别</label><select id="meme-new-kind"><option>梗</option><option>角色</option><option>人物</option><option>系列</option><option>其他</option></select></div><div><label for="meme-new-confidence">释义证据</label><select id="meme-new-confidence"><option value="待核实">待核实 · 只有线索</option><option value="有文字依据">有文字依据 · 已核对</option></select><small class="field-help">“待核实”仍可作为理解线索，但大肥鱼不能当成确定事实；“有文字依据”表示你核对过可靠的字幕、评论或来源。此选项不代替“批准使用”。</small></div></div>
 <label for="meme-new-meaning">释义（须由主人自行核对）</label><textarea id="meme-new-meaning" maxlength="220" placeholder="描述它是什么意思、适合什么语境"></textarea><div class="toolbar"><button id="meme-new-save" class="primary">新增并启用</button></div></div>
-<div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗先待审核；旧记录自动保留可用。修改后可手动批准或拒绝，不删除原视频证据。</p><div class="grid" id="meme-list"></div></section>
+<div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗自动入库并可检索；历史待审记录仍可处理。随时可编辑或删除错误记录，原视频证据保留。</p><div class="grid" id="meme-list"></div></section>
 <section id="panel-stickers" hidden>
 <div class="card" style="margin-bottom:14px">
 <h3>推荐流程 · 让 AI 按你当前图库更新检索规则</h3>

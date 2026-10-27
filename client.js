@@ -598,7 +598,7 @@ function WatchTab() {
 
       const onSaveText = async () => {
         const list = String(kws || '').split('\n').map((s) => s.trim()).filter(Boolean)
-        await patch({ keywords: list, clear: list.length ? [] : ['keywords'] }, '关注关键词')
+        await patch({ keywords: list, clear: list.length ? [] : ['keywords'] }, '主人额外关注词')
       }
 
       if (!cfg) {
@@ -663,7 +663,7 @@ function WatchTab() {
             h('button', { key: v, 'data-bd-tab': '', 'aria-selected': tab === v ? 'true' : 'false', onClick: () => setTab(v) }, label))),
 
         h('div', { 'data-bd-row': '' },
-          h('button', { 'data-bd-btn': '', 'data-primary': '', disabled: Boolean(busy), onClick: onSaveText }, '保存关键词'),
+          h('button', { 'data-bd-btn': '', 'data-primary': '', disabled: Boolean(busy), onClick: onSaveText }, '保存额外主题'),
           msg ? h('div', { 'data-bd-msg': '', 'data-good': msgTone === 'good' ? '' : undefined, 'data-warn': msgTone === 'warn' ? '' : undefined }, msg) : null),
 
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },
@@ -816,7 +816,7 @@ function WatchTab() {
         /* 复杂内容管理统一进入管理中心；原设置页只保留少量基础开关。 */
         h('div',{'data-bd-sec':'','data-bd-group':'taste','data-bd-away':tab==='taste'?undefined:''},
           h('div',{'data-bd-h':''},'🐳 大肥鱼 · 成长记忆'),
-          h('div',{'data-bd-note':''},'添加反馈、审批经验、从日报学习兴趣、撤销修改和预览下轮注入内容，都集中在管理中心。核心人设仍由你控制。'),
+          h('div',{'data-bd-note':''},'添加反馈、审核行为与表达改进建议、撤销修改和预览提示词都集中在管理中心。兴趣趋势和长期经历请到「人生记忆」查看；核心人设仍由你控制。'),
           h('div',{'data-bd-row':''},h('button',{'data-bd-btn':'','data-primary':'',onClick:async()=>{
             try { const r=await jpost('/open',{what:'manage'}); if(!r?.ok)throw new Error(r?.error||'打开失败') }
             catch(e){window.alert('打开管理中心失败：'+String(e?.message||e))}
@@ -880,15 +880,15 @@ function WatchTab() {
           h('div',{'data-bd-sep':''})),
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'taste', 'data-bd-away': tab === 'taste' ? undefined : '' },
           h('div', { 'data-bd-h': '' }, '选片来源'),
-          h(ToggleRow, {label:'加入首页推荐视频', note:'默认开启；与关键词搜索混合选片。每轮首页推荐最多读取一次、最多12个候选，过滤直播与广告。是否挑中仍由大肥鱼判断，共用原有额度。',
+          h(ToggleRow, {label:'加入首页推荐视频', note:'默认开启；与兴趣主导的主题搜索混合选片。每轮首页推荐最多读取一次、最多12个候选，过滤直播与广告。是否挑中仍由大肥鱼判断，共用原有额度。',
             on:sw('homeRecommendationsEnabled'),onChange:v=>patch({homeRecommendationsEnabled:v},'首页推荐选片来源')}),
           h('div', { 'data-bd-note':'' }, `当前入选门槛：播放 ${cfg.minVideoViews??1000}、点赞 ${cfg.minVideoLikes??10}、评论 ${cfg.minVideoReplies??3}。到管理中心 → 次数与额度修改。`),
-          h('div', { 'data-bd-h': '' }, '关注什么（关键词搜索）'),
+          h('div', { 'data-bd-h': '' }, '主人额外指定的关注主题'),
           h('textarea', {
-            'data-bd-input': '', rows: 5, placeholder: '一行一个关键词；留空用内置那几组',
+            'data-bd-input': '', rows: 5, placeholder: '可留空；一行一个额外关注主题（兴趣档案负责主要选片）',
             value: kws ?? '', onChange: (e) => setKws(e.target.value),
           }),
-          h('div', { 'data-bd-note':'' }, '大肥鱼人设、模型角色关系及各类自定义提示词已统一在管理中心 → 人设与好友中编辑。保存关键词不会覆盖人设。'),
+          h('div', { 'data-bd-note':'' }, '日常选片主要由「人生记忆 → 兴趣趋势」决定；这里写的词是主人额外希望关注的方向，不会覆盖兴趣档案或人设。'),
           h('div', { 'data-bd-label': '' }, '日报写多细'),
           h('select', {
             'data-bd-input': '', value: rl ?? 'full',
@@ -897,19 +897,12 @@ function WatchTab() {
             h('option', { value: 'full' }, '完整 —— 每条：标题 / UP / 为什么值得（默认）'),
             h('option', { value: 'brief' }, '薄 —— 每条一两行，只留值不值得 + 链接'),
             h('option', { value: 'off' }, '不写 —— 只发评论，不生成日报文件')),
-        h('div', { 'data-bd-label': '' }, '自动收藏到（这一轮挑中的视频存进你的收藏夹）'),
-        h('select', {
-          'data-bd-input': '', value: favId ?? '0',
-          onChange: (e) => { setFavId(e.target.value); patch({ favFolderId: Math.max(0, Number(e.target.value) || 0) }, '自动收藏') },
-        },
-          h('option', { value: '0' }, '不收藏（默认）'),
-          (favFolders || []).map((f) => h('option', { key: String(f.id), value: String(f.id) }, `${f.title}（${f.count} 条）`))),
-        h('div', { 'data-bd-row': '' },
-          h('button', { 'data-bd-btn': '', disabled: Boolean(busy) || !(Number(cfg.favFolderId) > 0), onClick: onFavToday }, '补收藏今天的'),
-          h('div', { 'data-bd-note': '' },
-            favFolders === null ? '收藏夹列表读取中…'
-              : (favFolders.length ? (Number(cfg.favFolderId) > 0 ? '每轮跑完会把挑中的视频存进上面选的收藏夹' : '请先在上方选一个收藏夹，等待“自动收藏：已保存”后，再点补收藏')
-                : '读不到收藏夹 —— 先「扫码登录」，或过会儿重开设置页'))),
+        h('div', { 'data-bd-h': '' }, '大肥鱼自主点赞与收藏'),
+        h(ToggleRow, {label:'允许大肥鱼自己决定点赞', note:'看完并真心认可才点赞；每天最多 10 条，不为凑数自动点赞。初次升级默认关闭。',
+          on:sw('autoVideoLike'),onChange:v=>patch({autoVideoLike:v},'自主点赞')}),
+        h(ToggleRow, {label:'允许大肥鱼自己建夹、选择性收藏', note:'只有值得以后重看的视频才收藏；自动复用或创建「大肥鱼·主题」私有收藏夹。每天最多 5 条收藏、2 个新建夹，总共最多 12 个自动创建的收藏夹；初次升级默认关闭。',
+          on:sw('autoVideoCollect'),onChange:v=>patch({autoVideoCollect:v},'自主收藏')}),
+        h('div', { 'data-bd-note': '' }, '旧版「全部挑中视频统一收藏」已停止执行。既有收藏夹和历史收藏不会被清空或移动。'),
 
           h('div', { 'data-bd-row': '' },
             msg ? h('div', { 'data-bd-msg': '', 'data-good': msgTone === 'good' ? '' : undefined, 'data-warn': msgTone === 'warn' ? '' : undefined }, msg) : null)),

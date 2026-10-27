@@ -10,7 +10,7 @@ from pathlib import Path
 import sqlite3
 import sys
 
-DBS = ('meme-memory.sqlite3', 'public-comment-quota.sqlite3', 'dynamic-sync/dynamic-limit.sqlite3')
+DBS = ('meme-memory.sqlite3', 'public-comment-quota.sqlite3', 'video-actions.sqlite3', 'dynamic-sync/dynamic-limit.sqlite3')
 MAX_SQLITE_SIZE = 24 * 1024 * 1024
 
 

@@ -819,7 +819,7 @@ def _meme_conn():
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""")
-    # 向后兼容：此前自动学到的梗视为已经启用；升级后新梗先进入主人审核队列。
+    # 历史状态保持不变；v2.4.84 新梗通过证据校验后立即启用，无人工审批。
     columns={row['name'] for row in conn.execute('PRAGMA table_info(memes)').fetchall()}
     if 'review_status' not in columns:
         conn.execute("ALTER TABLE memes ADD COLUMN review_status TEXT NOT NULL DEFAULT 'approved'")
@@ -906,12 +906,12 @@ def _meme_save(name, meaning, bvid, evidence, aliases="", kind="梗", evidence_t
                 # 已知释义不被无声覆盖；更新来自新视频的证据，避免 AI 来回改定义。
                 conn.execute("UPDATE memes SET updated_at=?, aliases=CASE WHEN aliases='' THEN ? ELSE aliases END WHERE id=?",(now,als,mid))
             else:
-                conn.execute("INSERT INTO memes(key,name,aliases,kind,meaning,confidence,created_at,updated_at,review_status) VALUES(?,?,?,?,?,?,?, ?, 'pending')",
+                conn.execute("INSERT INTO memes(key,name,aliases,kind,meaning,confidence,created_at,updated_at,review_status) VALUES(?,?,?,?,?,?,?, ?, 'approved')",
                          (key,nm,als,kd,desc,trust,now,now))
                 mid=conn.execute('SELECT last_insert_rowid()').fetchone()[0]
             conn.execute('INSERT INTO meme_sources(meme_id,bvid,evidence_type,evidence,noted_at) VALUES(?,?,?,?,?) ON CONFLICT(meme_id,bvid) DO UPDATE SET evidence_type=excluded.evidence_type,evidence=excluded.evidence,noted_at=excluded.noted_at',
                          (mid,bv,source_type,ev,now))
-        return {'ok':True,'saved':not bool(old),'name':nm,'id':mid,'review_status':('pending' if not old else 'unchanged'),'source_bvid':bv,'visual_status':('低清预览线索（待核实）' if source_type=='低清预览' else '外观未知（未识图）')}
+        return {'ok':True,'saved':not bool(old),'name':nm,'id':mid,'review_status':('approved' if not old else 'unchanged'),'source_bvid':bv,'visual_status':('低清预览线索（待核实）' if source_type=='低清预览' else '外观未知（未识图）')}
     finally:
         conn.close()
 
@@ -1041,6 +1041,168 @@ async def bili_meme_remember(name: str, meaning: str, bvid: str, evidence: str,
         return json.dumps({'ok':False,'error':'梗记忆未开启'},ensure_ascii=False)
     try: return json.dumps(_meme_save(name,meaning,bvid,evidence,aliases,kind,evidence_type,confidence),ensure_ascii=False)
     except Exception as exc: return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
+
+
+# ========== v2.4.84：逐视频的自主点赞／主题收藏（真实写操作） ==========
+# 所有行为需要显式主人开关 + MCP 白名单 + 本轮真实入选 BV + 本地限额。
+# 模型只能在视频被确实挑中后选择操作，不可指定收藏夹 ID，更不能修改主人既有收藏夹。
+_ACTION_DB_NAME = 'video-actions.sqlite3'
+
+
+def _selected_for_reaction(bv: str) -> bool:
+    # 必须在真实选中后才允许操作
+    today=datetime.now().strftime('%Y-%m-%d')
+    report=_DUTY_HOME / 'out' / (today+'.md')
+    try:
+        if report.is_file() and not report.is_symlink() and report.stat().st_size <= 2_000_000:
+            content=report.read_text('utf8')
+            if re.search(r'^#{2,3}[ \t]*'+re.escape(bv)+r'(?:[ \t]|$)',content,re.M):
+                return True
+    except (OSError,UnicodeError):
+        pass
+    # 无日报模式依赖同日判重表的明确「入选」状态，不接受「看过／跳过」标记。
+    seen=_DUTY_HOME / 'seen.md'
+    try:
+        if seen.is_file() and not seen.is_symlink() and seen.stat().st_size <= 2_000_000:
+            for line in seen.read_text('utf8').splitlines():
+                if not line.startswith('|'): continue
+                parts=[part.strip() for part in line.strip('|').split('|')]
+                if len(parts)>=5 and parts[0].startswith(today) and parts[1]==bv and any(w in parts[4] for w in ('挑中','入选','值得看','可以看')):
+                    return True
+    except (OSError,UnicodeError):
+        pass
+    return False
+
+
+def _action_conn():
+    _DUTY_HOME.mkdir(parents=True,exist_ok=True)
+    p=_DUTY_HOME / _ACTION_DB_NAME
+    if p.is_symlink(): raise ValueError('视频动作数据文件不安全')
+    con=sqlite3.connect(str(p),timeout=8)
+    con.row_factory=sqlite3.Row
+    con.execute('PRAGMA busy_timeout=8000')
+    con.execute('''CREATE TABLE IF NOT EXISTS actions (
+        uid TEXT NOT NULL, bvid TEXT NOT NULL, kind TEXT NOT NULL,
+        day TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY(uid,bvid,kind))''')
+    con.execute('''CREATE TABLE IF NOT EXISTS created_folders (
+        uid TEXT NOT NULL, title TEXT NOT NULL, fid INTEGER NOT NULL,
+        day TEXT NOT NULL, PRIMARY KEY(uid,title))''')
+    return con
+
+
+def _claim_video_action(uid: str,bv: str,kind: str,limit: int):
+    con=_action_conn()
+    try:
+        today=datetime.now().strftime('%Y-%m-%d')
+        with con:
+            con.execute('BEGIN IMMEDIATE')
+            row=con.execute('SELECT status FROM actions WHERE uid=? AND bvid=? AND kind=?',(uid,bv,kind)).fetchone()
+            if row: return {'ok':False,'already':True,'error':'这条视频已经处理过'+kind+'（'+row['status']+'），不会重复操作'}
+            n=con.execute("SELECT COUNT(*) FROM actions WHERE uid=? AND day=? AND kind=?",(uid,today,kind)).fetchone()[0]
+            if n>=limit:return {'ok':False,'limit':True,'error':f'今日{kind}上限 {limit} 次已用完'}
+            con.execute('INSERT INTO actions(uid,bvid,kind,day,status) VALUES(?,?,?,?,?)',(uid,bv,kind,today,'pending'))
+        return None
+    finally: con.close()
+
+
+def _finish_video_action(uid,bv,kind,ok,detail=''):
+    con=_action_conn()
+    try:
+        with con:con.execute('UPDATE actions SET status=?, detail=? WHERE uid=? AND bvid=? AND kind=?',('ok' if ok else 'failed',str(detail)[:180],uid,bv,kind))
+    finally:con.close()
+
+
+def _check_reaction(bvid,env_key):
+    if os.environ.get(env_key)!='1':raise ValueError('主人没有开启此项自主视频行为')
+    bv=_valid_bv(bvid)
+    if not _selected_for_reaction(bv):raise ValueError('只允许操作今日已真正入选并记录的视频（日报 ### BV 或判重表入选标记）')
+    cred=get_cred()
+    uid=str(getattr(cred,'dedeuserid','') or '')
+    if not uid.isdigit() or int(uid)<=0:raise ValueError('无法确定登录账号 UID')
+    return bv,cred,uid
+
+
+def _folder_title(topic):
+    name=str(topic or '').strip()
+    if not re.fullmatch(r'[\w\u4e00-\u9fff· -]{2,14}',name,re.U) or '..' in name:
+        raise ValueError('收藏主题需为 2–14 字的普通名称，不接受路径/链接/特殊字符')
+    return '大肥鱼·'+name
+
+
+async def _ensure_ai_folder(cred,uid,topic):
+    title=_folder_title(topic)
+    data=await favorite_list.get_video_favorite_list(int(uid),credential=cred)
+    items=(data or {}).get('list') or []
+    for item in items:
+        if item.get('title')==title and int(item.get('id') or 0)>0:
+            return int(item['id']),title,False
+    # 只计自动新建夹，并限制最终列表中的同前缀数量，防绕过重启／数据库丢失。
+    owned=[x for x in items if str(x.get('title') or '').startswith('大肥鱼·')]
+    if len(owned)>=12: raise ValueError('大肥鱼专属收藏夹已达到 12 个，不再建新夹')
+    con=_action_conn()
+    try:
+        today=datetime.now().strftime('%Y-%m-%d')
+        new_today=con.execute('SELECT COUNT(*) FROM created_folders WHERE uid=? AND day=?',(uid,today)).fetchone()[0]
+        if new_today>=2:raise ValueError('今日已经创建两个收藏夹，不再新建')
+    finally: con.close()
+    result=await favorite_list.create_video_favorite_list(title=title,introduction='大肥鱼自主挑选的值得回看的视频',private=True,credential=cred)
+    fid=int((result or {}).get('id') or (result or {}).get('fid') or (result or {}).get('data',{}).get('id') or 0)
+    if fid<=0:
+        # 若接口响应未带 ID，重新读取，且绝不凭空编造收藏夹编号。
+        data=await favorite_list.get_video_favorite_list(int(uid),credential=cred)
+        fid=next((int(x.get('id')) for x in ((data or {}).get('list') or []) if x.get('title')==title and int(x.get('id') or 0)>0),0)
+    if fid<=0:raise ValueError('B站可能已创建收藏夹但未返回 ID；请检查收藏夹，插件不会重复创建')
+    con=_action_conn()
+    try:
+        with con:con.execute('INSERT OR IGNORE INTO created_folders(uid,title,fid,day) VALUES(?,?,?,?)',(uid,title,fid,datetime.now().strftime('%Y-%m-%d')))
+    finally:con.close()
+    return fid,title,True
+
+
+@tool()
+async def bili_video_like(bvid: str, reason: str = '') -> str:
+    # 每日最多10条
+    if (e:=_guard('bili_video_like')): return e
+    try:
+        bv,cred,uid=_check_reaction(bvid,'BILI_AUTO_VIDEO_LIKE')
+        why=_safe_line(reason,100)
+        if len(why)<4:raise ValueError('点赞需要简短、具体的个人判断理由')
+        result=_claim_video_action(uid,bv,'like',10)
+        if result:return json.dumps(result,ensure_ascii=False)
+        try:
+            await video.Video(bvid=bv,credential=cred).like(True)
+            _finish_video_action(uid,bv,'like',True,why)
+            return json.dumps({'ok':True,'liked':True,'bvid':bv},ensure_ascii=False)
+        except Exception as error:
+            _finish_video_action(uid,bv,'like',False,str(error))
+            return json.dumps({'ok':False,'error':'点赞失败：'+str(error)[:120]},ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({'ok':False,'error':str(error)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_video_collect(bvid: str, folder_title: str, reason: str = '') -> str:
+    # 只收藏需要未来回看的入选视频
+    if (e:=_guard('bili_video_collect')): return e
+    try:
+        bv,cred,uid=_check_reaction(bvid,'BILI_AUTO_VIDEO_COLLECT')
+        _folder_title(folder_title)   # 先校验命名，再申请动作额度
+        why=_safe_line(reason,100)
+        if len(why)<4:raise ValueError('收藏需要具体的未来重看理由')
+        result=_claim_video_action(uid,bv,'collect',5)
+        if result:return json.dumps(result,ensure_ascii=False)
+        try:
+            fid,title,created=await _ensure_ai_folder(cred,uid,folder_title)
+            result=await video.Video(bvid=bv,credential=cred).set_favorite(add_media_ids=[fid])
+            if isinstance(result,dict) and result.get('code',0) not in (0,None):raise ValueError(str(result.get('message') or result.get('code'))[:120])
+            _finish_video_action(uid,bv,'collect',True,title+'：'+why)
+            return json.dumps({'ok':True,'collected':True,'bvid':bv,'folder':title,'created':created},ensure_ascii=False)
+        except Exception as error:
+            _finish_video_action(uid,bv,'collect',False,str(error))
+            return json.dumps({'ok':False,'error':'收藏失败：'+str(error)[:120]},ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({'ok':False,'error':str(error)[:180]},ensure_ascii=False)
 
 
 @tool()
