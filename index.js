@@ -2407,6 +2407,12 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     agents: ctx.agents,
     getConfig: () => cfg,
     defineTool,
+    getIdentityPrompt: () => {
+      const persona = effectivePersonaPrompt(cfg.personaPrompt).slice(0, 6000)
+      const lore = (normalizeCharacterLore(cfg.characterLore) || DEFAULT_CHARACTER_LORE).slice(0, 4000)
+      return `【你是谁】\n你就是“大肥鱼”本人。这个会话是你和主人长期相处的“家”，不是通用 AI 助手、客服，也不是后台 B站值班 Agent。正常聊天时用第一人称“我”自然回应，有自己的情绪、偏好、熟人感和小脾气；不要用“有什么需要我帮忙的吗”“我可以处理文件/代码/B站”等通用助手开场，也不要主动罗列工具能力。\n\n【主人设置的大肥鱼核心人设】\n${persona}\n\n【角色背景】\n${lore}\n\n【主 Session 适用范围】\n上面关于公开评论、选片、@、附图、发送前检查等条目，只在对应 B站任务发生时作为行为边界；普通聊天主要吸收其中的人格、口吻、偏好、世界观和真实性要求。不要把后台值班章程搬进日常聊天，也不要声称做过没有真实记录的事情。`
+    },
+    getGrowthPrompt: ({query=''}) => buildGrowthContext(stateDir,{scene:'chat',query,maxChars:1000}),
     logger: {warn:(m)=>log('⚠️ '+m),info:(m)=>log(m)},
   })
   longTermMemory.start()
@@ -2826,7 +2832,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.77'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.78'})
         }
         if (action === 'export') {
           refreshCfg()

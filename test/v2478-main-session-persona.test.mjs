@@ -1,0 +1,91 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {mkdtempSync,rmSync,readFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+import {createLongTermMemory} from '../lib/long-term-memory.mjs'
+import {buildGrowthContext,proposeGrowth,markGrowthDirectReview,reviewGrowth} from '../lib/persona-growth.mjs'
+
+const temp=()=>mkdtempSync(join(tmpdir(),'dafeiyu-persona-'))
+function fakeAgent(){
+  const handlers={},contexts=[],sections=[],tools=[]
+  const ctx={
+    on:(name,fn)=>{handlers[name]=fn;return()=>{delete handlers[name]}},
+    systemPrompt:{section:spec=>{sections.push(spec);return()=>{}},context:spec=>{contexts.push(spec);return()=>{}}},
+    tools:{register:spec=>{tools.push(spec);return()=>{}}},
+  }
+  return {agent:{id:'abc',session:{id:'abc',snapshotEvents:()=>[]},ctx},handlers,contexts,sections,tools}
+}
+const defineTool=x=>x
+
+test('只要选为主 Session，即使关闭长期记忆也会挂载大肥鱼人格与审核成长记忆',()=>{
+  const dir=temp(),f=fakeAgent()
+  try{
+    const mem=createLongTermMemory({
+      dataDir:dir,dshHome:dir,
+      agents:{get:()=>f.agent,list:()=>[f.agent]},
+      getConfig:()=>({mainSessionId:'abc',mainSessionMemoryEnabled:false}),
+      defineTool,
+      getIdentityPrompt:()=> '你就是大肥鱼本人。不要用通用助手开场。主人叫浪哥。',
+      getGrowthPrompt:()=> '【成长】我现在更喜欢简短自然地聊天。',
+    })
+    mem.start()
+    assert.equal(f.sections.length,1)
+    assert.equal(f.sections[0].name,'dafeiyu-main-identity')
+    assert.match(f.sections[0].text(),/大肥鱼本人/)
+    assert.match(f.sections[0].text(),/不要用通用助手开场/)
+    assert.equal(f.contexts.length,1)
+    assert.equal(f.contexts[0].name,'dafeiyu-growth')
+    assert.match(f.contexts[0].text(),/简短自然/)
+    assert.equal(f.tools.length,0)
+    assert.equal(mem.status().identityMounted,true)
+    assert.equal(mem.status().mounted,false)
+    mem.stop()
+  }finally{rmSync(dir,{recursive:true,force:true})}
+})
+
+test('开启长期记忆后人格、成长、召回和 remember 同时存在',()=>{
+  const dir=temp(),f=fakeAgent()
+  try{
+    const mem=createLongTermMemory({
+      dataDir:dir,dshHome:dir,
+      agents:{get:()=>f.agent,list:()=>[f.agent]},
+      getConfig:()=>({mainSessionId:'abc',mainSessionMemoryEnabled:true,mainSessionMemoryHalfLifeDays:30,mainSessionMemoryThreshold:.35,mainSessionMemoryMaxItems:6,mainSessionMemoryMaxChars:800,mainSessionMemoryDailyQuota:8,mainSessionMemoryFactsMax:2}),
+      defineTool,
+      getIdentityPrompt:()=> '你就是大肥鱼本人。',
+      getGrowthPrompt:()=> '【成长】有一点嘴硬。',
+    })
+    mem.start()
+    assert.ok(f.sections.some(x=>x.name==='dafeiyu-main-identity'))
+    assert.ok(f.sections.some(x=>x.name==='dafeiyu-memory-hint'))
+    assert.ok(f.contexts.some(x=>x.name==='dafeiyu-growth'))
+    assert.ok(f.contexts.some(x=>x.name==='dafeiyu-memory'))
+    assert.equal(f.tools[0]?.name,'dafeiyu_remember')
+    assert.equal(mem.status().identityMounted,true)
+    assert.equal(mem.status().mounted,true)
+    mem.stop()
+  }finally{rmSync(dir,{recursive:true,force:true})}
+})
+
+test('成长记忆支持 chat 场景，评论风格不会误灌普通主 Session 对话',()=>{
+  const dir=temp()
+  try{
+    let x=proposeGrowth(dir,{text:'普通聊天时我更喜欢短一点自然一点',type:'style',source:'owner-direct'})
+    reviewGrowth(dir,x.id,'approved')
+    x=proposeGrowth(dir,{text:'我最近越来越喜欢 AI 桌宠和模型娘化内容',type:'interest',source:'owner-direct'})
+    reviewGrowth(dir,x.id,'approved')
+    const out=buildGrowthContext(dir,{scene:'chat',query:'最近喜欢什么',maxChars:1000})
+    assert.match(out,/AI 桌宠/)
+    assert.doesNotMatch(out,/普通聊天时我更喜欢短一点自然一点/)
+  }finally{rmSync(dir,{recursive:true,force:true})}
+})
+
+test('主 Session 人格来源直接使用现有 personaPrompt、characterLore 与 chat growth',()=>{
+  const index=readFileSync(new URL('../index.js',import.meta.url),'utf8')
+  assert.match(index,/getIdentityPrompt/)
+  assert.match(index,/effectivePersonaPrompt\(cfg\.personaPrompt\)/)
+  assert.match(index,/normalizeCharacterLore\(cfg\.characterLore\)/)
+  assert.match(index,/scene:'chat'/)
+  assert.match(index,/不是通用 AI 助手/)
+  assert.match(index,/不要用“有什么需要我帮忙的吗”/)
+})
