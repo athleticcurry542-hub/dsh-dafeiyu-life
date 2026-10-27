@@ -307,7 +307,7 @@ function WatchTab() {
     const [watchedTier, setWatchedTier] = React.useState('')
     const [watchedOffset, setWatchedOffset] = React.useState(0)
     const [watchedTotal, setWatchedTotal] = React.useState(0)
-    const [tab, setTab] = React.useState('daily')   // daily | taste | social | adv
+    const tab = 'daily' // v2.4.85: 原生设置只保留日常；详细配置集中到管理中心
       const [diag, setDiag] = React.useState(null)      // 诊断信息文本
       const [checks, setChecks] = React.useState(null)   // 环境自检结果 [{name, ok, detail, fix}]
       const [loginState, setLoginState] = React.useState('')
@@ -657,14 +657,20 @@ function WatchTab() {
             'data-warn': runNote.tone === 'warn' ? '' : undefined }, runNote.t) : null,
 
 
-        /* ── 定时 ── */
-        h('div', { 'data-bd-tabs': '' },
-          [['daily', '日常'], ['taste', '偏好'], ['social', '互动'], ['adv', '高级'], ['about', '关于']].map(([v, label]) =>
-            h('button', { key: v, 'data-bd-tab': '', 'aria-selected': tab === v ? 'true' : 'false', onClick: () => setTab(v) }, label))),
+        h('div',{'data-bd-sec':'','data-bd-group':'daily'},
+          h('div',{'data-bd-h':''},'账号与运行环境'),
+          h('div',{'data-bd-row':''},
+            h('button',{'data-bd-btn':'',disabled:busy==='install',onClick:onInstall},st.venvReady?'重装主依赖':'安装主依赖'),
+            h('button',{'data-bd-btn':'',disabled:busy==='login',onClick:onLoginStart},'扫码登录 B站'),
+            h('button',{'data-bd-btn':'',disabled:busy==='check',onClick:onCheck},'检查账号'),
+            h('button',{'data-bd-btn':'',disabled:busy==='selfcheck',onClick:onSelfCheck},'环境自检')),
+          loginState?h('div',{'data-bd-note':''},loginState):null,
+          login?.qr?h('div',{'data-bd-qr':''},h('img',{src:login.qr,alt:'B站登录二维码'}),h('div',{'data-bd-note':''},'手机 B站扫一扫，确认登录并选择长期保持。')):null,
+          st.installTail?h('pre',{'data-bd-pre':''},String(st.installTail).slice(-2500)):null),
 
-        h('div', { 'data-bd-row': '' },
-          h('button', { 'data-bd-btn': '', 'data-primary': '', disabled: Boolean(busy), onClick: onSaveText }, '保存额外主题'),
-          msg ? h('div', { 'data-bd-msg': '', 'data-good': msgTone === 'good' ? '' : undefined, 'data-warn': msgTone === 'warn' ? '' : undefined }, msg) : null),
+        /* ── 定时 ── */
+        /* v2.4.85: 偏好、互动、高级的配置统一搬到管理中心；不再显示原生设置多标签。 */
+        h('div',{'data-bd-note':''},'日常页只负责启停、运行时间和立即运行；模型、选片、点赞、动态、记忆及额度都在管理中心统一设置。'),
 
         h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': tab === 'daily' ? undefined : '' },
           h('div', { 'data-bd-h': '' }, '什么时候自己跑'),
@@ -674,8 +680,8 @@ function WatchTab() {
             on: sw('peakValley'),
             onChange: (v) => patch({ peakValley: v }, '自定义时段自动刷'),
           }),
-          sw('peakValley') ? h('div', { 'data-bd-sub': '' },
-            h('div', { 'data-bd-note': '' }, '可以设置多个时间段，跨午夜例如 23:00–02:00。开始包含，结束不包含；多个时间段共用同一个运行间隔。'),
+          h('div', { 'data-bd-sub': '' },
+            h('div', { 'data-bd-note': '' }, '时段与间隔可以提前设置；关闭自动刷开关只会暂停执行，不会清除已保存时间段。跨午夜例如 23:00–02:00。'),
             ...scheduleRows.map((w, i) => h('div', { key:i, 'data-bd-row': '' },
               h('span', { 'data-bd-label': '' }, `时段 ${i + 1}`),
               h('input', { 'data-bd-input':'', type:'time', style:{width:120}, value:w.start,
@@ -689,17 +695,18 @@ function WatchTab() {
               h('button', { 'data-bd-btn':'', disabled:Boolean(busy)||scheduleRows.length>=16,
                 onClick:()=>setPeakWindowsDraft(rows=>[...(rows||[]),{start:'',end:''}]) }, '＋ 添加时间段'),
               h('button', { 'data-bd-btn':'', 'data-primary':'', disabled:Boolean(busy), onClick:saveSchedule }, '保存时间段')),
-            scheduleRows.length===0 ? h('div', {'data-bd-msg':'','data-warn':''}, '没有已设置的时间段：即使开关开启也不会自动运行。') : null,
+            scheduleRows.length===0 ? h('div', {'data-bd-msg':'','data-warn':''}, '尚未设置时段；开启自动刷后不会执行，先添加并保存一个时间段。') : null,
             h('div', { 'data-bd-row': '' },
               h('div', { 'data-bd-grow': '' },
-                h('div', { 'data-bd-label': '' }, '谷时自动运行间隔（分钟）'),
-                h('div', { 'data-bd-note': '' }, '1～720 分钟；30 只是默认值，不是最低限制。至少每分钟检查一次；仍受每日选片上限、任务互斥及总开关约束。')),
+                h('div', { 'data-bd-label': '' }, '刷视频间隔（分钟）'),
+                h('div', { 'data-bd-note': '' }, '1～720 分钟；跨时段共用此间隔，受每日额度及总开关约束。')),
               h('input', { 'data-bd-input': '', 'data-bd-num': '', type: 'number', min: 1, max: 720, step: 1,
                 value: peakIntervalDraft ?? '',
                 onChange: (e) => setPeakIntervalDraft(e.target.value),
                 onBlur: () => { const raw = Number(peakIntervalDraft); const n = Number.isFinite(raw) && raw>=1 ? Math.max(1,Math.min(720,Math.floor(raw))) : 30; setPeakIntervalDraft(String(n)); patch({ peakIntervalMinutes: n }, '自动运行间隔') },
               })
-            )) : null),
+            ))),
+
 
         /* 数量配额现在统一在管理中心，避免过期草稿覆盖编辑。 */
         h('div', { 'data-bd-sec':'', 'data-bd-group':'daily', 'data-bd-away':tab==='daily'?undefined:'' },
@@ -1010,8 +1017,8 @@ function WatchTab() {
             h('button', { 'data-bd-btn': '', disabled: busy === 'verify', onClick: onVerify }, '复核评论'),
             h('button', { 'data-bd-btn': '', onClick: () => copyText(st.report) }, '复制报告路径'))),
 
-        h('div', { 'data-bd-sec': '', 'data-bd-group': 'about', 'data-bd-away': tab === 'about' ? undefined : '' },
-          h('div', { 'data-bd-h': '' }, '大肥鱼 · DSH 生活系统'),
+        h('div', { 'data-bd-sec': '', 'data-bd-group': 'daily', 'data-bd-away': undefined },
+          h('div', { 'data-bd-h': '' }, '作者与开源致谢'),
           h('div', { 'data-bd-label': '' }, '这不是一个只会发评论的机器人，而是一套让“大肥鱼”在 DSH 里持续生活的系统：后台出去看 B站，主 Session 作为她的家，重要经历、主人相处、朋友关系、梗和互动结果都能长期留下。'),
           h('div', { 'data-bd-note': '' }, '项目包名：dsh-dafeiyu-life · 当前版本：v' + (st.version || '?') + '。B站只是她目前最完整的一块“生活场景”，不是整个项目的边界。'),
           h('div', { 'data-bd-sub': '' },

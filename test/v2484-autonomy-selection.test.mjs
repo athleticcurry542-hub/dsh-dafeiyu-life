@@ -67,7 +67,7 @@ test('主开关和白名单同时保护点赞收藏，退出了整轮无差别�
   assert.doesNotMatch(js,/favToday\('auto'\)/)
   assert.match(py,/_guard\('bili_video_collect'\)/)
   assert.match(py,/_guard\('bili_video_like'\)/)
-  assert.match(py,/_claim_video_action\(uid,bv,'like',10\)/)
+  assert.match(py,/_claim_video_action\(uid,bv,'like',limit\)/)
   assert.match(py,/_claim_video_action\(uid,bv,'collect',5\)/)
   assert.match(charter,/不必收藏/)
 })
@@ -77,7 +77,7 @@ test('梗经证据校验直接获批；第4点梗/人生反思合并没有实现
   assert.match(py,/VALUES\(\?,\?,\?,\?,\?,\?,\?, \?, 'approved'\)/)
   assert.match(py,/_MEME_FORBIDDEN/)
   assert.match(py,/source_type == '低清预览'/)
-  assert.match(prompt,/无需主人批准/)
+  assert.match(prompt,/无需主人逐条审批/)
   assert.doesNotMatch(life,/meme-memory\.sqlite3|meme_category|梗类别/)
 })
 

@@ -27,7 +27,7 @@ test('README 前部讲生活系统并前置开源来源，不再堆版本流水�
 
 test('DSH 设置页直接展示开源来源和关系类型',()=>{
   const client=read('client.js')
-  assert.match(client,/\['about', '关于'\]/)
+  assert.match(client,/const tab = 'daily'/)
   assert.match(client,/开源来源与致谢/)
   assert.match(client,/直接上游与代码血缘基础/)
   assert.match(client,/内置 Python B站 MCP 的上游/)

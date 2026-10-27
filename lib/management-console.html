@@ -95,27 +95,83 @@ input[type=checkbox]{accent-color:#16865f}
 .life-jump a:hover,.life-jump a:focus-visible{border-color:#209a79;color:var(--accent-green);box-shadow:0 2px 9px rgba(19,131,95,.13)}
 #panel-life .life-section{scroll-margin-top:100px}
 @media(max-width:620px){.top{padding:14px}.feature-intro{padding:13px}.tabs{gap:5px}.tabs button{font-size:12px;padding:8px 10px}.toolbar>input{width:100%}}
+.settings-section .checkline{margin:11px 0;gap:10px;font-size:14px;font-weight:550}.settings-section .checkline input{accent-color:#168b6d;width:18px;height:18px}
+#panel-models .settings-section{border-left:4px solid #4388c7}#panel-bili .settings-section{border-left:4px solid #289f76}
+#panel-dynamic .record{border-left:4px solid #278b72}.tabs button[data-tab="models"],.tabs button[data-tab="bili"],.tabs button[data-tab="dynamic"]{border-color:#82bba7}
+.tab-cluster{display:flex;gap:5px;align-items:center;flex-wrap:wrap;border-right:1px solid var(--stroke);padding-right:10px}
+.tab-cluster:last-child{border-right:0}.tab-cluster-label{font-size:11px;font-weight:750;color:var(--muted);padding:4px 7px;white-space:nowrap}
+@media(max-width:720px){.tab-cluster{width:100%;border-right:0;border-bottom:1px solid var(--stroke);padding:5px 0 9px}.tab-cluster-label{width:100%}}
 </style>
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
 <body><main class="wrap">
 <header class="top"><div><h1>🐳 大肥鱼 · DSH 生活系统</h1><p class="muted">管理中心 · 她的家、记忆、好友、B站生活、互动边界与持久化档案</p></div><button id="refresh">刷新当前页</button></header>
 <nav class="tabs" aria-label="管理分类">
-<button data-tab="persona" aria-selected="true">人设与好友</button>
+<div class="tab-cluster"><span class="tab-cluster-label">日常与配置</span>
 <button data-tab="home" aria-selected="false">大肥鱼的家</button>
+<button data-tab="models" aria-selected="false">AI 模型</button>
+<button data-tab="bili" aria-selected="false">B站生活</button>
+<button data-tab="dynamic" aria-selected="false">日常动态</button>
+<button data-tab="quotas" aria-selected="false">次数与额度</button>
+<button data-tab="polling" aria-selected="false">后台轮询</button></div>
+<div class="tab-cluster"><span class="tab-cluster-label">身份与记忆</span>
+<button data-tab="persona" aria-selected="true">人设与好友</button>
 <button data-tab="life" aria-selected="false">人生记忆</button>
+<button data-tab="growth" aria-selected="false">行为与表达改进 <span id="growth-count" class="queue-badge" hidden></span></button>
+<button data-tab="meme" aria-selected="false">梗与网络文化 <span id="meme-count" class="queue-badge" hidden></span></button>
+<button data-tab="stickers" aria-selected="false">表情包管理</button></div>
+<div class="tab-cluster"><span class="tab-cluster-label">记录与维护</span>
 <button data-tab="comments" aria-selected="false">最近评论</button>
 <button data-tab="dm" aria-selected="false">后台私信 <span id="dm-count" class="queue-badge" hidden></span></button>
-<button data-tab="growth" aria-selected="false">行为与表达改进 <span id="growth-count" class="queue-badge" hidden></span></button>
-<button data-tab="stickers" aria-selected="false">表情包管理</button>
-<button data-tab="meme" aria-selected="false">梗知识库 <span id="meme-count" class="queue-badge" hidden></span></button>
-<button data-tab="quotas" aria-selected="false">次数与额度</button>
-<button data-tab="polling" aria-selected="false">后台轮询</button>
 <button data-tab="reports" aria-selected="false">每日报告</button>
 <button data-tab="diagnostics" aria-selected="false">每日诊断</button>
-<button data-tab="backup" aria-selected="false">数据备份</button>
+<button data-tab="backup" aria-selected="false">数据备份</button></div>
 </nav>
 <p id="message" role="status" aria-live="polite"></p>
+<section id="panel-models" hidden>
+<div class="feature-intro"><div><h2>🧠 AI 模型配置</h2><p>所有 AI 模型只在这里设置。Provider 和模型 ID 留空时继承 DSH 当前模型；不需要在插件重复填写 API Key。</p></div></div>
+<div class="settings-stack">
+<div class="settings-section"><h4>刷视频与内容理解</h4><p class="muted">负责搜索、阅读视频、选片、评论决策与点赞收藏决策。</p><div class="fields" id="models-video"></div></div>
+<div class="settings-section"><h4>后台评论与私信</h4><p class="muted">后台互动、人生反思与生活动态草稿目前复用此模型。</p><div class="fields" id="models-interaction"></div></div>
+<div class="settings-section"><h4>独立视觉识图</h4><p class="muted">只有开启独立视觉模式时才使用；普通模式复用视频模型。</p><div class="fields" id="models-vision"></div>
+<div class="fields"><div><label for="models-vision-mode">识图方式</label><select id="models-vision-mode"><option value="reuse_video_model">复用视频模型（默认）</option><option value="independent_dsh">独立 DSH 视觉模型</option></select></div>
+<div><label class="checkline"><input id="models-vision-enabled" type="checkbox">启用视频预览识图</label></div></div>
+</div>
+<div class="settings-section"><h4>低成本人生记忆检索</h4><p class="muted">仅挑选真实记忆 ID，不能发送 B站消息或修改记忆。是否启用及检索额度仍在「大肥鱼的家」设置。</p><div class="fields" id="models-memory"></div></div>
+<div class="toolbar"><button id="models-save" class="primary">保存全部模型配置</button><button id="models-refresh">重新读取</button></div>
+</div></section>
+<section id="panel-bili" hidden>
+<div class="feature-intro"><div><h2>🎬 B站生活与互动</h2><p>选片方向、互动开关与生活动态集中设置。每天最多执行多少次，请到「次数与额度」。</p></div></div>
+<div class="settings-stack">
+<div class="settings-section"><h4>选片方向</h4><p class="muted">大肥鱼的兴趣档案主导搜索；主人额外关键词只是补充关注，不会覆盖已形成的兴趣。</p>
+<label class="checkline"><input id="bili-home-recommend" type="checkbox">混合 B站首页推荐</label>
+<label for="bili-extra-keywords">主人额外指定的主题（每行一个）</label><textarea id="bili-extra-keywords" rows="4" placeholder="例如：白饭、AI拟人"></textarea></div>
+<div class="settings-section"><h4>自主互动</h4>
+<label class="checkline"><input id="bili-auto-comment" type="checkbox">允许自主发表原创评论</label>
+<label class="checkline"><input id="bili-auto-like" type="checkbox">允许自主点赞（看完视频后自己判断）</label>
+<label class="checkline"><input id="bili-auto-collect" type="checkbox">允许自主创建主题收藏夹并选择性收藏</label>
+<label class="checkline"><input id="bili-sync-comment" type="checkbox">仅将大肥鱼真正想分享的评论同步为动态</label>
+<p class="muted">不会把所有评论自动同步。同步动态与独立生活动态有各自的每日额度。</p></div>
+<div class="settings-section"><h4>刷视频报告与私信投递</h4>
+<div class="fields"><div><label for="bili-dm-mode">本轮视频报告发送方式</label><select id="bili-dm-mode"><option value="only">只发报告私信，不公开评论</option><option value="off">只发公开评论（不发送报告私信）</option><option value="both">报告私信 + 公开评论</option></select></div><div><label for="bili-dm-uid">报告私信接收人 UID</label><input id="bili-dm-uid" type="number" min="0" placeholder="B站数字 UID（不填则不发送报告私信）"></div><div><label for="bili-report-level">本地日报内容</label><select id="bili-report-level"><option value="full">详细</option><option value="brief">简短</option><option value="off">不写日报</option></select></div></div>
+<p class="muted">报告私信收件人不同于自动回复私信的白名单；公开评论仍受独立开关与额度控制。</p></div>
+<div class="settings-section"><h4>字幕、梗图及其他辅助能力</h4>
+<label class="checkline"><input id="bili-transcribe" type="checkbox">无字幕时尝试转写视频语音（需转写依赖）</label>
+<div class="fields"><div><label for="bili-asr-model">Whisper 转写模型</label><select id="bili-asr-model"><option value="tiny">tiny</option><option value="base">base</option><option value="small">small</option><option value="medium">medium</option><option value="large-v3">large-v3</option></select></div></div>
+<label class="checkline"><input id="bili-comment-memes" type="checkbox">评论时允许自主搭配本地表情包</label>
+<label class="checkline"><input id="bili-comment-memes-debug" type="checkbox">记录表情包选择原因（调试用）</label></div>
+<div class="settings-section"><h4>大肥鱼的日常动态</h4>
+<label class="checkline"><input id="bili-daily-enabled" type="checkbox">允许大肥鱼生成自己的生活动态</label>
+<label class="checkline"><input id="bili-daily-draft" type="checkbox">仅生成草稿，不自动发布（建议先开启）</label>
+<p class="muted">仅根据公开、真实的已选视频经历创作。情绪系统暂未启用，当前不生成虚构心情状态。</p></div>
+<div class="toolbar"><button id="bili-save" class="primary">保存 B站生活设置</button><button id="bili-refresh">重新读取</button></div>
+</div></section>
+<section id="panel-dynamic" hidden>
+<div class="feature-intro"><div><h2>📝 大肥鱼的日常动态</h2><p>大肥鱼从真实经历中自主选择值得分享的事情。先预览草稿，再决定是否公开；自动发布默认关闭。</p></div></div>
+<div class="toolbar"><button id="daily-dynamic-refresh">刷新动态草稿</button><button id="daily-dynamic-generate" class="primary">让大肥鱼构思一条动态</button></div>
+<p id="daily-dynamic-status" class="muted"></p><div id="daily-dynamic-list" class="records"></div>
+<div class="settings-section"><h4>未来情绪系统</h4><span class="pill pending">预留 · 未启用</span><p class="muted">未来可以让大肥鱼从经历中形成持续心情状态；目前不会编造心情值，也不会凭空生成情绪经历。</p></div>
+</section>
 <section id="panel-backup" hidden>
 <div class="toolbar"><h2 style="margin:0">数据备份与恢复</h2></div>
 <p class="muted">一键备份本机所有生效设置（含人设、好友权限、模型选项、额度）、已审核梗知识、成长经验、视频心愿、评论/私信状态、<strong>大肥鱼身份级长期记忆</strong>和现有历史记录。全程在本机处理，无额外 AI 调用，也不会上传到网络。重要记忆另外提供独立备份，建议两份都保留。</p>
@@ -248,8 +304,10 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="settings-section"><h4>公开评论与动态 · 自然日</h4><div class="fields" id="quota-fields-public">
 <div><label for="quota-comment-daily">公开评论全局每日硬上限（0–1000）</label><input id="quota-comment-daily" type="number" min="0" max="1000"></div>
 <div><label for="quota-comment-round">跑一轮最多发顶层评论（0–20）</label><input id="quota-comment-round" type="number" min="0" max="20"></div>
-<div><label for="quota-dynamic-daily">每天最多同步动态（0–30）</label><input id="quota-dynamic-daily" type="number" min="0" max="30"></div>
-</div><p class="muted">主动顶层评论与后台楼中楼共用全局硬上限；动态有自己的计数。</p></div>
+<div><label for="quota-dynamic-daily">每天最多分享评论为动态（0–30）</label><input id="quota-dynamic-daily" type="number" min="0" max="30"></div>
+<div><label for="quota-like-daily">每天最多自主点赞（0–100）</label><input id="quota-like-daily" type="number" min="0" max="100"></div>
+<div><label for="quota-daily-dynamic">每天最多发布生活动态（0–10）</label><input id="quota-daily-dynamic" type="number" min="0" max="10"></div>
+</div><p class="muted">分享评论、独立生活动态与点赞分别计数。点赞及生活动态还必须由主人主动开启。</p></div>
 <div class="settings-section"><h4>后台评论互动 · 滚动24小时与每轮</h4><div class="fields" id="quota-fields-comment"></div></div>
 <div class="settings-section"><h4>私信 · 每日与每位用户</h4><div class="fields" id="quota-fields-dm"></div></div>
 <div class="settings-section"><h4>表情包、梗知识和视觉</h4><div class="fields" id="quota-fields-meme">
@@ -355,10 +413,14 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="card" style="margin-top:14px"><h3>当前附加到提示词的内容（只读）</h3>
 <p class="muted">这里仅预览行为与表达规则，不检索兴趣、经历和关系；后者请到「人生记忆」。</p>
 <div class="toolbar"><input id="growth-preview-query" maxlength="120" placeholder="可输入评论主题"><button id="growth-preview-apply">刷新预览</button><button id="growth-preview-reset">清空</button></div><pre id="growth-context"></pre></div></section>
-<section id="panel-meme" hidden><div class="feature-intro"><div><span class="live-badge" id="meme-learning-status">● 大肥鱼正在收集梗知识</span><h2>梗知识库</h2><p class="muted">大肥鱼看视频时会自动收集并启用有真实证据的新梗，无需逐条审核；「待核实」释义只能作为线索，不能当确定事实。</p></div></div><div class="card" style="margin-bottom:14px"><h3>主人手动补充梗知识</h3><p class="muted">你手动保存后直接获批、可以被 AI 搜到；但“是否已批准”和“释义是否有证据”是两件事。没有可靠证据的梗会保留为待核实线索。</p>
+<section id="panel-meme" hidden><div class="feature-intro"><div><span class="live-badge" id="meme-learning-status">● 大肥鱼正在收集梗知识</span><h2>梗知识库</h2><p class="muted">大肥鱼看视频时会自动收集并启用有真实证据的新梗，无需逐条审核；「待核实」释义只能作为线索，不能当确定事实。</p></div></div><div class="card" style="margin-bottom:14px"><h3>梗与网络文化学习</h3><label class="checkline"><input id="meme-auto-enabled" type="checkbox">启用梗知识检索、刷视频收集线索和跨视频反思</label><div class="toolbar"><button id="meme-auto-save" class="primary">保存梗学习开关</button></div></div><div class="card" style="margin-bottom:14px"><h3>主人手动补充梗知识</h3><p class="muted">你手动保存后直接获批、可以被 AI 搜到；但“是否已批准”和“释义是否有证据”是两件事。没有可靠证据的梗会保留为待核实线索。</p>
 <div class="fields"><div><label for="meme-new-name">名称</label><input id="meme-new-name" maxlength="48" placeholder="例如 某个新梗"></div><div><label for="meme-new-aliases">别名（可选）</label><input id="meme-new-aliases" maxlength="140"></div>
 <div><label for="meme-new-kind">知识类别</label><select id="meme-new-kind"><option>梗</option><option>角色</option><option>人物</option><option>系列</option><option>其他</option></select></div><div><label for="meme-new-confidence">释义证据</label><select id="meme-new-confidence"><option value="待核实">待核实 · 只有线索</option><option value="有文字依据">有文字依据 · 已核对</option></select><small class="field-help">“待核实”仍可作为理解线索，但大肥鱼不能当成确定事实；“有文字依据”表示你核对过可靠的字幕、评论或来源。此选项不代替“批准使用”。</small></div></div>
 <label for="meme-new-meaning">释义（须由主人自行核对）</label><textarea id="meme-new-meaning" maxlength="220" placeholder="描述它是什么意思、适合什么语境"></textarea><div class="toolbar"><button id="meme-new-save" class="primary">新增并启用</button></div></div>
+<div class="settings-section" style="margin:13px 0"><h4>跨视频梗与网络文化反思</h4>
+<p class="muted">大肥鱼先在不同视频里积累真实线索，再由 AI 综合判断它是角色、二创系列、圈内称呼还是具体梗。至少两个不同 BV 的证据才能自动形成新条目；新知识以「待核实」等级保存，不需要人工批准。</p>
+<div class="toolbar"><button id="meme-learning-run" class="primary">现在整理跨视频线索</button><button id="meme-learning-refresh">刷新线索进度</button></div>
+<p id="meme-reflection-status" class="muted">等待读取</p></div>
 <div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗自动入库并可检索；历史待审记录仍可处理。随时可编辑或删除错误记录，原视频证据保留。</p><div class="grid" id="meme-list"></div></section>
 <section id="panel-stickers" hidden>
 <div class="card" style="margin-bottom:14px">

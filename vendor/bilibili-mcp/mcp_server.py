@@ -1043,6 +1043,48 @@ async def bili_meme_remember(name: str, meaning: str, bvid: str, evidence: str,
     except Exception as exc: return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
 
 
+# ========== v2.4.85：跨视频梗线索池（先观察，不猜释义） ==========
+# 单个视频只贡献有来源的线索；梗定义由后续多来源反思合并。
+def _meme_observe(name,bvid,evidence,evidence_type='字幕'):
+    nm=_meme_clean(name,48)
+    if len(nm)<2:raise ValueError('概念名称至少两个字')
+    bv=_valid_bv(bvid)
+    ev=_meme_clean(evidence,180)
+    source_type=evidence_type if evidence_type in ('字幕','评论','简介','标题','弹幕','其他文字','低清预览') else '其他文字'
+    if source_type=='低清预览':
+        cache=_DUTY_HOME/'vision-cache'/f'{bv}.json'
+        try: raw=json.loads(cache.read_text('utf8'))
+        except (ValueError,OSError): raise ValueError('没有有效视觉缓存，不能记录视觉梗线索')
+        if ev not in str(raw.get('description') or ''):raise ValueError('视觉证据必须引用实际缓存描述')
+    con=_meme_conn()
+    try:
+        with con:
+            con.execute('''CREATE TABLE IF NOT EXISTS meme_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+                bvid TEXT NOT NULL, evidence TEXT NOT NULL, evidence_type TEXT NOT NULL,
+                created_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+                UNIQUE(name,bvid))''')
+            count=con.execute("SELECT COUNT(*) FROM meme_observations WHERE status='pending'").fetchone()[0]
+            if count>=300:return {'ok':False,'error':'梗线索池已满，请等待跨视频反思处理'}
+            con.execute('''INSERT INTO meme_observations(name,bvid,evidence,evidence_type,created_at)
+                VALUES(?,?,?,?,?) ON CONFLICT(name,bvid) DO UPDATE SET evidence=excluded.evidence,
+                evidence_type=excluded.evidence_type''',
+                (nm,bv,ev,source_type,datetime.now().astimezone().isoformat(timespec='seconds')))
+        n=con.execute("SELECT COUNT(DISTINCT bvid) FROM meme_observations WHERE name=?",(nm,)).fetchone()[0]
+        return {'ok':True,'status':'observed','name':nm,'source_count':n,
+                'message':'已记录真实来源线索，尚未确定释义；等待跨视频反思'}
+    finally:con.close()
+
+
+@tool()
+async def bili_meme_observe(name: str,bvid: str,evidence: str,evidence_type: str='字幕')->str:
+    # 记录真实来源，不猜释义
+    if (e:=_guard('bili_meme_observe')):return e
+    if os.environ.get('BILI_MEME_MEMORY')!='1':return json.dumps({'ok':False,'error':'梗学习已关闭'},ensure_ascii=False)
+    try:return json.dumps(_meme_observe(name,bvid,evidence,evidence_type),ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
+
+
 # ========== v2.4.84：逐视频的自主点赞／主题收藏（真实写操作） ==========
 # 所有行为需要显式主人开关 + MCP 白名单 + 本轮真实入选 BV + 本地限额。
 # 模型只能在视频被确实挑中后选择操作，不可指定收藏夹 ID，更不能修改主人既有收藏夹。
@@ -1162,13 +1204,15 @@ async def _ensure_ai_folder(cred,uid,topic):
 
 @tool()
 async def bili_video_like(bvid: str, reason: str = '') -> str:
-    # 每日最多10条
+    # 每日额度由宿主设置传入；模型工具参数不能提高上限。
     if (e:=_guard('bili_video_like')): return e
     try:
         bv,cred,uid=_check_reaction(bvid,'BILI_AUTO_VIDEO_LIKE')
         why=_safe_line(reason,100)
         if len(why)<4:raise ValueError('点赞需要简短、具体的个人判断理由')
-        result=_claim_video_action(uid,bv,'like',10)
+        try: limit=max(0,min(100,int(os.environ.get('BILI_AUTO_VIDEO_LIKE_DAILY_LIMIT','10'))))
+        except (ValueError,TypeError): limit=0
+        result=_claim_video_action(uid,bv,'like',limit)
         if result:return json.dumps(result,ensure_ascii=False)
         try:
             await video.Video(bvid=bv,credential=cred).like(True)

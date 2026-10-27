@@ -26,10 +26,10 @@ test('Python server limits recommendation list to one round call; nothing is pub
  assert.match(helper,/goto'/)
 })
 test('settings UI contains homepage recommendations toggle in selection section',()=>{
- const ui=src('client.js')
- assert.match(ui,/label:'加入首页推荐视频'/)
- assert.match(ui,/on:sw\('homeRecommendationsEnabled'\)/)
- assert.match(ui,/与关键词搜索混合选片/)
+ const ui=src('lib/management-console.html'),controller=src('lib/management-console.js')
+ assert.match(ui,/bili-home-recommend/)
+ assert.match(controller,/homeRecommendationsEnabled/)
+ assert.match(ui,/兴趣档案主导搜索/)
 })
 test('AI vision and mention history guardrails still present',()=>{
  const ui=src('lib/management-console.js'),server=src('vendor/bilibili-mcp/mcp_server.py')
