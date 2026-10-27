@@ -30,7 +30,7 @@ test('Claude/Anthropic 可见的长期记忆工具 schema 只有 ASCII 参数名
   }finally{rmSync(dir,{recursive:true,force:true});rmSync(dsh,{recursive:true,force:true})}
 })
 
-test('主 Session scoped remember 可保存、事实键自动淘汰旧值并按当前话题召回',async()=>{
+test('身份级 remember 可保存、事实键自动淘汰旧值并按当前话题召回',async()=>{
   const dir=temp(),dsh=temp();const f=fakeAgent();
   try{
     const mem=createLongTermMemory({dataDir:dir,dshHome:dsh,agents:{get:()=>f.agent,list:()=>[f.agent]},getConfig:cfg,defineTool})
@@ -73,14 +73,14 @@ test('可从原 dsh-fish-memory 同 Session JSON 合并旧记忆，不删除上�
 
 test('内置长期记忆随大肥鱼业务备份恢复，外部 fish-memory 不在备份路径白名单',()=>{
   const dir=temp(),dst=temp();try{
-    mkdirSync(join(dir,'long-term-memory'));writeFileSync(join(dir,'long-term-memory','abc.json'),JSON.stringify({version:2,policy:{},memories:[],traces:[],deleted:[]}))
-    assert.equal(allowedPath('long-term-memory/abc.json'),true);assert.equal(allowedPath('fish-memory/abc.json'),false)
-    const b=createBackup({root:dir,config:{mainSessionMemoryEnabled:true},sqlite:{},version:'2.4.76'});assert.ok(b.files['long-term-memory/abc.json']);restoreBackupFiles(dst,b);assert.match(readFileSync(join(dst,'long-term-memory','abc.json'),'utf8'),/"version":2/)
+    mkdirSync(join(dir,'long-term-memory'));writeFileSync(join(dir,'long-term-memory','dafeiyu.json'),JSON.stringify({version:3,scope:'dafeiyu-identity',policy:{},memories:[],traces:[],deleted:[]}))
+    assert.equal(allowedPath('long-term-memory/dafeiyu.json'),true);assert.equal(allowedPath('fish-memory/abc.json'),false)
+    const b=createBackup({root:dir,config:{mainSessionMemoryEnabled:true},sqlite:{},version:'2.4.79'});assert.ok(b.files['long-term-memory/dafeiyu.json']);restoreBackupFiles(dst,b);assert.match(readFileSync(join(dst,'long-term-memory','dafeiyu.json'),'utf8'),/"version":3/)
   }finally{rmSync(dir,{recursive:true,force:true});rmSync(dst,{recursive:true,force:true})}
 })
 
 test('源码保留 dsh-fish-memory MIT 署名并在管理中心提供内置记忆入口',()=>{
   const index=readFileSync(new URL('../index.js',import.meta.url),'utf8'),html=readFileSync(new URL('../lib/management-console.html',import.meta.url),'utf8'),notice=readFileSync(new URL('../THIRD_PARTY_NOTICES.md',import.meta.url),'utf8'),license=readFileSync(new URL('../vendor/fish-memory/LICENSE',import.meta.url),'utf8')
-  assert.match(index,/createLongTermMemory/);assert.match(index,/systemPrompt/);assert.match(html,/内置长期记忆/);assert.match(html,/导入旧 dsh-fish-memory 记忆/);assert.match(notice,/Yuuyuko-uu\/dsh-fish-memory/);assert.match(license,/Copyright \(c\) 2026 Yuuyuko/)
-  assert.match(readFileSync(new URL('../package.json',import.meta.url),'utf8'),/"version": "2\.4\.78"/)
+  assert.match(index,/createLongTermMemory/);assert.match(index,/systemPrompt/);assert.match(html,/大肥鱼长期记忆/);assert.match(html,/dsh-fish-memory 记忆/);assert.match(notice,/Yuuyuko-uu\/dsh-fish-memory/);assert.match(license,/Copyright \(c\) 2026 Yuuyuko/)
+  assert.match(readFileSync(new URL('../package.json',import.meta.url),'utf8'),/"version": "2\.4\.79"/)
 })

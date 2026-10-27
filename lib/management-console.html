@@ -59,14 +59,14 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 </div><p id="backup-progress" role="status" aria-live="polite" class="muted"></p>
 </section>
 <section id="panel-home" hidden>
-<div class="toolbar"><h2 style="margin:0">🏠 大肥鱼的家 · 主 Session 记忆桥</h2><button id="main-session-refresh">刷新在线会话</button></div>
-<p class="muted">把一个长期 DSH 会话当作“大肥鱼本人”：主人平时在那个会话里和她相处；本插件继续负责安全地自动刷 B站、精确账本和发送权限。插件只把<strong>已发生的重要经历</strong>同步回主 Session，不让主 Session 接管后台任务，也不会扫描 <code>~/.dsh/sessions</code> 或读取其它会话记录。</p>
+<div class="toolbar"><h2 style="margin:0">🏠 大肥鱼的家 · 当前房间、身份记忆与经历档案</h2><button id="main-session-refresh">刷新在线会话</button></div>
+<p class="muted"><strong>主 Session 只是大肥鱼当前住的聊天房间，不等于大肥鱼本人。</strong> 人设、经主人审核的成长经验和身份级长期记忆属于大肥鱼本人；切换主 Session 只会更换当前聊天上下文。插件继续负责安全地自动刷 B站、精确账本和发送权限，并把<strong>已发生的重要经历</strong>同步到当前房间；不会让主 Session 接管后台任务，也不会扫描 <code>~/.dsh/sessions</code> 或读取其它会话记录。</p>
 <div class="settings-stack">
-<div class="settings-section"><h4>1. 选择“大肥鱼主 Session”</h4>
-<div class="fields"><div><label for="main-session-enabled">启用主 Session 记忆桥</label><input id="main-session-enabled" type="checkbox"></div>
+<div class="settings-section"><h4>1. 选择大肥鱼当前的聊天房间（主 Session）</h4>
+<div class="fields"><div><label for="main-session-enabled">启用当前房间的经历同步桥</label><input id="main-session-enabled" type="checkbox"></div>
 <div style="grid-column:span 2"><label for="main-session-id">当前在线的 DSH 会话</label><select id="main-session-id"><option value="">尚未选择</option></select></div>
 <div><label for="main-session-auto">有新经历时自动同步</label><input id="main-session-auto" type="checkbox" checked></div></div>
-<p class="muted">这里只列出当前 DSH 中活着的会话，不从硬盘猜“最近会话”。请先在 DSH 里打开你准备长期养大肥鱼的那个会话，再回来刷新选择。</p>
+<p class="muted">这里只列出当前 DSH 中活着的会话，不从硬盘猜“最近会话”。请先在 DSH 里打开你准备作为当前聊天房间的会话，再回来刷新选择。以后换房间不会清空大肥鱼的身份级长期记忆。</p>
 <div class="toolbar"><button id="main-session-save" class="primary">保存主 Session 设置</button><button id="main-session-test">发送连接测试</button></div>
 <p id="main-session-target-status" class="muted" role="status">尚未读取</p></div>
 <div class="settings-section"><h4>2. 经历同步频率</h4><div class="fields">
@@ -79,21 +79,27 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
 <div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search">搜索经历档案</button></div>
 <div id="main-session-history" class="records records-scroll tall"></div></div>
-<div class="settings-section"><h4>4. 内置长期记忆 · 大肥鱼真正“记得”</h4>
-<p class="muted">v2.4.76 已把 <code>Yuuyuko-uu/dsh-fish-memory</code> 的核心长期记忆设计整合进项目：按主 Session 独立保存、时间淡忘、事实键、相关召回和 scoped remember 工具。上游项目与 MIT 许可证见仓库 <code>THIRD_PARTY_NOTICES.md</code>。Claude/Anthropic 使用 ASCII 工具参数，不会再因为中文 schema 字段报 400。</p>
-<div class="fields"><div><label for="main-memory-enabled">启用内置长期记忆</label><input id="main-memory-enabled" type="checkbox"></div>
+<div class="settings-section"><h4>4. 大肥鱼长期记忆 · 跨 Session 共用</h4>
+<p class="muted"><strong>这里的记忆属于“大肥鱼本人”，不是某一个 Session。</strong> v2.4.79 起固定保存在 <code>long-term-memory/dafeiyu.json</code>。以后把主 Session 从 A 换成 B，只是换聊天房间；已经保存的大肥鱼长期记忆会继续使用。旧版按 Session 保存的记忆首次升级会自动合并，旧文件保留作安全兜底。</p>
+<div class="grid" style="margin:12px 0">
+<article class="record"><div class="title-line">① 当前主 Session · 短期上下文</div><p class="muted">DSH 会话自己负责“刚才聊了什么、上一条消息是什么”。换 Session 后这部分不会自动搬家，也不需要插件重复保存。</p></article>
+<article class="record"><div class="title-line">② 大肥鱼长期记忆 · 身份级</div><p class="muted">主人称呼、稳定偏好、重要约定、关系变化、长期状态和重要经历。开启下面的开关后，所有未来主 Session 共用同一份记忆。</p></article>
+<article class="record"><div class="title-line">③ 精确经历档案 · 可核对账本</div><p class="muted">BV、rpid、评论原文、时间、发送状态等继续由插件精确账本保存。长期记忆负责“我记得”，精确档案负责“到底是哪一条”。</p></article>
+</div>
+<p class="muted">明确且可结构化的长期事实会由插件本地规则直接落盘，不额外调用 AI；复杂的约定、关系和经历仍可由大肥鱼调用 <code>dafeiyu_remember</code> 保存。事实键会让新事实取代旧事实，避免相互冲突。</p>
+<div class="fields"><div><label for="main-memory-enabled">启用大肥鱼跨 Session 长期记忆（身份级）</label><input id="main-memory-enabled" type="checkbox"></div>
 <div><label for="main-memory-auto-bili">自动记住重要 B站经历</label><input id="main-memory-auto-bili" type="checkbox" checked></div>
 <div><label for="main-memory-half-life">普通记忆半衰期（15–120 天）</label><input id="main-memory-half-life" type="number" min="15" max="120" value="30"></div>
 <div><label for="main-memory-threshold">召回证据门槛（0.10–0.80）</label><input id="main-memory-threshold" type="number" min="0.1" max="0.8" step="0.05" value="0.35"></div>
 <div><label for="main-memory-max-items">每轮最多召回（1–12 条）</label><input id="main-memory-max-items" type="number" min="1" max="12" value="6"></div>
 <div><label for="main-memory-max-chars">每轮记忆字数上限（200–3000）</label><input id="main-memory-max-chars" type="number" min="200" max="3000" value="800"></div>
-<div><label for="main-memory-daily">主人相处记忆每日最多（1–30 条）</label><input id="main-memory-daily" type="number" min="1" max="30" value="8"></div>
+<div><label for="main-memory-daily">模型主动补记每日最多（1–30 条）</label><input id="main-memory-daily" type="number" min="1" max="30" value="8"></div>
 <div><label for="main-memory-facts">长期事实最多占召回（0–6 条）</label><input id="main-memory-facts" type="number" min="0" max="6" value="2"></div></div>
-<div class="toolbar"><button id="main-memory-save" class="primary">保存长期记忆设置</button><button id="main-memory-import">导入旧 dsh-fish-memory 记忆</button></div>
+<div class="toolbar"><button id="main-memory-save" class="primary">保存长期记忆设置</button><button id="main-memory-import">导入当前主 Session 的旧 dsh-fish-memory 记忆</button></div>
 <p id="main-memory-status" class="muted" role="status">正在读取…</p>
-<p class="muted">如果你已经安装独立版 <code>dsh-fish-memory</code>：先关闭它对这个 Session 的管理，或直接卸载并重启 DSH；旧记忆文件不会随卸载删除。然后再用上面的导入按钮合并旧数据。两份记忆插件不要同时管理同一个 Session，否则可能重复工具/重复注入。</p>
-<div class="toolbar"><input id="main-memory-add-text" maxlength="1000" placeholder="主人手动补一条长期记忆（可选）"><button id="main-memory-add">手动加入记忆</button></div>
-<div class="toolbar"><input id="main-memory-query" maxlength="120" placeholder="搜索长期记忆"><button id="main-memory-search">搜索记忆</button></div>
+<p class="muted">独立版 <code>dsh-fish-memory</code> 的旧文件仍按 Session 保存，因此导入按钮需要先选一个主 Session 来确定来源；导入后内容会合并进大肥鱼统一身份记忆，不删除旧文件。不要同时让两个记忆插件管理同一个在线 Session，以免重复工具和重复注入。</p>
+<div class="toolbar"><input id="main-memory-add-text" maxlength="1000" placeholder="主人手动补一条大肥鱼长期记忆（可选）"><button id="main-memory-add">手动加入记忆</button></div>
+<div class="toolbar"><input id="main-memory-query" maxlength="120" placeholder="搜索大肥鱼跨 Session 长期记忆"><button id="main-memory-search">搜索记忆</button></div>
 <div id="main-memory-list" class="records records-scroll tall"></div></div>
 </div>
 </section>
@@ -227,6 +233,17 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 <label for="meme-new-meaning">释义（须由主人自行核对）</label><textarea id="meme-new-meaning" maxlength="220" placeholder="描述它是什么意思、适合什么语境"></textarea><div class="toolbar"><button id="meme-new-save" class="primary">新增并启用</button></div></div>
 <div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗先待审核；旧记录自动保留可用。修改后可手动批准或拒绝，不删除原视频证据。</p><div class="grid" id="meme-list"></div></section>
 <section id="panel-stickers" hidden>
+<div class="card" style="margin-bottom:14px">
+<h3>推荐流程 · 让 AI 按你当前图库更新检索规则</h3>
+<p class="muted">表情包规则通常不需要一条条手工维护。最稳妥的流程是先把<strong>当前完整图库名称</strong>和<strong>当前规则 JSON</strong>一起导出，让 AI 在知道“现在真实有哪些表情包、旧规则是什么”的前提下改写，然后把 AI 生成的新规则 JSON 导入回来。</p>
+<ol class="muted" style="line-height:1.8;margin-top:8px">
+<li>先刷新图库，点击“导出最新表情包名称 TXT”。</li>
+<li>再点击“导出当前规则 JSON”。</li>
+<li>把这两个文件一起交给 AI，要求它只使用真实存在的分类/名称，保留有用旧规则并生成新的完整规则 JSON。</li>
+<li>回到本页导入新 JSON；先用“测试本地匹配”检查几条评论，确认后再点“保存全部规则”。</li>
+</ol>
+<div class="toolbar"><button id="sticker-workflow-export-names">① 导出最新表情包名称 TXT</button><button id="sticker-workflow-export-rules">② 导出当前规则 JSON</button><span class="muted">导入后不会自动保存，可先测试再确认。</span></div>
+</div>
 <div class="card" style="margin-bottom:14px">
 <h3>表情包检索规则 · 可编辑</h3>
 <p class="muted">让评论中的词和已存在的表情包名称／分类关联起来。只检索文件名，不识别图片画面、不额外调用 AI。每条规则支持<strong>同时包含</strong>与<strong>排除</strong>条件；关闭规则不会禁止完全相同的文字直接命中文件名。</p>

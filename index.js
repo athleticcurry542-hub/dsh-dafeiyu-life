@@ -2398,9 +2398,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     return mergeWatchedRows(out, stateDir)
   }
 
-  // v2.4.76：把 fish-memory 的核心长期记忆能力整合进“大肥鱼的家”。
-  // 仅绑定主人明确选择的主 Session；模型侧只有 scoped dafeiyu_remember 工具，
-  // B站经历由插件本地确定性入库，不额外调用模型。
+  // v2.4.79：长期记忆属于“大肥鱼本人”，主 Session 只是她当前聊天的房间。
+  // 明确长期事实由本地规则确定性保存；复杂关系/经历仍可由 scoped dafeiyu_remember 补记；
+  // B站重要经历继续从本地账本确定性入库，不额外调用模型。
   longTermMemory = createLongTermMemory({
     dataDir: stateDir,
     dshHome: dirname(stateDir),
@@ -2832,7 +2832,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
           const sqlite = (await runSqlite('export')).sqlite
           // All effective settings, including relationships, prompts and quotas.
           const effective = Object.fromEntries(Object.keys(DEFAULTS).map(k => [k, cfg[k]]))
-          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.78'})
+          return createBackup({root:stateDir,config:effective,sqlite,version:'2.4.79'})
         }
         if (action === 'export') {
           refreshCfg()
