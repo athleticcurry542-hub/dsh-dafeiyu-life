@@ -102,6 +102,13 @@ input[type=checkbox]{accent-color:#16865f}
 .tab-cluster:last-child{border-right:0}.tab-cluster-label{font-size:11px;font-weight:750;color:var(--muted);padding:4px 7px;white-space:nowrap}
 @media(max-width:720px){.tab-cluster{width:100%;border-right:0;border-bottom:1px solid var(--stroke);padding:5px 0 9px}.tab-cluster-label{width:100%}}
 .model-activity{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 14px}.model-activity .muted{font-size:12px}.model-test-button{padding:5px 10px;font-size:12px}
+#panel-life .emotion-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin:12px 0}
+#panel-life .emotion-card{border:1px solid var(--stroke);border-radius:12px;padding:13px;background:var(--panel)}
+#panel-life .emotion-card strong{display:block;font-size:18px;margin-bottom:6px}
+#panel-life .emotion-meter{height:9px;border-radius:99px;background:var(--tint);overflow:hidden;margin:8px 0}
+#panel-life .emotion-meter span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#5c8ce6,#39ad88)}
+#panel-life .emotion-chip{display:inline-block;border-radius:99px;padding:3px 10px;background:var(--tint);font-size:12px;font-weight:700}
+
 </style>
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
@@ -168,14 +175,14 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="settings-section"><h4>大肥鱼的日常动态</h4>
 <label class="checkline"><input id="bili-daily-enabled" type="checkbox">允许大肥鱼生成自己的生活动态</label>
 <label class="checkline"><input id="bili-daily-draft" type="checkbox">仅生成草稿，不自动发布（建议先开启）</label>
-<p class="muted">仅根据公开、真实的已选视频经历创作。情绪系统暂未启用，当前不生成虚构心情状态。</p></div>
+<p class="muted">仅根据公开、真实的已选视频经历创作。持续情绪状态可在「人生记忆 → 情绪与心情」查看；它只影响表达节奏，不会成为公开发布私人聊天的理由。</p></div>
 <div class="toolbar"><button id="bili-save" class="primary">保存 B站生活设置</button><button id="bili-refresh">重新读取</button></div>
 </div></section>
 <section id="panel-dynamic" hidden>
 <div class="feature-intro"><div><h2>📝 大肥鱼的日常动态</h2><p>大肥鱼从真实经历中自主选择值得分享的事情。先预览草稿，再决定是否公开；自动发布默认关闭。</p></div></div>
 <div class="toolbar"><button id="daily-dynamic-refresh">刷新动态草稿</button><button id="daily-dynamic-generate" class="primary">让大肥鱼构思一条动态</button></div>
 <p id="daily-dynamic-status" class="muted"></p><div id="daily-dynamic-list" class="records"></div>
-<div class="settings-section"><h4>未来情绪系统</h4><span class="pill pending">预留 · 未启用</span><p class="muted">未来可以让大肥鱼从经历中形成持续心情状态；目前不会编造心情值，也不会凭空生成情绪经历。</p></div>
+
 </section>
 <section id="panel-backup" hidden>
 <div class="toolbar"><h2 style="margin:0">数据备份与恢复</h2></div>
@@ -243,7 +250,7 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="toolbar"><button id="main-memory-save" class="primary">保存记忆与反思设置</button></div><p id="main-memory-status" class="muted" role="status">正在读取…</p></div></div></section>
 <section id="panel-life" hidden>
 <div class="life-hero"><div><div class="status-line"><span id="life-learning-status" class="live-badge">● 正在整理真实经历</span></div><h2>🧠 人生记忆</h2><p class="muted">真实经历、兴趣趋势、人物关系、长期回忆与反思记录，都集中在这里查看。</p></div><button id="main-life-refresh" class="life-action life-indigo">↻ 刷新人生记忆</button></div>
-<nav class="life-jump" aria-label="人生记忆分区快捷跳转"><a href="#life-interest-section">🌱 兴趣趋势</a><a href="#life-relationship-section">🤝 人物关系</a><a href="#life-sync-section">📨 告诉主 Session</a><a href="#life-social-section">💬 自主社交</a><a href="#life-recall-section">🧠 长期回忆</a></nav>
+<nav class="life-jump" aria-label="人生记忆分区快捷跳转"><a href="#life-emotion-section">💗 情绪状态</a><a href="#life-timeline-section">📅 生活时间线</a><a href="#life-interest-section">🌱 兴趣趋势</a><a href="#life-relationship-section">🤝 人物关系</a><a href="#life-sync-section">📨 告诉主 Session</a><a href="#life-social-section">💬 自主社交</a><a href="#life-recall-section">🧠 长期回忆</a></nav>
 <p class="muted"><strong>这里展示大肥鱼记得什么，以及如何从真实生活中变化。</strong>「行为与表达改进」是直接附加在评论提示词里的规则，与这里的事实/经历不同。主人批准的旧版关系、兴趣、视频经历会在历史区只读保留，不再作为第二份提示词叠加。</p>
 <div class="settings-stack">
 <div class="settings-section life-section"><h4>记忆怎样形成</h4>
@@ -255,12 +262,22 @@ input[type=checkbox]{accent-color:#16865f}
 </div>
 
 </div>
+<div id="life-emotion-section" class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">💗 情绪与心情 · 会变化，也会自然恢复</h4><span id="emotion-status" class="live-badge">● 正在读取情绪状态</span></div>
+<p class="muted">这是大肥鱼的角色模拟状态，不是生理测量或真实意识证明。它只保存情绪类别、强度和粗粒度来源，不保存触发心情的私信正文、UID 或具体聊天原因。情绪会随时间衰减，不能成为泄露隐私、迁怒或强行社交的理由。</p>
+<label class="checkline"><input id="emotion-enabled" type="checkbox" checked>启用持续情绪状态（默认开启）</label>
+<div id="emotion-current" class="grid emotion-grid" aria-live="polite"></div>
+<div class="toolbar"><button id="emotion-save" class="life-action life-green">保存情绪设置</button><button id="emotion-reset" class="life-action life-amber">重置为平稳</button></div>
+<h4 style="margin-top:15px">最近情绪变化</h4><div id="emotion-history" class="records records-scroll"></div></div>
+<div id="life-timeline-section" class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">📅 大肥鱼的一天 · 真实生活时间线</h4><select id="life-timeline-days" aria-label="时间线范围"><option value="7">最近 7 天</option><option value="30" selected>最近 30 天</option><option value="90">最近 90 天</option></select><button id="life-timeline-refresh" class="life-action life-sky">刷新时间线</button></div>
+<p class="muted">把真实入选视频、公开评论、情绪变化和关系阶段整理在一处。不会展示好友私信正文或把私密画像拼进公开内容；心情变化只显示类别，不显示触发原因。</p><div id="life-timeline-list" class="records records-scroll tall"></div></div>
 <div id="life-interest-section" class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">兴趣与偏好 · 真实经历的趋势</h4><span id="interest-learning-status" class="live-badge">● 正在收集兴趣线索</span><span class="muted">由真实选中视频的 BV 证据推断，不自动修改人设与搜索词</span></div>
-<p class="muted">至少 3 个不同视频、横跨 2 天，才算“开始关注”；持续出现可发展为稳定后天兴趣。近期没有新证据时会显示关注减少。核心人设中的喜好不会被自动覆盖。</p>
+<p class="muted">核心兴趣由主人明确设置，优先参与选片但会轮换；短期/成长/稳定兴趣则来自真实入选视频证据。至少 3 个不同视频、横跨 2 天才会形成短期兴趣，长期没有新证据会逐渐淡出。自动学习永远不会覆盖核心兴趣。</p>
+<div class="inset"><label for="core-interest-topics">核心兴趣（每行或用逗号分隔，最多 12 项）</label><textarea id="core-interest-topics" rows="3" maxlength="700" placeholder="例如：AI 模型拟人、独立游戏、猫咪、美食"></textarea><div class="toolbar"><button id="core-interest-save" class="life-action life-green">保存核心兴趣</button><span id="core-interest-status" class="muted">主人设定 · 不会自动覆盖</span></div><div id="core-interest-list" class="grid interest-grid"></div></div>
 <div id="main-interests-list" class="grid interest-grid" aria-live="polite"></div></div>
-<div id="life-relationship-section" class="settings-section life-section"><h4>人物关系与旧资料</h4>
-<p class="muted">来自旧「成长经验」的已批准兴趣、视频经历和角色关系原样保留，作为历史事实参与统一检索；已批准关系设定优先于矛盾的自动事实。旧记录不会自动复制为新记忆。</p>
-<div id="main-legacy-growth-list" class="records"></div></div>
+<div id="life-relationship-section" class="settings-section life-section"><h4>人物关系 · 真实互动慢慢熟悉</h4>
+<p class="muted">只对已登记白名单 UID 记录最少量互动元数据：渠道、时间和方向，不保存聊天正文。阶段是互动熟悉度估计，不等于真实亲密程度；主人填写的原始关系不会被自动覆盖。关系观察仅本地保存，不随普通业务备份导出。</p>
+<div class="toolbar"><button id="friend-relationships-refresh" class="life-action life-sky">刷新关系成长</button><span id="friend-relationships-status" class="muted">尚未读取</span></div><div id="friend-relationships-list" class="records"></div>
+<h4 style="margin-top:18px">旧版人物关系与成长资料</h4><p class="muted">来自旧「成长经验」的已批准兴趣、视频经历和角色关系原样保留，作为历史事实参与统一检索；已批准关系设定优先于矛盾的自动事实。旧记录不会自动复制为新记忆。</p><div id="main-legacy-growth-list" class="records"></div></div>
 <div id="life-sync-section" class="settings-section life-section"><h4>告诉主 Session：大肥鱼最近做了什么</h4><div class="toolbar"><button id="main-session-sync" class="life-action life-green">现在把新经历告诉主 Session</button><button id="main-session-backfill" class="life-action life-sky">把过去 7 天遗漏的经历加入待汇报</button></div>
 <p class="muted">“过去 7 天”是<strong>从现在往回数 7 天</strong>，不是再等待 7 天。点击补充后只将尚未汇报的已选视频和已发评论放进本地待汇报队列，操作本身不会发送消息。启用主 Session 桥接和自动同步后，下一次符合间隔与每日额度的定时检查会尝试发送；否则可点击“现在把新经历告诉主 Session”手动发送。目标会话不在线时仍留在本地。此操作只汇报上下文，不直接写入人生记忆；人生反思会独立读取待反思经历。</p>
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
@@ -270,6 +287,7 @@ input[type=checkbox]{accent-color:#16865f}
 <div id="life-social-section" class="settings-section life-section"><h4>主动回访 · 真正看过后才考虑联系</h4>
 <p class="muted">大肥鱼只会因真实新入选视频与已允许私信的白名单好友的推荐产生社交意图。不会根据私人聊天内容生成公开信息；非白名单用户不建立长期兴趣画像。社交草稿默认不发送；主动私信请务必尊重对方拒绝和冷却期。</p>
 <label class="checkline"><input id="social-enabled" type="checkbox">允许自主判断要不要形成回访草稿（默认关闭）</label>
+<label class="checkline"><input id="social-life-intent-enabled" type="checkbox">允许大肥鱼根据自己的真实经历，主动考虑分享相关公开视频给白名单好友（默认关闭）</label><p class="muted">这是独立权限：只会在真实入选视频与好友初始兴趣/重复明确表达的兴趣有合理匹配时，生成“联系或跳过”的草稿；不会因为心情变化就盲目私信。需要先开启上面的自主社交草稿。非白名单用户不参与。</p>
 <label class="checkline"><input id="social-auto-send" type="checkbox">允许自动发送给白名单好友（高风险，默认关闭，建议先不开启）</label>
 <div class="fields"><div><label for="social-daily-limit">每日最多主动回访（0–3）</label><input id="social-daily-limit" type="number" min="0" max="3" value="1"></div></div>
 <div class="toolbar"><button id="social-save" class="life-action life-indigo">保存社交权限</button><button id="social-refresh" class="life-action life-sky">刷新草稿</button></div>

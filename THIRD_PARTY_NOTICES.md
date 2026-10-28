@@ -70,3 +70,12 @@ this release does not introduce additional vendored code from another project.
 ## Community contributors
 
 See `CONTRIBUTORS.md` for fixes and implementation ideas adopted from community reports and pull requests.
+
+## v2.4.92 independently implemented emotion and relationship lifecycle
+
+The persistent role-emotion state, bounded mood decay, whitelist-only relationship metadata,
+life timeline, interest-stage presentation, and opt-in public-video sharing intentions in this
+release are implemented by this repository. They reuse the existing project modules and do not
+vendor or copy new third-party source code. Existing MIT notices for `dsh-bili-scroll`,
+`bilibili-mcp`, and `dsh-fish-memory`, and the architectural credit for `dsh-bili-subagent`,
+remain in force.
