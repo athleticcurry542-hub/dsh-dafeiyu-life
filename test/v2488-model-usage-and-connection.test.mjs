@@ -8,7 +8,7 @@ import {HEADLESS_DENY_TOOLS,writeSecureHeadlessOverlay,assertSafeHeadlessLaunch}
 import {allowedPath} from '../lib/data-backup.mjs'
 const read=f=>readFileSync(new URL('../'+f,import.meta.url),'utf8')
 
-test('五种模型任务写入独立计数，重复任务多次计数，未产生过的任务显示暂无记录',()=>{
+test('六种模型任务写入独立计数，重复任务多次计数，未产生过的任务显示暂无记录',()=>{
   const dir=mkdtempSync(join(tmpdir(),'dafeiyu-v2488-'))
   try{
     const now=new Date(2026,9,27,10,0,0)
@@ -85,7 +85,7 @@ test('页面每个模型都有调用统计和独立测试按钮，测试请求�
   assert.match(html,/测试连接不计入统计/)
 })
 
-test('视频、互动、反思和本地语义检索均在调用链路记录；Python 子进程也记录',()=>{
+test('视频、互动、反思、记忆检索和表情包规则优化均在调用链路记录；Python 子进程也记录',()=>{
   const server=read('index.js'),mcp=read('vendor/bilibili-mcp/mcp_server.py'),vision=read('lib/vision_dsh.py')
   for(const expr of ["recordModelTask(stateDir,'video')","recordModelTask(stateDir,'memory')","recordModelTask(stateDir,reflectionRoute?'reflection':'interaction')"])assert.ok(server.includes(expr))
   assert.match(mcp,/_record_model_launch\(home, 'memory'\)/)

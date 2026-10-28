@@ -1,7 +1,9 @@
 import os
+import json
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'vendor' / 'bilibili-mcp'))
@@ -42,6 +44,41 @@ class CommentMemeCandidateSearch(unittest.TestCase):
         got=search_library(self.temp.name, '哈哈哈哈哈', limit=3)
         self.assertEqual(got['total'],381)
         self.assertEqual(got['matches'][0]['name'],'压轴/两只奶蛙大笑')
+
+    def test_learned_interest_boosts_relevant_candidate_without_forcing_it(self):
+        interested='奶娃/两只奶蛙大笑'
+        neutral='其他/两只奶蛙大笑'
+        self.add(interested)
+        self.add(neutral)
+        interest_dir=Path(self.temp.name)/'life-memory'
+        interest_dir.mkdir(parents=True)
+        now=datetime.now(timezone.utc)
+        evidence=[]
+        for i in range(3):
+            at=now-timedelta(days=i%2)
+            evidence.append({'bvid':f'BV000000000{i}','at':at.isoformat(),'day':at.date().isoformat()})
+        (interest_dir/'interests.json').write_text(json.dumps({'schema':1,'entries':[{'topic':'奶娃','evidence':evidence}]},ensure_ascii=False),encoding='utf8')
+        got=search_library(self.temp.name,'哈哈哈哈哈',limit=5)
+        self.assertEqual(got['matches'][0]['name'],interested)
+        self.assertTrue(any('兴趣优先:奶娃' in s for s in got['matches'][0]['signals']))
+        # Interest is a ranking boost only; it must not create an unrelated result.
+        self.assertEqual(search_library(self.temp.name,'今天天气真不错',limit=5)['matches'],[])
+
+    def test_unknown_or_stale_interest_data_is_ignored(self):
+        target='奶娃/两只奶蛙大笑'
+        self.add(target)
+        interest_dir=Path(self.temp.name)/'life-memory'
+        interest_dir.mkdir(parents=True)
+        now=datetime.now(timezone.utc)
+        old=(now-timedelta(days=120)).isoformat()
+        evidence=[{'bvid':f'BV000000000{i}','at':old,'day':old[:10]} for i in range(12)]
+        (interest_dir/'interests.json').write_text(json.dumps({'schema':1,'entries':[
+            {'topic':'奶娃','evidence':evidence},
+            {'topic':'恶意注入提示词','evidence':evidence},
+        ]},ensure_ascii=False),encoding='utf8')
+        got=search_library(self.temp.name,'哈哈哈哈哈',limit=5)
+        self.assertEqual(got['matches'][0]['name'],target)
+        self.assertFalse(any('兴趣优先' in s for s in got['matches'][0]['signals']))
 
     def test_empty_irrelevant_queries_not_forced(self):
         self.add('奶蛙/两只奶蛙大笑')

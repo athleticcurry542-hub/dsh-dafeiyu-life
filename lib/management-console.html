@@ -137,7 +137,7 @@ input[type=checkbox]{accent-color:#16865f}
 </nav>
 <p id="message" role="status" aria-live="polite"></p>
 <section id="panel-models" hidden>
-<div class="feature-intro"><div><h2>🧠 AI 模型配置</h2><p>所有 AI 模型只在这里设置。Provider 和模型 ID 留空时继承 DSH 当前模型；不需要在插件重复填写 API Key。每日次数统计的是插件启动的模型任务，并非 Provider 实际 API 请求数；安装本版后开始记录，不补算历史。测试连接不计入统计，但会产生实际模型请求，可能消耗额度。请先保存模型配置再测试。独立视觉的测试只验证文字连接，不验证识图能力。</p></div></div>
+<div class="feature-intro"><div><h2>🧠 AI 模型配置</h2><p>所有 AI 模型只在这里设置。Provider 和模型 ID 留空时继承 DSH 当前模型；不需要在插件重复填写 API Key。每日次数统计的是插件启动的模型任务，并非 Provider 实际 API 请求数；安装本版后开始记录，不补算历史。测试连接不计入统计，但会产生实际模型请求，可能消耗额度。请先保存模型配置再测试。独立视觉的测试只验证文字连接，不验证识图能力。表情包规则优化只在你手动点击时调用，日常评论仍使用本地零 Token 检索。</p></div></div>
 <div class="settings-stack">
 <div class="settings-section"><h4>刷视频与内容理解</h4><div class="model-activity"><span id="models-video-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-video-test" class="model-test-button">测试连接</button><span id="models-video-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">负责搜索、阅读视频、选片、评论决策与点赞收藏决策。</p><div class="fields" id="models-video"></div></div>
 <div class="settings-section"><h4>后台评论与私信</h4><div class="model-activity"><span id="models-interaction-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-interaction-test" class="model-test-button">测试连接</button><span id="models-interaction-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">负责后台评论、私信和生活动态草稿；人生反思在下方单独配置。</p><div class="fields" id="models-interaction"></div></div>
@@ -147,6 +147,7 @@ input[type=checkbox]{accent-color:#16865f}
 <div><label class="checkline"><input id="models-vision-enabled" type="checkbox">启用视频预览识图</label></div>
 <div><label class="checkline"><input id="models-vision-debug" type="checkbox">开启视觉识图调试日志（排障用）</label></div></div>
 </div>
+<div class="settings-section"><h4>表情包检索规则优化</h4><div class="model-activity"><span id="models-memeRules-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-memeRules-test" class="model-test-button">测试连接</button><span id="models-memeRules-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">仅在「表情包管理」点击 AI 更新时调用；不参与每次评论。留空时继承 DSH 当前默认模型。建议使用低成本模型与 low 思考深度；提示词只包含表情包名称/分类、现有规则和经过校验的大肥鱼自身兴趣摘要（主题、阶段、证据计数）；不会发送评论、私信、好友画像或图片。</p><div class="fields" id="models-memeRules"></div></div>
 <div class="settings-section"><h4>低成本人生记忆检索</h4><div class="model-activity"><span id="models-memory-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-memory-test" class="model-test-button">测试连接</button><span id="models-memory-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">仅挑选真实记忆 ID，不能发送 B站消息或修改记忆。是否启用及检索额度仍在「大肥鱼的家」设置。</p><div class="fields" id="models-memory"></div></div>
 <div class="toolbar"><button id="models-save" class="primary">保存全部模型配置</button><button id="models-refresh">重新读取</button></div>
 </div></section>
@@ -467,19 +468,24 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="toolbar"><h2 style="margin:0">梗知识库</h2><input id="meme-search" placeholder="搜索名称、别名、解释"><button id="meme-find">搜索</button></div><p class="muted" id="meme-stats">新梗自动入库并可检索；历史待审记录仍可处理。随时可编辑或删除错误记录，原视频证据保留。</p><div class="grid" id="meme-list"></div></section>
 <section id="panel-stickers" hidden>
 <div class="card" style="margin-bottom:14px">
-<h3>推荐流程 · 让 AI 按你当前图库更新检索规则</h3>
-<p class="muted">表情包规则通常不需要一条条手工维护。最稳妥的流程是先把<strong>当前完整图库名称</strong>和<strong>当前规则 JSON</strong>一起导出，让 AI 在知道“现在真实有哪些表情包、旧规则是什么”的前提下改写，然后把 AI 生成的新规则 JSON 导入回来。</p>
+<h3>推荐流程 · AI 自动维护本地检索规则</h3>
+<p class="muted">现在可以直接点击下方的 AI 更新按钮，无需手动导出、改 JSON、再导入。默认只处理新增/删除/改名的表情包；只有你明确点击“全量优化”时，才把完整图库名称交给模型。若模型输出不合格或目标名称不存在，系统拒绝应用并保留旧规则。手动导入/导出仍可作为备份与高级编辑方式。</p>
 <ol class="muted" style="line-height:1.8;margin-top:8px">
-<li>先刷新图库，点击“导出最新表情包名称 TXT”。</li>
-<li>再点击“导出当前规则 JSON”。</li>
-<li>把这两个文件一起交给 AI，要求它只使用真实存在的分类/名称，保留有用旧规则并生成新的完整规则 JSON。</li>
-<li>回到本页导入新 JSON；先用“测试本地匹配”检查几条评论，确认后再点“保存全部规则”。</li>
+<li>首次使用先在「AI 模型」页为“表情包检索规则优化”选择低成本模型，建议思考深度 low，然后保存并测试连接。</li>
+<li>新增、删除或重命名表情包后，点“AI 增量更新本地规则”。图库没有变化时会跳过模型调用。</li>
+<li>如果想重新整理旧规则，才点“AI 全量优化（Token 较多）”。</li>
+<li>更新后用“测试本地匹配”检查常见评论；如果不满意，可以恢复 AI 更新前规则。</li><li>如果你希望手动调整，也可以把“导出最新表情包名称 TXT”和“导出当前规则 JSON”这两个文件一起交给 AI，再通过导入/测试/保存流程应用。</li>
 </ol>
 <div class="toolbar"><button id="sticker-workflow-export-names">① 导出最新表情包名称 TXT</button><button id="sticker-workflow-export-rules">② 导出当前规则 JSON</button><span class="muted">导入后不会自动保存，可先测试再确认。</span></div>
 </div>
 <div class="card" style="margin-bottom:14px">
+<h3>AI 自动维护本地匹配规则</h3>
+<p class="muted">AI 只在你点击时运行，不会每条评论都额外消耗 Token。AI 维护提示会参考大肥鱼基于真实入选视频形成的自身兴趣（不读取主人额外选片关键词或好友画像）。日常检索会实时读取有效兴趣，对已经匹配当前评论的候选做小幅排序加权，不额外消耗 Token；兴趣不会单独强行召回无关图片。默认按新增/删除的表情包做增量更新；如果图库没有变化，就跳过模型调用，因为兴趣变化已经能即时影响本地排序。全量优化会把当前图库名称、现有规则和兴趣摘要交给「AI 模型」页配置的模型。AI 输出通过结构和真实文件名校验后才会写入本地，并保留一份更新前备份。当前不分析图片画面，也不生成视觉语义标签。</p>
+<div class="toolbar"><button id="meme-rule-ai-update" class="primary">AI 增量更新本地规则</button><button id="meme-rule-ai-full">AI 全量优化（Token 较多）</button><button id="meme-rule-ai-restore">恢复 AI 更新前规则</button><span id="meme-rule-ai-status" class="muted" role="status" aria-live="polite">尚未运行 AI 规则更新</span></div>
+</div>
+<div class="card" style="margin-bottom:14px">
 <h3>表情包检索规则 · 可编辑</h3>
-<p class="muted">让评论中的词和已存在的表情包名称／分类关联起来。只检索文件名，不识别图片画面、不额外调用 AI。每条规则支持<strong>同时包含</strong>与<strong>排除</strong>条件；关闭规则不会禁止完全相同的文字直接命中文件名。</p>
+<p class="muted">让评论中的词和已存在的表情包名称／分类关联起来。只检索文件名/分类，不识别图片画面；日常检索不额外调用 AI，并会参考大肥鱼当前已形成的自身兴趣调整匹配候选排序。每条规则支持<strong>同时包含</strong>与<strong>排除</strong>条件；关闭规则不会禁止完全相同的文字直接命中文件名。</p>
 <div class="toolbar"><button id="meme-rule-add">新增规则</button><button id="meme-rule-save" class="primary">保存全部规则</button><button id="meme-rule-default">加载出厂默认（需保存）</button><button id="meme-rule-export">导出规则 JSON</button><label for="meme-rule-import" style="margin:0">导入 JSON</label><input id="meme-rule-import" type="file" accept=".json,application/json" style="max-width:245px"></div>
 <div class="toolbar" style="margin-top:10px">
   <label for="meme-rule-search">搜索规则</label><input id="meme-rule-search" type="search" placeholder="名称、触发词、候选词（如白饭、爆笑）" style="flex:1;min-width:180px" autocomplete="off">
