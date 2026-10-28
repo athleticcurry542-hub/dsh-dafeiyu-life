@@ -28,6 +28,7 @@ import re
 import subprocess
 import sqlite3
 import uuid
+import hashlib
 from mcp.server.fastmcp import FastMCP
 from mcp.types import CallToolResult, TextContent, ImageContent
 
@@ -1181,6 +1182,37 @@ def _finish_video_action(uid,bv,kind,ok,detail=''):
     finally:con.close()
 
 
+def _claim_session_manual_action(uid: str, kind: str, target: str, body: str, daily_limit: int):
+    """Atomic idempotency ledger for explicit main-Session writes; uncertain sends are not retried."""
+    digest=hashlib.sha256(str(body or '').encode('utf8')).hexdigest()
+    day=datetime.now().strftime('%Y-%m-%d')
+    con=_action_conn()
+    try:
+        with con:
+            con.execute("""CREATE TABLE IF NOT EXISTS session_manual_actions (
+                uid TEXT NOT NULL,kind TEXT NOT NULL,target TEXT NOT NULL,body_hash TEXT NOT NULL,
+                day TEXT NOT NULL,status TEXT NOT NULL,created_at TEXT NOT NULL,detail TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(uid,kind,target,body_hash,day))""")
+            con.execute('BEGIN IMMEDIATE')
+            prior=con.execute('SELECT status FROM session_manual_actions WHERE uid=? AND kind=? AND target=? AND body_hash=? AND day=?',(uid,kind,target,digest,day)).fetchone()
+            if prior:
+                return {'ok':False,'already':True,'error':f'同一{kind}请求今天已有记录（{prior["status"]}），为避免重复操作不自动重试'}
+            used=con.execute('SELECT COUNT(*) FROM session_manual_actions WHERE uid=? AND kind=? AND day=?',(uid,kind,day)).fetchone()[0]
+            if used>=max(0,int(daily_limit)):
+                return {'ok':False,'limit':True,'error':f'今日主 Session {kind}额度 {daily_limit} 次已用完'}
+            con.execute('INSERT INTO session_manual_actions(uid,kind,target,body_hash,day,status,created_at) VALUES(?,?,?,?,?,?,?)',(uid,kind,target,digest,day,'pending',datetime.now().astimezone().isoformat()))
+        return {'ok':True,'body_hash':digest,'day':day}
+    finally:con.close()
+
+
+def _finish_session_manual_action(uid: str,kind: str,target: str,body_hash: str,day: str,status: str,detail: str=''):
+    con=_action_conn()
+    try:
+        with con:
+            con.execute('UPDATE session_manual_actions SET status=?,detail=? WHERE uid=? AND kind=? AND target=? AND body_hash=? AND day=?',(status,str(detail or '')[:180],uid,kind,target,body_hash,day))
+    finally:con.close()
+
+
 def _check_reaction(bvid,env_key):
     if os.environ.get(env_key)!='1':raise ValueError('主人没有开启此项自主视频行为')
     bv=_valid_bv(bvid)
@@ -1369,6 +1401,189 @@ async def bili_video_like(bvid: str, reason: str = '') -> str:
 
 
 @tool()
+async def bili_video_like_manual(bvid: str, reason: str = '') -> str:
+    """主 Session 中由主人明确要求的单条点赞；与自主点赞共用每日额度和防重复账本。"""
+    if (e:=_guard('bili_video_like_manual')): return e
+    try:
+        if os.environ.get('BILI_SESSION_MANUAL_LIKE_ENABLED') != '1':
+            raise ValueError('主 Session 手动点赞入口未授权')
+        bv=_valid_bv(bvid)
+        cred=get_cred()
+        uid=str(getattr(cred,'dedeuserid','') or '')
+        if not uid.isdigit() or int(uid)<=0:
+            raise ValueError('无法确定当前 B站登录账号 UID')
+        why=_safe_line(reason,100) or '主人明确要求点赞'
+        try: limit=max(0,min(100,int(os.environ.get('BILI_AUTO_VIDEO_LIKE_DAILY_LIMIT','10'))))
+        except (ValueError,TypeError): limit=0
+        if limit<=0: raise ValueError('每日点赞上限为 0，未执行点赞')
+        claimed=_claim_video_action(uid,bv,'like',limit)
+        if claimed: return json.dumps(claimed,ensure_ascii=False)
+        try:
+            await video.Video(bvid=bv,credential=cred).like(True)
+            _finish_video_action(uid,bv,'like',True,'主 Session 手动点赞：'+why)
+            return json.dumps({'ok':True,'liked':True,'bvid':bv,'mode':'owner-requested'},ensure_ascii=False)
+        except Exception as error:
+            _finish_video_action(uid,bv,'like',False,str(error))
+            return json.dumps({'ok':False,'error':'点赞结果失败或不确定：'+str(error)[:120],'no_retry':True},ensure_ascii=False)
+    except Exception as error:
+        return json.dumps({'ok':False,'error':str(error)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_video_collect_manual(bvid: str, folder_title: str, create_folder: bool = False,
+                                    reason: str = '', confirm: bool = False) -> str:
+    """主 Session 中主人明确要求的单条收藏；可选复用现有收藏夹或新建大肥鱼私有收藏夹。"""
+    if (e:=_guard('bili_video_collect_manual')): return e
+    try:
+        if os.environ.get('BILI_SESSION_MANUAL_ACTIONS_ENABLED') != '1':
+            raise ValueError('主 Session 手动 B站操作未授权')
+        if confirm is not True: raise ValueError('缺少主人明确确认，未收藏')
+        bv=_valid_bv(bvid); cred=get_cred(); uid=str(getattr(cred,'dedeuserid','') or '')
+        if not uid.isdigit() or int(uid)<=0: raise ValueError('无法确定当前 B站账号 UID')
+        raw_title=str(folder_title or '').strip()
+        if not raw_title or len(raw_title)>40 or re.search(r'[\r\n\x00/\\:]|\.\.',raw_title):
+            raise ValueError('收藏夹名称无效')
+        if create_folder:
+            fid,title,created=await _ensure_ai_folder(cred,uid,raw_title.removeprefix('大肥鱼·'))
+        else:
+            data=await favorite_list.get_video_favorite_list(int(uid),credential=cred)
+            items=(data or {}).get('list') or []
+            match=next((x for x in items if str(x.get('title') or '').strip()==raw_title and int(x.get('id') or 0)>0),None)
+            if not match:
+                return json.dumps({'ok':False,'folder_not_found':True,'error':'没有找到同名收藏夹；可先查询收藏夹列表，或明确要求新建大肥鱼私有收藏夹。','available_folders':[str(x.get('title') or '')[:60] for x in items[:30]]},ensure_ascii=False)
+            fid=int(match['id']);title=str(match.get('title') or raw_title);created=False
+        why=_safe_line(reason,100) or '主人明确要求收藏'
+        claim=_claim_video_action(uid,bv,'collect',5)
+        if claim:return json.dumps(claim,ensure_ascii=False)
+        try:
+            result=await video.Video(bvid=bv,credential=cred).set_favorite(add_media_ids=[fid])
+            if isinstance(result,dict) and result.get('code',0) not in (0,None): raise ValueError(str(result.get('message') or result.get('code'))[:120])
+            _finish_video_action(uid,bv,'collect',True,'主 Session 手动收藏：'+title+'；'+why)
+            return json.dumps({'ok':True,'collected':True,'bvid':bv,'folder':title,'created':created,'mode':'owner-requested'},ensure_ascii=False)
+        except Exception as error:
+            _finish_video_action(uid,bv,'collect',False,str(error))
+            return json.dumps({'ok':False,'error':'收藏失败或结果不确定：'+str(error)[:120],'no_retry':True},ensure_ascii=False)
+    except Exception as error:return json.dumps({'ok':False,'error':str(error)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_follow_creator_manual(bvid: str, reason: str = '', confirm: bool = False) -> str:
+    """主 Session 中主人明确要求关注指定视频的 UP 主；单目标、每日限额、写入关系账本。"""
+    if (e:=_guard('bili_follow_creator_manual')): return e
+    try:
+        if os.environ.get('BILI_SESSION_MANUAL_RELATIONS_ENABLED') != '1': raise ValueError('主 Session 关注操作未授权')
+        if confirm is not True: raise ValueError('缺少主人明确确认，未关注')
+        bv=_valid_bv(bvid);cred=get_cred();account=str(getattr(cred,'dedeuserid','') or '')
+        if not account.isdigit() or int(account)<=0: raise ValueError('无法确定当前 B站账号 UID')
+        details=await video.Video(bvid=bv,credential=cred).get_info()
+        target=int((details.get('owner') or {}).get('mid') or 0)
+        if target<=0 or str(target)==account: raise ValueError('UP 主 UID 无效或不能关注自己')
+        relation=_single_creator_relation(cred,target)
+        if relation!=0: return json.dumps({'ok':False,'already':True,'uid':target,'error':'目标当前已关注或关系状态不允许关注'},ensure_ascii=False)
+        why=_safe_line(reason,100) or '主人明确要求关注该视频 UP 主'
+        claim=_relation_claim(account,target,'follow',max(0,min(10,int(os.environ.get('BILI_SESSION_FOLLOW_DAILY_LIMIT','3')))))
+        try:
+            await user.User(uid=target,credential=cred).modify_relation(user.RelationType.SUBSCRIBE)
+        except Exception as exc:
+            _relation_finish(account,target,'follow',claim,False,bv)
+            return json.dumps({'ok':False,'status':'uncertain-no-retry','error':str(exc)[:140]},ensure_ascii=False)
+        _relation_finish(account,target,'follow',claim,True,bv)
+        return json.dumps({'ok':True,'action':'follow','uid':target,'bvid':bv,'reason':why,'mode':'owner-requested'},ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_unfollow_creator_manual(uid: int, reason: str = '', confirm: bool = False) -> str:
+    """主 Session 中主人明确要求取关；只允许取关本插件自己关注满 7 天的单个 UP。"""
+    if (e:=_guard('bili_unfollow_creator_manual')): return e
+    try:
+        if os.environ.get('BILI_SESSION_MANUAL_RELATIONS_ENABLED') != '1': raise ValueError('主 Session 取关操作未授权')
+        if confirm is not True: raise ValueError('缺少主人明确确认，未取关')
+        target=int(uid)
+        if target<=0 or target>=10**19: raise ValueError('UID 非法')
+        cred=get_cred();account=str(getattr(cred,'dedeuserid','') or '')
+        if not account.isdigit() or int(account)<=0 or str(target)==account: raise ValueError('账号或目标 UID 无效')
+        con=_action_conn()
+        try: row=con.execute('SELECT status,followed_at FROM creator_relations WHERE account=? AND target=?',(account,target)).fetchone()
+        except sqlite3.OperationalError: row=None
+        finally: con.close()
+        if not row or row['status']!='following': raise ValueError('只能取关大肥鱼通过本插件关注的 UP 主，不能动主人原有关注')
+        if (datetime.now()-datetime.fromisoformat(row['followed_at'])).total_seconds()<7*86400: raise ValueError('自主关注未满 7 天，不允许取关')
+        if _single_creator_relation(cred,target) not in (2,6): return json.dumps({'ok':False,'skipped':'not-currently-following','uid':target},ensure_ascii=False)
+        why=_safe_line(reason,100) or '主人明确要求取关'
+        claim=_relation_claim(account,target,'unfollow',max(0,min(5,int(os.environ.get('BILI_SESSION_UNFOLLOW_DAILY_LIMIT','1')))))
+        try: await user.User(uid=target,credential=cred).modify_relation(user.RelationType.UNSUBSCRIBE)
+        except Exception as exc:
+            _relation_finish(account,target,'unfollow',claim,False)
+            return json.dumps({'ok':False,'status':'uncertain-no-retry','error':str(exc)[:140]},ensure_ascii=False)
+        _relation_finish(account,target,'unfollow',claim,True)
+        return json.dumps({'ok':True,'action':'unfollow','uid':target,'reason':why,'mode':'owner-requested'},ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_reply_manual(bvid: str, text: str, rpid: int = 0, root: int = 0, confirm: bool = False) -> str:
+    """主 Session 中主人明确要求的单条评论或回复；默认不 @、不同步动态，重复请求防重。"""
+    if (e:=_guard('bili_reply_manual')): return e
+    try:
+        if os.environ.get('BILI_SESSION_MANUAL_ACTIONS_ENABLED') != '1': raise ValueError('主 Session 手动 B站操作未授权')
+        if confirm is not True: raise ValueError('缺少主人明确确认，未发送评论')
+        bv=_valid_bv(bvid);body=str(text or '').strip()
+        if not body or len(body)>2000: raise ValueError('评论正文必须为 1–2000 字')
+        target_rpid=int(rpid or 0);root_id=int(root or 0)
+        if target_rpid<0 or root_id<0: raise ValueError('评论 ID 非法')
+        cred=get_cred();uid=str(getattr(cred,'dedeuserid','') or '')
+        if not uid.isdigit() or int(uid)<=0: raise ValueError('无法确定当前 B站账号 UID')
+        target=f'{bv}:{target_rpid}:{root_id}'
+        claim=_claim_session_manual_action(uid,'comment',target,body,max(0,min(1000,int(os.environ.get('BILI_COMMENT_DAILY_LIMIT','10')))))
+        if not claim.get('ok'): return json.dumps(claim,ensure_ascii=False)
+        try:
+            raw=await bili_reply(bvid=bv,text=body,rpid=target_rpid,root=root_id,should_mention=False,mention_position='end',mention_mode='off',mention_targets=[],mention_names=[],sync_to_dynamic=False,sync_dynamic_ai_decision=False)
+            try: result=json.loads(raw) if isinstance(raw,str) else raw
+            except Exception: result={'success':False,'error':str(raw)[:160]}
+            if isinstance(result,dict) and result.get('success') is True:
+                _finish_session_manual_action(uid,'comment',target,claim['body_hash'],claim['day'],'ok','B站接口接受评论')
+                return json.dumps({'ok':True,'action':'comment' if not target_rpid else 'reply','bvid':bv,'receipt':result,'message':'B站接口已接受请求；公开可见性仍需以实际页面核实。'},ensure_ascii=False)
+            _finish_session_manual_action(uid,'comment',target,claim['body_hash'],claim['day'],'uncertain',str(result.get('error') or result)[:160])
+            return json.dumps({'ok':False,'action':'comment','error':str(result.get('error') or '未获得成功回执')[:180],'no_retry':True,'detail':result},ensure_ascii=False)
+        except Exception as exc:
+            _finish_session_manual_action(uid,'comment',target,claim['body_hash'],claim['day'],'uncertain',str(exc)[:160])
+            return json.dumps({'ok':False,'error':'评论结果不确定，禁止自动重试：'+str(exc)[:130],'no_retry':True},ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_send_message_manual(receiver_uid: int, text: str, confirm: bool = False) -> str:
+    """主 Session 中主人明确要求向白名单好友发送一条私信；每日限额、同内容防重。"""
+    if (e:=_guard('bili_send_message_manual')): return e
+    try:
+        if os.environ.get('BILI_SESSION_MANUAL_ACTIONS_ENABLED') != '1': raise ValueError('主 Session 手动 B站操作未授权')
+        if confirm is not True: raise ValueError('缺少主人明确确认，未发送私信')
+        target=int(receiver_uid);body=str(text or '').strip()
+        if target<=0 or target>=10**19: raise ValueError('接收者 UID 非法')
+        if not body or len(body)>450: raise ValueError('私信正文必须为 1–450 字')
+        allowed={x.strip() for x in os.environ.get('BILI_SESSION_DM_ALLOWED_UIDS','').split(',') if x.strip().isdigit() and int(x.strip())>0}
+        if str(target) not in allowed: raise ValueError('该 UID 未在主人允许私信的白名单中；请先在「人设与好友」为该好友开启私信权限')
+        cred=get_cred();uid=str(getattr(cred,'dedeuserid','') or '')
+        if not uid.isdigit() or int(uid)<=0 or str(target)==uid: raise ValueError('无法确认账号或不能给自己发私信')
+        claim=_claim_session_manual_action(uid,'dm',str(target),body,max(0,min(20,int(os.environ.get('BILI_SESSION_DM_DAILY_LIMIT','5')))))
+        if not claim.get('ok'): return json.dumps(claim,ensure_ascii=False)
+        try:
+            raw=await bili_send_message(receiver_uid=target,text=body)
+            try: result=json.loads(raw) if isinstance(raw,str) else raw
+            except Exception: result={'success':False,'error':str(raw)[:160]}
+            if isinstance(result,dict) and result.get('success') is True:
+                _finish_session_manual_action(uid,'dm',str(target),claim['body_hash'],claim['day'],'ok','B站返回投递回执')
+                return json.dumps({'ok':True,'action':'dm','receiver_uid':target,'receipt':result,'message':'B站返回投递成功回执'},ensure_ascii=False)
+            _finish_session_manual_action(uid,'dm',str(target),claim['body_hash'],claim['day'],'uncertain',str(result.get('error') or result)[:160])
+            return json.dumps({'ok':False,'error':str(result.get('error') or '没有获得投递成功回执')[:180],'no_retry':True,'detail':result},ensure_ascii=False)
+        except Exception as exc:
+            _finish_session_manual_action(uid,'dm',str(target),claim['body_hash'],claim['day'],'uncertain',str(exc)[:160])
+            return json.dumps({'ok':False,'error':'私信结果不确定，禁止自动重试：'+str(exc)[:130],'no_retry':True},ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
+
+
+@tool()
 async def bili_video_collect(bvid: str, folder_title: str, reason: str = '') -> str:
     # 只收藏需要未来回看的入选视频
     if (e:=_guard('bili_video_collect')): return e
@@ -1390,6 +1605,34 @@ async def bili_video_collect(bvid: str, folder_title: str, reason: str = '') -> 
             return json.dumps({'ok':False,'error':'收藏失败：'+str(error)[:120]},ensure_ascii=False)
     except Exception as error:
         return json.dumps({'ok':False,'error':str(error)[:180]},ensure_ascii=False)
+
+
+@tool()
+async def bili_session_watch_mark(bvid: str, title: str = '', up: str = '') -> str:
+    """记录主 Session 按主人要求实际检查过的公开视频；只保存 BV、标题、UP 和日期。"""
+    if (e:=_guard('bili_session_watch_mark')): return e
+    try:
+        if os.environ.get('BILI_SESSION_MANUAL_ACTIONS_ENABLED') != '1':
+            raise ValueError('主 Session 指定观看记录未授权')
+        bv=_valid_bv(bvid); get_cred()
+        path=(_DUTY_HOME/'session-watch-history.json').resolve()
+        if path.parent != _DUTY_HOME or path.is_symlink(): raise ValueError('观看经历文件路径不安全')
+        state={'version':1,'entries':[]}
+        if path.exists():
+            if not path.is_file() or path.stat().st_size>2_000_000: raise ValueError('观看经历文件不安全或过大')
+            try: state=json.loads(path.read_text('utf8'))
+            except Exception: raise ValueError('观看经历文件损坏，拒绝覆盖')
+        if not isinstance(state,dict) or not isinstance(state.get('entries'),list): raise ValueError('观看经历文件格式不正确')
+        day=datetime.now().strftime('%Y-%m-%d')
+        row={'day':day,'bvid':bv,'title':_safe_line(title,130),'up':_safe_line(up,60),'status':'主 Session 指定观看'}
+        entries=[x for x in state['entries'] if not (isinstance(x,dict) and x.get('day')==day and x.get('bvid')==bv)]
+        entries.append(row);state={'version':1,'entries':entries[-1000:]}
+        tmp=path.with_suffix('.json.tmp')
+        if tmp.is_symlink(): raise ValueError('观看经历临时文件不安全')
+        tmp.write_text(json.dumps(state,ensure_ascii=False,indent=2)+'\n',encoding='utf8')
+        os.replace(tmp,path)
+        return json.dumps({'ok':True,'recorded':True,'bvid':bv,'day':day},ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False)
 
 
 @tool()

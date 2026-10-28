@@ -14,7 +14,7 @@ test('原生设置只有日常面板，刷视频间隔和多时段保持可编�
   assert.match(source,/const tab = 'daily'/)
   assert.match(source,/刷视频间隔（分钟）/)
   assert.match(source,/保存时间段/)
-  assert.match(source,/时段与间隔可以提前设置/)
+  assert.match(source,/记忆、反思、情绪与主 Session 工具独立运行/);assert.match(source,/定时自主刷视频（可选）/)
   assert.match(source,/href:'https:\/\/space\.bilibili\.com\/210228238'/)
   assert.match(source,/长条动物/)
   assert.match(source,/开源来源与致谢/)

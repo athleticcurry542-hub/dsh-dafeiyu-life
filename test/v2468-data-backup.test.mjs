@@ -22,6 +22,7 @@ test('导出包含人设成长记忆与状态，绝不包含图片、凭证、�
     write(root,'video-wish-claims/a--b.json','{}')
     write(root,'comment-interact-state.json','{}')
     write(root,'duty.md','用户修改章程')
+    write(root,'session-watch-history.json',JSON.stringify({version:1,entries:[{day:'2026-10-28',bvid:'BV1pXHK6mE6z',title:'公开视频'}]}))
     write(root,'comment-memes/表情包.jpg','PRIVATE_IMAGE')
     write(root,'bili_credential.json','SECRET_COOKIE')
     write(root,'.vision-api-key.dpapi','VERY_SECRET')
@@ -29,6 +30,7 @@ test('导出包含人设成长记忆与状态，绝不包含图片、凭证、�
     const backup=createBackup({root,config:{personaPrompt:'爱吃白饭',masterEnabled:false,friendDirectory:'[{"uid":"123"}]'}})
     assert.equal(backup.files['persona-growth/v1.json'],JSON.stringify({approved:['经验']}))
     assert.equal(backup.files['duty.md'],'用户修改章程')
+    assert.equal(backup.files['session-watch-history.json']?.includes('BV1pXHK6mE6z'),true)
     assert.equal(backup.files['out/2026-10-26.md'],'刷视频报告')
     assert.equal(JSON.stringify(backup).includes('SECRET_COOKIE'),false)
     assert.equal(JSON.stringify(backup).includes('PRIVATE_IMAGE'),false)
@@ -44,6 +46,7 @@ test('拒绝目录穿越、符号链接、伪造备份',()=>{
   assert.equal(allowedPath('../bili_credential.json'),false)
   assert.equal(allowedPath('comment-memes/a.png'),false)
   assert.equal(allowedPath('persona-growth/v1.json'),true)
+  assert.equal(allowedPath('session-watch-history.json'),true)
   const b={format:'dsh-bili-scroll-plus-backup',schema:1,config:{a:'b'},files:{'../../pw':'invalid'},sqlite:{}}
   assert.throws(()=>validateBackup(b),/不允许/)
   delete b.files['../../pw'];b.sqlite={'bili_credential.json':'AAAA'}

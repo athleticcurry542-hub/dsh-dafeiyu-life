@@ -123,6 +123,7 @@ test('核心兴趣与后天兴趣分层：主人设置优先参与选片，按�
 
 test('情绪数据允许进入本地业务备份；好友关系观察仍排除在可携带备份之外',()=>{
  assert.equal(allowedPath('life-memory/emotional-state.json'),true)
+ assert.equal(allowedPath('owner-todos.json'),true)
  assert.equal(allowedPath('friend-relationship-observations.json'),false)
  assert.equal(allowedPath('friend-interest-observations.json'),false)
  assert.equal(allowedPath('social-intentions.json'),false)
