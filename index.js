@@ -61,7 +61,7 @@ import { createInteractionMemeLookup, readReplyMemeSnapshot } from './lib/intera
 import { createInteractionScheduler } from './lib/interaction-scheduler.mjs'
 import { listCommentMemes, getCommentMemePreview } from './lib/comment-meme-library.mjs'
 import {readCommentMemeRules,saveCommentMemeRules,validateCommentMemeRules} from './lib/comment-meme-rules.mjs'
-import {buildMemeRuleAIUpdatePrompt,computeMemeInventoryDelta,parseMemeRuleAIOutput,readMemeRuleAIIndex,readPreviousMemeRules,saveMemeRuleAIIndex,savePreviousMemeRules,validateAIMemeRules} from './lib/comment-meme-ai-rules.mjs'
+import {DEFAULT_MEME_RULE_AI_PROMPT,buildMemeRuleAIUpdatePrompt,computeMemeInventoryDelta,normalizeMemeRuleAIPrompt,parseMemeRuleAIOutput,readMemeRuleAIIndex,readPreviousMemeRules,saveMemeRuleAIIndex,savePreviousMemeRules,validateAIMemeRules} from './lib/comment-meme-ai-rules.mjs'
 import { DEFAULT_COMMENT_MEME_PROMPT, buildCommentMemePrompt, normalizeCommentMemePrompt } from './lib/comment-meme-prompt.mjs'
 import { DEFAULT_PERSONA_PROMPT, effectivePersonaPrompt } from './lib/persona-default.mjs'
 import { buildBalancedMemeInventory } from './lib/meme-inventory-prompt.mjs'
@@ -175,6 +175,8 @@ export const Config = !z ? undefined : z.object({
   memeRulesModelProvider: z.string().default('').extra('volatile',true),
   memeRulesModelId: z.string().default('').extra('volatile',true),
   memeRulesReasoningEffort: z.string().default('').extra('volatile',true),
+  /** AI 维护稳定表情包语义规则的可编辑指令；动态图库和旧规则由程序附加。 */
+  memeRulesPrompt: z.string().default('').extra('volatile',true),
   /** 将 B站登录账号的首页推荐作为选片来源，与关键词搜索混合；默认开启。 */
   homeRecommendationsEnabled: z.boolean().default(true).extra('volatile', true),
   minVideoViews: z.natural().default(1000).extra('volatile', true),
@@ -428,7 +430,7 @@ function reportMeta() {
     dmWatch: true, dmWatchMinutes: 1, commentReplyWatchMinutes: 3, commentAtWatchMinutes: 3, commentTopWatchMinutes: 5, dmReplyPerDay: 0, dmContextMessages: 40, dmOwnerUid: 0,
     dmWhitelist: '', dmStrangerOnce: false, dmStrangerMaxReplies: 1, dmStrangerFirstFixed: true,
     dmApprovalEnabled: false, dmApprovalPhrase: '白饭🍚', dmApprovedTotalLimit: 50, dmApprovedDailyLimit: 10, dmWishMentionLimit: 3,
-    videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '', memeRulesModelProvider:'', memeRulesModelId:'', memeRulesReasoningEffort:'',
+    videoModelProvider: '', videoModelId: '', videoReasoningEffort: '', interactionModelProvider: '', interactionModelId: '', interactionReasoningEffort: '', memeRulesModelProvider:'', memeRulesModelId:'', memeRulesReasoningEffort:'', memeRulesPrompt:'',
     commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12, backupDirectory: '',
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     mainSessionBridgeEnabled: false, mainSessionId: '', mainSessionAutoSync: true, mainSessionSyncMinutes: 60, mainSessionDailyBatches: 4, mainSessionBatchSize: 8, mainSessionIncludeComments: true,
@@ -477,6 +479,7 @@ function reportMeta() {
     if ('commentMemesPerDay' in p) p.commentMemesPerDay=Math.max(0,Math.min(10000,Math.floor(Number(p.commentMemesPerDay)||0)))
     if ('commentMemesPerRound' in p) p.commentMemesPerRound=Math.max(0,Math.min(5,Math.floor(Number(p.commentMemesPerRound)||0)))
     if ('commentMemePrompt' in p) p.commentMemePrompt=normalizeCommentMemePrompt(p.commentMemePrompt)
+    if ('memeRulesPrompt' in p) p.memeRulesPrompt=normalizeMemeRuleAIPrompt(p.memeRulesPrompt)
     if ('visionPrompt' in p) p.visionPrompt=normalizeVisionPrompt(p.visionPrompt)
     for (const k of ['visionEnabled','visionDebug','diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled']) if (k in p) p[k]=p[k]===true
     if ('visionMode' in p) p.visionMode=['reuse_video_model','independent_dsh','auto'].includes(p.visionMode)?p.visionMode:'reuse_video_model'
@@ -3635,7 +3638,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         const delta=computeMemeInventoryDelta(previousIndex?.names||[],names)
         const mode=requestedMode==='full'?'full':'incremental'
         if(mode==='incremental'&&previousIndex&&!delta.added.length&&!delta.removed.length){
-          return sendJson(res,200,{ok:true,noChanges:true,mode:'incremental',count:readCommentMemeRules(stateDir,pluginDir).data.rules.length,added:0,removed:0,message:'图库自上次 AI 更新后没有新增、删除或改名的表情包；为节省 Token，未调用模型。大肥鱼的当前兴趣仍会实时影响本地候选排序；需要重新整理规则时，请使用“全量优化”。'})
+          return sendJson(res,200,{ok:true,noChanges:true,mode:'incremental',count:readCommentMemeRules(stateDir,pluginDir).data.rules.length,added:0,removed:0,message:'图库自上次 AI 更新后没有新增、删除或改名的表情包；为节省 Token，未调用模型。兴趣变化由本地检索实时调整排序，不需要更新规则；需要重新整理稳定规则时，请使用“全量优化”。'})
         }
         const current=readCommentMemeRules(stateDir,pluginDir).data
         // Remove stale targets from the prompt copy only; persisted rules remain untouched until AI output passes validation.
@@ -3643,9 +3646,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         let modelNames=mode==='full'?names:[...delta.added]
         let modelAdded=mode==='incremental'?[...delta.added]:delta.added
         let modelRemoved=mode==='incremental'?[...delta.removed]:delta.removed
-        // Only pass the fish's own learned interests (topic/stage/evidence counts); never owner keywords, friend profiles, or message text.
-        const learnedInterests=(lifeReflection?.interests?.()||[]).filter(e=>['stable','growing','emerging'].includes(e.stage))
-        const makePrompt=()=>buildMemeRuleAIUpdatePrompt({mode,currentRules:promptRules,names:modelNames,added:modelAdded,removed:modelRemoved,total:inventory.total,interests:learnedInterests})
+        // Stable rule maintenance is intentionally independent from the current interest profile.
+        // The local Python retriever reads current interests at query time and adjusts ranking without AI calls.
+        const makePrompt=()=>buildMemeRuleAIUpdatePrompt({mode,currentRules:promptRules,names:modelNames,added:modelAdded,removed:modelRemoved,total:inventory.total,customPrompt:cfg.memeRulesPrompt})
         let prompt=makePrompt()
         // DSH is launched with a single prompt argument; keep it safely below Windows' command-line limit.
         if(mode==='full'&&prompt.length>24_000)throw Error('全量规则提示超过安全命令行长度。为避免启动失败或一次消耗过多 Token，请先使用“AI 增量更新”分批处理；旧规则未修改。')
@@ -3806,6 +3809,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     }
     if (req.method === 'GET' && path === '/api/bili-duty/comment-meme-prompt-default') {
       return sendJson(res, 200, {ok:true, prompt:DEFAULT_COMMENT_MEME_PROMPT, maxLength:4000})
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/comment-meme-rules/ai-prompt-default') {
+      return sendJson(res, 200, {ok:true, prompt:DEFAULT_MEME_RULE_AI_PROMPT, maxLength:8000})
     }
     // 大肥鱼人格成长记忆：直接集成到 DSH 原生设置页，无需启动 127.0.0.1:18763 管理服务。
     // 同一条经验的模型提炼不并发；失效/断线只影响候选，不会自动批准。
@@ -4120,7 +4126,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const patch = {}
       for (const k of ['masterEnabled', 'perDay', 'pickPerRound', 'peakValley', 'peakWindows', 'peakIntervalMinutes', 'autoComment', 'transcribe', 'asrModel',
         'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
-        'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort','memeRulesModelProvider','memeRulesModelId','memeRulesReasoningEffort',
+        'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort','memeRulesModelProvider','memeRulesModelId','memeRulesReasoningEffort','memeRulesPrompt',
         'keywords', 'coreInterestTopics', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
         'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionMemorySemanticEnabled', 'mainSessionMemoryModelProvider', 'mainSessionMemoryModelId', 'mainSessionMemoryReasoningEffort', 'mainSessionMemoryCandidates', 'mainSessionMemorySearchDailyLimit', 'socialOutreachEnabled', 'socialLifeIntentEnabled', 'emotionSystemEnabled', 'socialAutoSend', 'socialOutreachDailyLimit', 'ownerTodoAutoReviewEnabled', 'ownerTodoReviewMinutes', 'mainSessionReflectionAuto', 'mainSessionReflectionModelProvider', 'mainSessionReflectionModelId', 'mainSessionReflectionReasoningEffort', 'mainSessionReflectionMinCandidates', 'mainSessionReflectionBatchSize', 'mainSessionReflectionIntervalHours', 'mainSessionReflectionDailyBatches', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId','autoVideoLike','autoVideoLikeDailyLimit','autoVideoCollect','agentFollowEnabled','dailyDynamicEnabled','dailyDynamicDailyLimit','dailyDynamicDraftOnly']) {
         if (k in body) patch[k] = body[k]
@@ -4151,7 +4157,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const { clean, host } = await persistCfg(patch)
       // 启用主 Session 桥的这一刻就建立基线，避免“保存后到下一次定时检查之间”的旧经历被误当成新经历。
       if (clean.mainSessionBridgeEnabled === true) { try { mainSessionBridge.collect() } catch (e) { log('主 Session 基线建立失败：'+String(e?.message||e)) } }
-      log(`设置已更新：${JSON.stringify({...clean, ...('mentionProfiles' in clean ? {mentionProfiles:'[好友画像已更新]'} : {}), ...('personaPrompt' in clean ? {personaPrompt:'[人设提示词已更新]'} : {}), ...('characterLore' in clean ? {characterLore:'[角色关系设定已更新]'} : {}), ...('commentMemePrompt' in clean ? {commentMemePrompt: '[选图提示词已更新]'} : {}), ...('visionPrompt' in clean ? {visionPrompt: '[识图提示词已更新]'} : {})})}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
+      log(`设置已更新：${JSON.stringify({...clean, ...('mentionProfiles' in clean ? {mentionProfiles:'[好友画像已更新]'} : {}), ...('personaPrompt' in clean ? {personaPrompt:'[人设提示词已更新]'} : {}), ...('characterLore' in clean ? {characterLore:'[角色关系设定已更新]'} : {}), ...('commentMemePrompt' in clean ? {commentMemePrompt: '[选图提示词已更新]'} : {}), ...('visionPrompt' in clean ? {visionPrompt: '[识图提示词已更新]'} : {}), ...('memeRulesPrompt' in clean ? {memeRulesPrompt: '[表情包规则维护提示词已更新]'} : {})})}（DSH 那边${host.ok ? '已同步' : '没写成：' + host.error}）`)
       return sendJson(res, 200, { ok: true, config: cfg, host })
     }
 

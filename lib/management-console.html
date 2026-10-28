@@ -147,7 +147,7 @@ input[type=checkbox]{accent-color:#16865f}
 <div><label class="checkline"><input id="models-vision-enabled" type="checkbox">启用视频预览识图</label></div>
 <div><label class="checkline"><input id="models-vision-debug" type="checkbox">开启视觉识图调试日志（排障用）</label></div></div>
 </div>
-<div class="settings-section"><h4>表情包检索规则优化</h4><div class="model-activity"><span id="models-memeRules-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-memeRules-test" class="model-test-button">测试连接</button><span id="models-memeRules-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">仅在「表情包管理」点击 AI 更新时调用；不参与每次评论。留空时继承 DSH 当前默认模型。建议使用低成本模型与 low 思考深度；提示词只包含表情包名称/分类、现有规则和经过校验的大肥鱼自身兴趣摘要（主题、阶段、证据计数）；不会发送评论、私信、好友画像或图片。</p><div class="fields" id="models-memeRules"></div></div>
+<div class="settings-section"><h4>表情包检索规则优化</h4><div class="model-activity"><span id="models-memeRules-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-memeRules-test" class="model-test-button">测试连接</button><span id="models-memeRules-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">仅在「表情包管理」点击 AI 更新时调用；不参与每次评论。留空时继承 DSH 当前默认模型。建议使用低成本模型与 low 思考深度；提示词只包含真实表情包名称/分类与现有规则；不会读取或发送大肥鱼的当前兴趣、评论、私信、好友画像或图片。兴趣由本地检索在每次查询时动态读取。</p><div class="fields" id="models-memeRules"></div></div>
 <div class="settings-section"><h4>低成本人生记忆检索</h4><div class="model-activity"><span id="models-memory-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-memory-test" class="model-test-button">测试连接</button><span id="models-memory-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">仅挑选真实记忆 ID，不能发送 B站消息或修改记忆。是否启用及检索额度仍在「大肥鱼的家」设置。</p><div class="fields" id="models-memory"></div></div>
 <div class="toolbar"><button id="models-save" class="primary">保存全部模型配置</button><button id="models-refresh">重新读取</button></div>
 </div></section>
@@ -480,7 +480,14 @@ input[type=checkbox]{accent-color:#16865f}
 </div>
 <div class="card" style="margin-bottom:14px">
 <h3>AI 自动维护本地匹配规则</h3>
-<p class="muted">AI 只在你点击时运行，不会每条评论都额外消耗 Token。AI 维护提示会参考大肥鱼基于真实入选视频形成的自身兴趣（不读取主人额外选片关键词或好友画像）。日常检索会实时读取有效兴趣，对已经匹配当前评论的候选做小幅排序加权，不额外消耗 Token；兴趣不会单独强行召回无关图片。默认按新增/删除的表情包做增量更新；如果图库没有变化，就跳过模型调用，因为兴趣变化已经能即时影响本地排序。全量优化会把当前图库名称、现有规则和兴趣摘要交给「AI 模型」页配置的模型。AI 输出通过结构和真实文件名校验后才会写入本地，并保留一份更新前备份。当前不分析图片画面，也不生成视觉语义标签。</p>
+<p class="muted">AI 只在你点击时运行，不会每条评论都额外消耗 Token。AI 维护只整理相对稳定的评论语境→真实表情包名称/分类规则，不读取当前兴趣；兴趣变化不触发规则重写。日常检索会实时读取最新有效兴趣，对已经匹配当前评论的候选做小幅排序加权，不额外消耗 Token；兴趣不会单独强行召回无关图片。默认按新增/删除的表情包做增量更新；如果图库没有变化，就跳过模型调用。全量优化只会把当前图库名称与现有规则交给「AI 模型」页配置的模型。AI 输出通过结构和真实文件名校验后才会写入本地，并保留一份更新前备份。当前不分析图片画面，也不生成视觉语义标签。</p>
+<div class="settings-section" style="margin:12px 0">
+<h4>AI 维护表情包语义规则的提示词（可查看、可编辑）</h4>
+<p class="muted">这里编辑的是 AI 维护稳定检索规则时使用的基础指令。系统会在后面自动附加本次更新模式、真实图库名称和当前旧规则；不会附加大肥鱼当前兴趣、视频标题、评论正文、私信、好友画像或图片画面。即使修改提示词，程序仍会强制校验 JSON 格式、规则数量和 target 是否真实存在；不合格输出不会覆盖旧规则。只有点击“保存提示词”后，修改才会用于后续 AI 更新。若图库没有变化，普通增量更新会跳过模型；要把新提示词应用到已有规则，请使用“AI 全量优化”，会消耗更多 Token。</p>
+<label for="meme-rule-ai-prompt">规则维护提示词</label>
+<textarea id="meme-rule-ai-prompt" maxlength="8000" rows="14" spellcheck="false" placeholder="正在读取默认提示词…"></textarea>
+<div class="toolbar"><button id="meme-rule-ai-prompt-save" class="primary">保存提示词</button><button id="meme-rule-ai-prompt-reset">恢复默认提示词</button><span id="meme-rule-ai-prompt-status" class="muted" role="status" aria-live="polite">正在读取…</span></div>
+</div>
 <div class="toolbar"><button id="meme-rule-ai-update" class="primary">AI 增量更新本地规则</button><button id="meme-rule-ai-full">AI 全量优化（Token 较多）</button><button id="meme-rule-ai-restore">恢复 AI 更新前规则</button><span id="meme-rule-ai-status" class="muted" role="status" aria-live="polite">尚未运行 AI 规则更新</span></div>
 </div>
 <div class="card" style="margin-bottom:14px">
