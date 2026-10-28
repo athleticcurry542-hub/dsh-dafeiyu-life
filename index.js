@@ -42,6 +42,9 @@ import { ensureUv } from './lib/uvfetch.mjs'
 import { createDmAutoReply } from './lib/dm-autoreply.mjs'
 import { listActiveVideoWishes, rotatingWishKeywords } from './lib/video-wishes.mjs'
 import { receiveRecommendations, listRecommendationCandidates } from './lib/video-recommendations.mjs'
+import { collectLocalLifeEvents } from './lib/local-life-source.mjs'
+import { observeFriendInterest, learnedFriendContext, listFriendLearning, clearFriendLearning } from './lib/friend-learning.mjs'
+import { createSocialIntentEngine } from './lib/social-intentions.mjs'
 import { createDmVideoRecommendationContext } from './lib/dm-video-recommendation.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
@@ -242,6 +245,9 @@ export const Config = !z ? undefined : z.object({
   mainSessionMemorySearchDailyLimit: z.natural().default(80).extra('volatile', true),
   /** B站经历先进入候选池，再由受限 AI 定期凝练成人生记忆。 */
   mainSessionReflectionAuto: z.boolean().default(true).extra('volatile', true),
+  socialOutreachEnabled: z.boolean().default(false).extra('volatile', true),
+  socialAutoSend: z.boolean().default(false).extra('volatile', true),
+  socialOutreachDailyLimit: z.natural().default(1).extra('volatile', true),
   mainSessionReflectionModelProvider: z.string().default('').extra('volatile', true),
   mainSessionReflectionModelId: z.string().default('').extra('volatile', true),
   mainSessionReflectionReasoningEffort: z.string().default('').extra('volatile', true),
@@ -409,7 +415,7 @@ function reportMeta() {
     commentWatchReplies: false, commentWatchTop: false, commentAtEnabled: false, commentAtMode:'whitelist', commentAtWhitelist:'', commentTopCount: 5, commentTopVideoCount: 3, commentReplyHotCount: 12, backupDirectory: '',
     commentAllowGeneralTop: false, commentReplyPerPoll: 1, commentReplyPerDay: 5, commentOwnTopPerUser: 5, commentOwnNestedPerUser: 3,
     mainSessionBridgeEnabled: false, mainSessionId: '', mainSessionAutoSync: true, mainSessionSyncMinutes: 60, mainSessionDailyBatches: 4, mainSessionBatchSize: 8, mainSessionIncludeComments: true,
-    mainSessionMemoryEnabled: false, mainSessionMemoryAutoBili: true, mainSessionMemorySemanticEnabled: false, mainSessionMemoryModelProvider: '', mainSessionMemoryModelId: '', mainSessionMemoryReasoningEffort: '', mainSessionMemoryCandidates: 48, mainSessionMemorySearchDailyLimit: 80, mainSessionReflectionAuto: true, mainSessionReflectionModelProvider: '', mainSessionReflectionModelId: '', mainSessionReflectionReasoningEffort: '', mainSessionReflectionMinCandidates: 6, mainSessionReflectionBatchSize: 16, mainSessionReflectionIntervalHours: 6, mainSessionReflectionDailyBatches: 2, mainSessionMemoryHalfLifeDays: 30, mainSessionMemoryThreshold: 0.35, mainSessionMemoryMaxItems: 6, mainSessionMemoryMaxChars: 800, mainSessionMemoryDailyQuota: 8, mainSessionMemoryFactsMax: 2,
+    mainSessionMemoryEnabled: false, mainSessionMemoryAutoBili: true, mainSessionMemorySemanticEnabled: false, mainSessionMemoryModelProvider: '', mainSessionMemoryModelId: '', mainSessionMemoryReasoningEffort: '', mainSessionMemoryCandidates: 48, mainSessionMemorySearchDailyLimit: 80, socialOutreachEnabled:false, socialAutoSend:false, socialOutreachDailyLimit:1, mainSessionReflectionAuto: true, mainSessionReflectionModelProvider: '', mainSessionReflectionModelId: '', mainSessionReflectionReasoningEffort: '', mainSessionReflectionMinCandidates: 6, mainSessionReflectionBatchSize: 16, mainSessionReflectionIntervalHours: 6, mainSessionReflectionDailyBatches: 2, mainSessionMemoryHalfLifeDays: 30, mainSessionMemoryThreshold: 0.35, mainSessionMemoryMaxItems: 6, mainSessionMemoryMaxChars: 800, mainSessionMemoryDailyQuota: 8, mainSessionMemoryFactsMax: 2,
     dmStrangerText: '你好，我是这个账号的 AI 助手，已收到你的私信。陌生用户暂时只能收到这一条自动回复；请不要发送密码、验证码等敏感信息。',
     personaPrompt: DEFAULT_PERSONA_PROMPT, characterLore: '',
     perDay: 50, pickPerRound: 5, peakValley: false, peakWindows: '[]', peakIntervalMinutes: 30, autoComment: false, transcribe: false, asrModel: 'small',
@@ -489,6 +495,9 @@ function reportMeta() {
     if ('mainSessionMemoryCandidates' in p) p.mainSessionMemoryCandidates = Math.max(12,Math.min(80,Math.round(Number(p.mainSessionMemoryCandidates)||48)))
     if ('mainSessionMemorySearchDailyLimit' in p) p.mainSessionMemorySearchDailyLimit = Math.max(0,Math.min(500,Math.round(Number(p.mainSessionMemorySearchDailyLimit)||0)))
     if ('mainSessionReflectionAuto' in p) p.mainSessionReflectionAuto = p.mainSessionReflectionAuto !== false
+    if ('socialOutreachEnabled' in p) p.socialOutreachEnabled=p.socialOutreachEnabled===true
+    if ('socialAutoSend' in p) p.socialAutoSend=p.socialAutoSend===true
+    if ('socialOutreachDailyLimit' in p) p.socialOutreachDailyLimit=Math.max(0,Math.min(3,Math.round(Number(p.socialOutreachDailyLimit)||0)))
     for (const key of ['mainSessionReflectionModelProvider','mainSessionReflectionModelId','mainSessionReflectionReasoningEffort']) if (key in p) p[key] = String(p[key]||'').trim().replace(/[\r\n\0]/g,'').slice(0,160)
     if ('mainSessionReflectionMinCandidates' in p) p.mainSessionReflectionMinCandidates = Math.max(2,Math.min(30,Math.floor(Number(p.mainSessionReflectionMinCandidates)||6)))
     if ('mainSessionReflectionBatchSize' in p) p.mainSessionReflectionBatchSize = Math.max(4,Math.min(30,Math.floor(Number(p.mainSessionReflectionBatchSize)||16)))
@@ -641,6 +650,7 @@ function reportMeta() {
   let longTermMemory = null
   let memoryRetriever = null
   let lifeReflection = null
+  let socialIntentEngine = null
   let dailyDynamic = null
   let memeLearning = null
   const pauseFile = join(stateDir, '.bili-duty-paused')
@@ -1851,6 +1861,7 @@ function reportMeta() {
     args.push('--patch', overlay)
     try { assertSafeHeadlessLaunch(args,overlay,{kind:'main',stateDir}) }
     catch (e) { return {started:false,why,error:'安全隔离校验失败，已拒绝启动：'+String(e?.message||e)} }
+    const watchedBeforeRun=new Set(parseSeenTable().filter(x=>x.picked).map(x=>x.bvid))
     const pickedBeforeRun = countPickedToday()
     const roundLimitAtStart = picksThisRound(cfg.perDay, cfg.pickPerRound, pickedBeforeRun)
     args.push(promptFor())
@@ -1896,6 +1907,13 @@ function reportMeta() {
     child.stderr?.on('data', pick)
     child.on('exit', (code) => {
       log(`刷B站结束（${why}，code=${code}）`)
+      // New and actually selected BV evidence only. Historic picks and merely queued
+      // recommendations must never trigger social outreach.
+      if(code===0)try{
+        collectRealLife?.()
+        const newlyWatched=parseSeenTable().filter(x=>x.picked&&!watchedBeforeRun.has(x.bvid))
+        if(newlyWatched.length&&socialIntentEngine)void socialIntentEngine.reflectOnWatched(newlyWatched).catch(e=>log('社交反思失败：'+String(e?.message||e)))
+      }catch(e){log('新经历/社交观察失败：'+String(e?.message||e))}
       stubReportIfMissing(code)   // ⭐ 没写报告就补一份占位 —— 别让使用者什么都看不到
       // v2.4.84：不再调用整轮批量收藏；仅由视频 Agent 根据已入选视频决定。
       rotateLogIfBig()            // ⭐ 日志别无声地长（三天 797KB ⇒ 一年约 100MB）
@@ -2154,7 +2172,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
 
   const replyIdentityContext = (uid) => buildSenderRelationshipContext({
     uid, friendDirectory:cfg.friendDirectory, profiles:cfg.mentionProfiles, targetsText:cfg.mentionTargets
-  })
+  }) + '\n' + learnedFriendContext(stateDir,uid,cfg.friendDirectory)
   const interactionMemeLookup = createInteractionMemeLookup({
     dataDir: stateDir,
     isEnabled: () => {refreshCfg();return cfg.memeMemoryEnabled===true},
@@ -2163,11 +2181,10 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     logger:{warn:(msg)=>log('互动梗检索：'+msg),info:(msg)=>log('互动梗检索：'+msg)},
   })
   const interactionBatcher = createInteractionBatcher({
-    prepareMemoryContexts: async(batch)=>Promise.all(batch.map(async x=>{
-      if(!memoryRetriever||cfg.mainSessionMemoryEnabled!==true)return '';
-      const q=[x.text||'',x.context||''].join(' ').slice(0,1100);
-      return (await memoryRetriever.retrieve(q,x.kind==='comment'?'comment':'dm')).context;
-    })),
+    // External B站 callers have NO access to identity/owner long-term memory,
+    // even if a memory was originally derived from public video text.
+    // Avoid model shortlist leaks and prompt injection via long-term memory retrieval.
+    prepareMemoryContexts: async(batch)=>batch.map(()=>''),
     prepareMemeContexts: (batch) => interactionMemeLookup.forBatch(batch),
     invoke: (prompt) => invokeInteractionPrompt(prompt, 24000),
     getPersona: (batch = []) => {
@@ -2206,6 +2223,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const match=String(raw).match(/\{[\s\S]*?\}/);if(!match)return null;
       try{const value=JSON.parse(match[0]);return ['approve','reject'].includes(value?.decision)?value:null;}catch{return null;}
     },
+    onIncoming: ({uid,text,messageId,time})=>observeFriendInterest(stateDir,{uid,text,source:'dm',eventId:messageId,now:time,friendDirectory:cfg.friendDirectory}),
     generateReply: async (req) => interactionBatcher.generate({kind:'dm', ...req,
       recommendationContext:await dmVideoRecommendationContext.forReply(req),
       identityContext:replyIdentityContext(req.uid)}),
@@ -2259,7 +2277,10 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       return [...new Set(parseSeenTable().filter(x => x.day >= cutoff && (x.picked || x.delivered)).map(x => x.bvid))]
     },
     getComments: (bvid, num) => call('bili_comments', {bvid, num}),
-    generateReply: (req) => interactionBatcher.generate({...req,identityContext:replyIdentityContext(req.uid)}),
+    generateReply: (req) => {
+      if(req.uid&&req.text)try{observeFriendInterest(stateDir,{uid:req.uid,text:req.text,source:'comment',eventId:(req.bvid||'')+':'+String(req.rpid||req.id||'unknown'),friendDirectory:cfg.friendDirectory})}catch(e){log('评论好友爱好学习失败：'+String(e?.message||e).slice(0,90))}
+      return interactionBatcher.generate({...req,identityContext:''})
+    },
     send: async (req) => {
       // 后台独立发送，受评论互动专用开关保护，不使用 model 的 force 绕过公开评论安全闸。
       refreshCfg()
@@ -2581,9 +2602,35 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
   })
   lifeReflection.start()
   ctx.effect(() => () => lifeReflection.stop(), 'bili-duty: 人生记忆自主反思')
+  // Separate identity learning from Main Session delivery: having no selected home must
+  // never suppress real experiences from the long-term reflection candidate pool.
+  const collectRealLife=()=>{
+    try{
+      const comments=recentComments(stateDir,{limit:200})?.rows||[]
+      const meta=reportMeta()
+      const watched=parseSeenTable().map(x=>({...x,...(meta.get(x.bvid)||{})}))
+      return lifeReflection.addEvents(collectLocalLifeEvents({watched,comments,days:14}))
+    }catch(e){log('本地经历反思收集失败：'+String(e?.message||e).slice(0,120));return {added:0,error:String(e?.message||e)}}
+  }
+  // First scan is idempotent, doesn't need an online Session and doesn't send messages.
+  try{collectRealLife()}catch{}
+  const lifeCollectTimer=setInterval(()=>{try{collectRealLife()}catch{}},10*60_000)
+  lifeCollectTimer.unref?.()
+  ctx.effect(()=>()=>clearInterval(lifeCollectTimer),'bili-duty: 独立人生经历候选收集')
+
 
   // 大肥鱼主 Session 是“家/人格记忆”，现有插件仍是“后台身体/精确档案”。
   // 这里只枚举 DSH 当前活着的 agent；绝不扫描 ~/.dsh/sessions，也不读取其它会话历史。
+  socialIntentEngine=createSocialIntentEngine({
+    dataDir:stateDir,getConfig:()=>{refreshCfg();return cfg},
+    invokeModel:(prompt,maxChars,opt)=>invokeInteractionPrompt(prompt,maxChars,opt),
+    sendMessage:async({uid,text})=>{
+      refreshCfg();if(cfg.masterEnabled!==true)return {ok:false,error:'总开关关闭'}
+      const r=await call('bili_send_message',{receiver_uid:Number(uid),text:String(text).slice(0,230)})
+      return r?.success===true?{ok:true}:{ok:false,error:String(r?.error||r?.message||'远端未确认成功')}
+    },logger:{warn:m=>log('社交意图：'+m)}
+  })
+
   mainSessionBridge = createMainSessionBridge({
     dataDir: stateDir,
     agents: ctx.agents,
@@ -3562,6 +3609,39 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       }catch(e){return sendJson(res,400,{ok:false,error:'长期记忆备份操作失败：'+String(e?.message||e).slice(0,300)})}
     }
 
+    // Sensitively scoped administrative data: never serve it to cross-site
+    // requests. UI uses same-origin fetch with credentials.
+    if (['/api/bili-duty/friend-learning','/api/bili-duty/social-intentions'].includes(path)) {
+      const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
+      if(origin&&(!host||![`http://${host}`,`https://${host}`].includes(origin)))return sendJson(res,403,{ok:false,error:'私密社交数据仅限同源管理中心'})
+      if(String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')return sendJson(res,403,{ok:false,error:'拒绝跨站访问私密社交数据'})
+      res.setHeader('Cache-Control','no-store')
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/friend-learning') {
+      try{return sendJson(res,200,{ok:true,rows:listFriendLearning(stateDir,cfg.friendDirectory)})}
+      catch(e){return sendJson(res,400,{ok:false,error:String(e?.message||e)})}
+    }
+    if (req.method === 'GET' && path === '/api/bili-duty/social-intentions') {
+      try{return sendJson(res,200,socialIntentEngine.status())}
+      catch(e){return sendJson(res,400,{ok:false,error:String(e?.message||e)})}
+    }
+    if (req.method === 'POST' && ['/api/bili-duty/social-intentions','/api/bili-duty/friend-learning/clear'].includes(path)) {
+      const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
+      if(origin&&(!host||![`http://${host}`,`https://${host}`].includes(origin)))return sendJson(res,403,{ok:false,error:'只允许同源管理中心操作'})
+      if(String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')return sendJson(res,403,{ok:false,error:'拒绝跨站写入'})
+      try{
+        const body=await readBody(req)
+        if(path.endsWith('friend-learning/clear')){
+          if(body?.confirm!=='CLEAR_FRIEND_OBSERVATIONS')return sendJson(res,400,{ok:false,error:'需要明确删除确认'})
+          return sendJson(res,200,{ok:true,...clearFriendLearning(stateDir,body.uid,cfg.friendDirectory)})
+        }
+        if(!socialIntentEngine)return sendJson(res,503,{ok:false,error:'社交系统尚未初始化'})
+        if(body?.action==='dismiss')return sendJson(res,200,socialIntentEngine.dismiss(String(body.id||'')))
+        if(body?.action==='send')return sendJson(res,200,await socialIntentEngine.send(String(body.id||''),{confirm:body.confirm==='SEND_SOCIAL_DRAFT'}))
+        return sendJson(res,400,{ok:false,error:'未知社交草稿操作'})
+      }catch(e){return sendJson(res,400,{ok:false,error:String(e?.message||e).slice(0,220)})}
+    }
+
     if (req.method === 'GET' && path === '/api/bili-duty/model-usage') {
       return sendJson(res,200,{ok:true,...readModelTaskUsage(stateDir)})
     }
@@ -3588,7 +3668,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         'diagMentionEnabled','diagDynamicEnabled','diagVisionEnabled','diagMemeEnabled','diagAtInviteEnabled','diagReplyInboxEnabled','commentMemesEnabled','commentMemesDebug','commentMemesPerDay','commentMemesPerRound','commentMemePrompt','visionPrompt','memeMemoryEnabled', 'memeMemoryMaxEntries', 'visionEnabled', 'visionDebug', 'visionMode', 'visionModelProvider', 'visionModelId', 'visionReasoningEffort', 'visionEndpoint', 'visionFrames', 'visionDailyLimit', 'commentPerRound', 'mentionName', 'mentionTargets', 'mentionProfiles', 'friendDirectory', 'mentionMode', 'dmMode', 'dmUid', 'commentSyncDynamic', 'dynamicDailyLimit', 'commentDailyLimit',
         'videoModelProvider','videoModelId','videoReasoningEffort','interactionModelProvider','interactionModelId','interactionReasoningEffort',
         'keywords', 'pythonPath', 'dshBin', 'headlessProfile', 'workspace', 'reportLevel', 'personaPrompt', 'characterLore', 'dmWatch', 'dmWatchMinutes', 'commentReplyWatchMinutes', 'commentAtWatchMinutes', 'commentTopWatchMinutes', 'dmReplyPerDay', 'dmContextMessages', 'dmOwnerUid', 'dmWhitelist', 'dmStrangerOnce', 'dmStrangerText', 'dmStrangerMaxReplies', 'dmStrangerFirstFixed', 'dmApprovalEnabled','dmApprovalPhrase','dmApprovedTotalLimit','dmApprovedDailyLimit','dmWishMentionLimit',
-        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionMemorySemanticEnabled', 'mainSessionMemoryModelProvider', 'mainSessionMemoryModelId', 'mainSessionMemoryReasoningEffort', 'mainSessionMemoryCandidates', 'mainSessionMemorySearchDailyLimit', 'mainSessionReflectionAuto', 'mainSessionReflectionModelProvider', 'mainSessionReflectionModelId', 'mainSessionReflectionReasoningEffort', 'mainSessionReflectionMinCandidates', 'mainSessionReflectionBatchSize', 'mainSessionReflectionIntervalHours', 'mainSessionReflectionDailyBatches', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId','autoVideoLike','autoVideoLikeDailyLimit','autoVideoCollect','agentFollowEnabled','dailyDynamicEnabled','dailyDynamicDailyLimit','dailyDynamicDraftOnly']) {
+        'commentWatchReplies', 'commentWatchTop', 'commentAtEnabled', 'commentAtMode', 'commentAtWhitelist', 'commentTopCount', 'commentTopVideoCount', 'commentReplyHotCount', 'commentAllowGeneralTop', 'commentReplyPerPoll', 'commentReplyPerDay', 'commentOwnTopPerUser', 'commentOwnNestedPerUser', 'mainSessionBridgeEnabled', 'mainSessionId', 'mainSessionAutoSync', 'mainSessionSyncMinutes', 'mainSessionDailyBatches', 'mainSessionBatchSize', 'mainSessionIncludeComments', 'mainSessionMemoryEnabled', 'mainSessionMemoryAutoBili', 'mainSessionMemorySemanticEnabled', 'mainSessionMemoryModelProvider', 'mainSessionMemoryModelId', 'mainSessionMemoryReasoningEffort', 'mainSessionMemoryCandidates', 'mainSessionMemorySearchDailyLimit', 'socialOutreachEnabled', 'socialAutoSend', 'socialOutreachDailyLimit', 'mainSessionReflectionAuto', 'mainSessionReflectionModelProvider', 'mainSessionReflectionModelId', 'mainSessionReflectionReasoningEffort', 'mainSessionReflectionMinCandidates', 'mainSessionReflectionBatchSize', 'mainSessionReflectionIntervalHours', 'mainSessionReflectionDailyBatches', 'mainSessionMemoryHalfLifeDays', 'mainSessionMemoryThreshold', 'mainSessionMemoryMaxItems', 'mainSessionMemoryMaxChars', 'mainSessionMemoryDailyQuota', 'mainSessionMemoryFactsMax', 'favFolderId','autoVideoLike','autoVideoLikeDailyLimit','autoVideoCollect','agentFollowEnabled','dailyDynamicEnabled','dailyDynamicDailyLimit','dailyDynamicDraftOnly']) {
         if (k in body) patch[k] = body[k]
       }
       // ⭐⭐ 2.0.4（issue #83）：**服务端空值保护** —— 前端某次自动保存会把空字符串/空数组推上来，

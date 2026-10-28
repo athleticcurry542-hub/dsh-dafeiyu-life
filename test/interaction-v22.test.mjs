@@ -88,10 +88,10 @@ test('评论通知：首次基线不追发旧消息，之后新消息才回复',
   assert.equal((await make().poll()).sent,0);
 });
 
-test('统一AI生成队列能把私信和评论批成同一次模型调用',async()=>{
+test('同一AI队列隔离私信与其他用户的公开评论，防止单次模型请求串线',async()=>{
   const requests=[];
   const model=createInteractionBatcher({getPersona:()=> '轻松自然',delayMs:15,
-    invoke:async prompt=>{requests.push(prompt);return JSON.stringify({items:[{id:'0',reply:'你好'},{id:'1',reply:'投喂成功'}]});}});
+    invoke:async prompt=>{requests.push(prompt);const inp=JSON.parse(prompt.split('消息：').at(-1));return JSON.stringify({items:inp.map((x,i)=>({id:String(i),reply:x.kind==='dm'?'你好':'投喂成功'}))});}});
   const [a,b]=await Promise.all([model.generate({kind:'dm',uid:'100',text:'嗨'}),model.generate({kind:'comment',uid:'200',text:'大肥鱼来吃饭'})]);
-  assert.equal(a,'你好');assert.equal(b,'投喂成功');assert.equal(requests.length,1);model.stop();
+  assert.equal(a,'你好');assert.equal(b,'投喂成功');assert.equal(requests.length,2);model.stop();
 });

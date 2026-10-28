@@ -58,6 +58,15 @@ No source from this repository is intentionally vendored as third-party code in 
 - Relationship API protocol reference: [pskdje/bilibili-API-collect](https://github.com/pskdje/bilibili-API-collect/blob/main/docs/user/relation.md) for the **single-target** `GET /x/relation?fid=…` status check. No documentation source code has been copied. The new account-safety gates, local SQLite quotas and opt-in Bilibili MCP tools are independently implemented here.
 - Existing upstream `c1overzz/dsh-bili-scroll` and `adoresever/bilibili-mcp` notices and their MIT license files remain retained without modification.
 
+## v2.4.91 independently implemented privacy and social extension
+
+The opt-in per-UID friend interest observations, privacy-isolated interaction batching,
+local life-event reflection source, and evidence-based social outreach drafts in this
+version are implemented by this repository. The **dsh-fish-memory** credit above still
+applies to the integrated memory foundation and its reused design/implementation;
+this release does not introduce additional vendored code from another project.
+
+
 ## Community contributors
 
 See `CONTRIBUTORS.md` for fixes and implementation ideas adopted from community reports and pull requests.

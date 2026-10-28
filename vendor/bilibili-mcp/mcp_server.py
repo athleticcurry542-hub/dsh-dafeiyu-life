@@ -972,9 +972,13 @@ def _identity_public_memory(query: str, limit: int = 6) -> dict:
     if not isinstance(raw, dict) or not isinstance(raw.get('memories'), list):
         return {'ok': False, 'error': '记忆文件结构异常'}
     def public(m):
+        # Privacy-by-default: an automatically reflected Bilibili experience is
+        # NOT safe to quote in a public video Agent session. Explicitly approved
+        # public disclosure must be a separate future workflow, not inferred
+        # from an auto-generated source string or free-form tag.
         return (isinstance(m, dict) and isinstance(m.get('text'), str) and bool(m['text'].strip())
-                and not m.get('已被取代') and (m.get('source') in ('life-reflection','bilibili-experience')
-                or '可公开' in (m.get('tags') if isinstance(m.get('tags'), list) else [])))
+                and not m.get('已被取代') and m.get('visibility') == 'public'
+                and m.get('publicApproved') is True and m.get('source') == 'owner-public-approved')
     memories = [m for m in raw['memories'][-5000:] if public(m)]
     q = str(query or '').strip()[:400].lower()
     if len(q) < 2 or not memories:

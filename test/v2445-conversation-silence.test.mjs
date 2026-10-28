@@ -13,7 +13,7 @@ test('模型按每条会话独立选择 reply/skip，跳过不泄露控制字，
   const seen=[];
   const model=createInteractionBatcher({delayMs:1,getPersona:()=>'',invoke:async prompt=>{
     seen.push(prompt);
-    return JSON.stringify({items:[{id:'0',action:'skip',reply:''},{id:'1',action:'reply',reply:'新问题当然可以继续聊'}]});
+    return JSON.stringify({items:[{id:'0',action:prompt.includes('新的问题')?'reply':'skip',reply:prompt.includes('新的问题')?'新问题当然可以继续聊':''}]});
   }});
   const [s,r]=await Promise.all([
     model.generate({kind:'comment',mode:'self-top',uid:'100',text:'那就先这样',canSkip:true}),

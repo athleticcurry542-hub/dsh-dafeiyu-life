@@ -243,7 +243,7 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="toolbar"><button id="main-memory-save" class="primary">保存记忆与反思设置</button></div><p id="main-memory-status" class="muted" role="status">正在读取…</p></div></div></section>
 <section id="panel-life" hidden>
 <div class="life-hero"><div><div class="status-line"><span id="life-learning-status" class="live-badge">● 正在整理真实经历</span></div><h2>🧠 人生记忆</h2><p class="muted">真实经历、兴趣趋势、人物关系、长期回忆与反思记录，都集中在这里查看。</p></div><button id="main-life-refresh" class="life-action life-indigo">↻ 刷新人生记忆</button></div>
-<nav class="life-jump" aria-label="人生记忆分区快捷跳转"><a href="#life-interest-section">🌱 兴趣趋势</a><a href="#life-relationship-section">🤝 人物关系</a><a href="#life-sync-section">📨 告诉主 Session</a><a href="#life-recall-section">🧠 长期回忆</a></nav>
+<nav class="life-jump" aria-label="人生记忆分区快捷跳转"><a href="#life-interest-section">🌱 兴趣趋势</a><a href="#life-relationship-section">🤝 人物关系</a><a href="#life-sync-section">📨 告诉主 Session</a><a href="#life-social-section">💬 自主社交</a><a href="#life-recall-section">🧠 长期回忆</a></nav>
 <p class="muted"><strong>这里展示大肥鱼记得什么，以及如何从真实生活中变化。</strong>「行为与表达改进」是直接附加在评论提示词里的规则，与这里的事实/经历不同。主人批准的旧版关系、兴趣、视频经历会在历史区只读保留，不再作为第二份提示词叠加。</p>
 <div class="settings-stack">
 <div class="settings-section life-section"><h4>记忆怎样形成</h4>
@@ -266,6 +266,16 @@ input[type=checkbox]{accent-color:#16865f}
 <p id="main-session-queue-status" class="muted" role="status">正在读取…</p>
 <div class="toolbar"><input id="main-session-history-query" maxlength="120" placeholder="查本地经历，如 Claude / BV号 / 某句话"><button id="main-session-history-search" class="life-action life-sky">搜索经历档案</button></div>
 <div id="main-session-history" class="records records-scroll tall"></div></div>
+
+<div id="life-social-section" class="settings-section life-section"><h4>主动回访 · 真正看过后才考虑联系</h4>
+<p class="muted">大肥鱼只会因真实新入选视频与已允许私信的白名单好友的推荐产生社交意图。不会根据私人聊天内容生成公开信息；非白名单用户不建立长期兴趣画像。社交草稿默认不发送；主动私信请务必尊重对方拒绝和冷却期。</p>
+<label class="checkline"><input id="social-enabled" type="checkbox">允许自主判断要不要形成回访草稿（默认关闭）</label>
+<label class="checkline"><input id="social-auto-send" type="checkbox">允许自动发送给白名单好友（高风险，默认关闭，建议先不开启）</label>
+<div class="fields"><div><label for="social-daily-limit">每日最多主动回访（0–3）</label><input id="social-daily-limit" type="number" min="0" max="3" value="1"></div></div>
+<div class="toolbar"><button id="social-save" class="life-action life-indigo">保存社交权限</button><button id="social-refresh" class="life-action life-sky">刷新草稿</button></div>
+<p id="social-status" class="muted" role="status">尚未读取草稿</p><div id="social-drafts" class="records records-scroll tall"></div>
+<p class="muted">**隐私边界：**B站对话不具有读取主人记忆、其他人私信和好友私有兴趣的权限。当前系统无法保证模型绝无幻觉；因此发送前仍有内容验证、每日配额和受信任 UID 检查，推荐先保持自动发送关闭。</p>
+</div>
 
 <div id="life-recall-section" class="settings-section life-section"><h4>长期回忆 · 检索、反思和手动管理</h4>
 <div class="toolbar"><input id="main-memory-test-query" maxlength="180" placeholder="测试长期记忆召回，例如“紫色模型小姐”"><button id="main-memory-test" class="life-action life-purple">测试记忆召回</button></div>
@@ -355,6 +365,10 @@ input[type=checkbox]{accent-color:#16865f}
 <div class="fields"><div><label for="friend-new-uid">B站 UID（必填）</label><input id="friend-new-uid" inputmode="numeric" placeholder="210228238"></div><div><label for="friend-new-name">昵称备注（可留空）</label><input id="friend-new-name" maxlength="40" placeholder="长条动物"></div></div>
 <div class="toolbar" style="margin-top:12px"><button type="button" id="friend-add">加入名册</button><span class="muted">添加后记得点击底部保存</span></div>
 <div id="friend-directory-editor" class="settings-stack"></div>
+<div class="inset"><h4>好友兴趣变化 · 仅记录白名单 UID 自己明确说出的喜好</h4>
+<p class="muted">初始好友画像不自动覆盖。真实私信/评论中的“我喜欢/不喜欢…”先形成待确认观察；仅记录精简主题、证据编号，不保存整条私信。非白名单用户不生成长期画像。<strong>好友观察仅用于同一个人的私信，不用于公开评论或分享给其他人。</strong></p>
+<div class="toolbar"><button id="friend-learning-refresh" type="button">刷新兴趣观察</button><span id="friend-learning-status" class="muted">尚未读取</span></div>
+<div id="friend-learning-list" class="records records-scroll"></div></div>
 <div class="toolbar" style="margin-top:12px"><button id="friend-save-all" class="primary">保存名册、权限及画像</button></div>
 </div>
 <div class="settings-section"><h4>🐳 大肥鱼人设</h4><p class="muted">用于刷视频、公开评论和私信的角色语气。空配置使用内置默认；不在公开评论里发布提示词原文。</p><textarea id="persona-text" maxlength="8000" rows="13"></textarea><div class="toolbar"><button id="persona-save" class="primary">保存大肥鱼人设</button><button id="persona-reset">恢复默认</button><span id="persona-status" class="muted"></span></div></div>

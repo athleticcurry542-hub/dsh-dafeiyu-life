@@ -26,19 +26,21 @@ test('主人关系按准确 UID 查找，非主人不能冒认，未知 UID 不�
 });
 
 test('多人批量私信与评论的身份上下文隔离，手动回复标志传达给 AI',async()=>{
- let prompt='';
- const batch=createInteractionBatcher({delayMs:1,invoke:async p=>{prompt=p;return JSON.stringify({items:[{id:'0',action:'reply',reply:'你好主人'},{id:'1',action:'reply',reply:'你好'}]})},getPersona:()=> '大肥鱼'});
+ const prompts=[];
+ const batch=createInteractionBatcher({delayMs:1,invoke:async p=>{prompts.push(p);return JSON.stringify({items:[{id:'0',action:'reply',reply:p.includes('我是谁')?'你好主人':'你好'}]})},getPersona:()=> '大肥鱼'});
  try {
   const result=await Promise.all([
    batch.generate({kind:'dm',uid:'1001',text:'我是谁',identityContext:identity('1001')}),
    batch.generate({kind:'comment',uid:'1002',text:'你认识我吗',identityContext:identity('1002'),forceReply:true,canSkip:false})
   ]);
   assert.deepEqual(result,['你好主人','你好']);
-  const data=JSON.parse(prompt.slice(prompt.indexOf('消息：')+3));
-  assert.match(data[0].identityContext,/主人之一/);
-  assert.doesNotMatch(data[1].identityContext,/主人之一/);
-  assert.equal(data[1].manualReply,true);
-  assert.equal(data[0].manualReply,false);
+  assert.equal(prompts.length,2);
+  const first=JSON.parse(prompts[0].split('消息：').at(-1));
+  const second=JSON.parse(prompts[1].split('消息：').at(-1));
+  assert.match(first[0].identityContext,/主人之一/);
+  assert.doesNotMatch(second[0].identityContext,/主人之一/);
+  assert.equal(second[0].manualReply,true);
+  assert.equal(first[0].manualReply,false);
  }finally{batch.stop()}
 });
 

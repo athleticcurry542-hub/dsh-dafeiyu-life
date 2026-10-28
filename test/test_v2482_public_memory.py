@@ -37,8 +37,8 @@ class PublicMemoryTests(unittest.TestCase):
         self.tmp.cleanup()
     def test_readonly_only_public(self):
         result=env['_identity_public_memory']('模型娘',6)
-        self.assertTrue(result['ok']);self.assertEqual(result['source'],'local')
-        self.assertIn('模型娘',result['context'])
+        self.assertTrue(result['ok']);self.assertEqual(result['source'],'no-match')
+        self.assertEqual(result['context'],'')
         self.assertNotIn('主人住在',result['context'])
         self.assertNotIn('pvt',result['ids'])
     def test_invalid_query(self):

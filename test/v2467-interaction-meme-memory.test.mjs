@@ -30,8 +30,8 @@ test('不让无关视频热评触发梗，允许当前楼层直接上文触发',
   assert.equal(findReplyMemeMatches({text:'你好',history:[{role:'assistant',text:'鱼来'}]},memes).length,0);
 });
 test('批量私信与评论只带各自梗知识，没命中的没有梗',async()=>{
-  let received='';
-  const batcher=createInteractionBatcher({delayMs:1,batchSize:3,invoke:async prompt=>{received=prompt;return JSON.stringify({items:[{id:'0',action:'reply',reply:'来啦'},{id:'1',action:'reply',reply:'你好'},{id:'2',action:'skip',reply:''}]})},
+  const received=[];
+  const batcher=createInteractionBatcher({delayMs:1,batchSize:3,invoke:async prompt=>{received.push(prompt);const item=JSON.parse(prompt.split('消息：').at(-1))[0];return JSON.stringify({items:[{id:'0',action:item.text.includes('鱼来')||item.text.includes('饭桶鱼')?'reply':'skip',reply:item.uid==='100'?'来啦':'你好'}]})},
     getPersona:()=>'',prepareMemeContexts:async b=>b.map(x=>buildReplyMemeContext(x,memes))});
   try{
     const output=await Promise.all([
@@ -40,7 +40,8 @@ test('批量私信与评论只带各自梗知识，没命中的没有梗',async(
       batcher.generate({kind:'dm',uid:'300',text:'下午好'})
     ]);
     assert.deepEqual(output,['来啦','你好','SKIP']);
-    const items=JSON.parse(received.slice(received.indexOf('消息：')+3));
+    assert.equal(received.length,3);
+    const items=received.map(text=>JSON.parse(text.split('消息：').at(-1))[0]);
     assert.match(items[0].memeContext,/鱼来/);
     assert.doesNotMatch(items[0].memeContext,/饭桶鱼/);
     assert.match(items[1].memeContext,/饭桶鱼/);

@@ -34,7 +34,7 @@ test('模型编造不存在的记忆 ID 会被拒绝并退回本地检索',async
 })
 test('B站公开评论及其他用户私信不能取得主人的私人长期记忆',async()=>{
   const r=createMemoryRetriever({getMemories:()=>memory,getConfig:()=>({...conf,mainSessionMemorySemanticEnabled:false})})
-  const comment=await r.retrieve('模型娘','comment');assert.match(comment.context,/B站/)
+  const comment=await r.retrieve('模型娘','comment');assert.equal(comment.context,'')
   assert.doesNotMatch(comment.context,/浪哥|冰美式|Claude/)
   const dm=await r.retrieve('主人喜欢什么','dm');assert.equal(dm.context,'')
 })
