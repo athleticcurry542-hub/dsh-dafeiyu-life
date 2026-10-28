@@ -42,6 +42,7 @@ import { ensureUv } from './lib/uvfetch.mjs'
 import { createDmAutoReply } from './lib/dm-autoreply.mjs'
 import { listActiveVideoWishes, rotatingWishKeywords } from './lib/video-wishes.mjs'
 import { receiveRecommendations, listRecommendationCandidates } from './lib/video-recommendations.mjs'
+import { createDmVideoRecommendationContext } from './lib/dm-video-recommendation.mjs'
 import { collectDmInbox, parseDmWhitelist } from './lib/dm-inbox.mjs'
 import { picksThisRound } from './lib/pick-quota.mjs'
 import { createCommentInteract } from './lib/comment-interact.mjs'
@@ -2185,6 +2186,8 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     logger: {warn: (msg) => log('互动 AI：' + msg)},
   })
 
+  const dmVideoRecommendationContext=createDmVideoRecommendationContext({stateDir})
+
   const dmAutoreply = createDmAutoReply({
     dataDir: stateDir,
     getConfig: dmConfig,
@@ -2203,7 +2206,9 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
       const match=String(raw).match(/\{[\s\S]*?\}/);if(!match)return null;
       try{const value=JSON.parse(match[0]);return ['approve','reject'].includes(value?.decision)?value:null;}catch{return null;}
     },
-    generateReply: (req) => interactionBatcher.generate({kind:'dm', ...req,identityContext:replyIdentityContext(req.uid)}),
+    generateReply: async (req) => interactionBatcher.generate({kind:'dm', ...req,
+      recommendationContext:await dmVideoRecommendationContext.forReply(req),
+      identityContext:replyIdentityContext(req.uid)}),
     send: async ({ uid, text }) => {
       refreshCfg()
       if (cfg.masterEnabled !== true) return {ok:false,error:'总开关已关闭，私信发送已暂停'}
