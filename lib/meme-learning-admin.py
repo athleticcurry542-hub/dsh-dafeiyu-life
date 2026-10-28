@@ -3,16 +3,67 @@
 import json,sqlite3,sys,re,datetime
 from pathlib import Path
 
+# Only literal, bounded title strings from actually selected BVs are evidence.
+# These are tentative names, NOT explanations, characters, mood or visual identifications.
+STOP={'最新','完整版','合集','原创','搞笑','视频','推荐','剪辑','高能','必看','日常','体验','官方','直播','测试','介绍','挑战','投稿','翻唱','音乐','游戏','更新','教程','番剧'}
+BV=re.compile(r'^BV[0-9A-Za-z]{10}$')
+
+def title_candidates(title):
+    if not isinstance(title,str): return []
+    if re.search(r'https?://|(?:cookie|token|password|sessdata|secret)',title,re.I):return []
+    title=re.sub(r'[\x00-\x1f\x7f-\x9f]',' ',title)[:160]
+    parts=re.findall(r'#([^#\n]{2,24})#|[《「“]([^》」”]{2,24})[》」”]|【([^】]{2,24})】',title)
+    names=[]
+    for choices in parts:
+        name=next((x for x in choices if x),'').strip(' #~!！,，.。 ')
+        if len(name)<2 or name in STOP or len(name)>24:continue
+        if not re.search(r'[\u4e00-\u9fffA-Za-z]',name):continue
+        if re.search(r'https?://|(?:cookie|token|password|sessdata|secret)',name,re.I):continue
+        if name not in names:names.append(name)
+    return names[:3]
+
+def init_db(con):
+    with con:
+        con.execute('''CREATE TABLE IF NOT EXISTS memes (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL, aliases TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '梗',
+            meaning TEXT NOT NULL, confidence TEXT NOT NULL DEFAULT '待核实',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, review_status TEXT NOT NULL DEFAULT 'approved')''')
+        con.execute('''CREATE TABLE IF NOT EXISTS meme_sources (meme_id INTEGER NOT NULL,bvid TEXT NOT NULL,
+            evidence_type TEXT NOT NULL,evidence TEXT NOT NULL,noted_at TEXT NOT NULL, PRIMARY KEY(meme_id,bvid))''')
+        con.execute('''CREATE TABLE IF NOT EXISTS meme_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,bvid TEXT NOT NULL,
+            evidence TEXT NOT NULL,evidence_type TEXT NOT NULL,created_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',UNIQUE(name,bvid))''')
+
+def observe(con,payload):
+    videos=payload.get('videos') if isinstance(payload,dict) else None
+    if not isinstance(videos,list):return {'ok':False,'error':'invalid videos'}
+    count=con.execute("SELECT COUNT(*) FROM meme_observations WHERE status='pending'").fetchone()[0]
+    added=0
+    with con:
+        for item in videos[:15]:
+            bv=str(item.get('bvid') or '') if isinstance(item,dict) else ''
+            title=item.get('title') if isinstance(item,dict) else None
+            if not BV.fullmatch(bv) or not isinstance(title,str) or len(title)>250:continue
+            evidence=re.sub(r'[\x00-\x1f\x7f-\x9f]',' ',title)[:160]
+            for name in title_candidates(title):
+                if count+added>=300:break
+                now=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+                before=con.total_changes
+                con.execute('INSERT OR IGNORE INTO meme_observations(name,bvid,evidence,evidence_type,created_at) VALUES(?,?,?,?,?)',
+                    (name,bv,evidence,'标题',now))
+                added+=con.total_changes-before
+    return {'ok':True,'added':added,'pending':count+added}
+
 def operate(home,mode,payload=None):
     home=Path(home).resolve();file=home/'meme-memory.sqlite3'
-    if not file.is_file() or file.is_symlink():return {'ok':True,'rows':[],'pending':0}
+    if file.is_symlink():return {'ok':False,'error':'unsafe database path'}
+    if not file.exists() and mode!='observe':return {'ok':True,'rows':[],'pending':0}
+    if mode=='observe' and not file.exists():home.mkdir(parents=True,exist_ok=True)
     con=sqlite3.connect(file,timeout=8);con.row_factory=sqlite3.Row
     try:
-        with con:
-            con.execute('''CREATE TABLE IF NOT EXISTS meme_observations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,bvid TEXT NOT NULL,
-                evidence TEXT NOT NULL,evidence_type TEXT NOT NULL,created_at TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',UNIQUE(name,bvid))''')
+        init_db(con)
+        if mode=='observe':return observe(con,payload)
         rows=[dict(r) for r in con.execute("SELECT * FROM meme_observations WHERE status='pending' ORDER BY id LIMIT 80")]
         if mode=='list':return {'ok':True,'rows':rows,'pending':len(rows)}
         if mode!='commit':return {'ok':False,'error':'unsupported'}
@@ -51,6 +102,6 @@ def operate(home,mode,payload=None):
 if __name__=='__main__':
     try:
         home,mode=sys.argv[1:3]
-        payload=json.loads(sys.stdin.read(8000)) if mode=='commit' else None
+        payload=json.loads(sys.stdin.read(16000)) if mode in ('commit','observe') else None
         print(json.dumps(operate(home,mode,payload),ensure_ascii=False))
     except Exception as exc:print(json.dumps({'ok':False,'error':str(exc)[:180]},ensure_ascii=False))

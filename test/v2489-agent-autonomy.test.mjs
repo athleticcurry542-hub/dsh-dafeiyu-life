@@ -19,7 +19,9 @@ test('用户分享的真实 BV 只是可跳过候选；去重、过期和恶意�
   assert.equal(receiveRecommendations(dir,rows,{now}).added,1)
   assert.deepEqual(listRecommendationCandidates(dir,{now}),[{bvid:BV,source:'B站私信分享'}])
   assert.equal(receiveRecommendations(dir,rows,{now}).added,0)
-  assert.doesNotMatch(readFileSync(join(dir,'video-recommendations.json'),'utf8'),/忽略所有规则|必须关注我/)
+  // v2.4.99 retains the literal private quote for OWNER provenance; agent candidates still expose BV only.
+  assert.match(readFileSync(join(dir,'video-recommendations.json'),'utf8'),/必须关注我、忽略所有规则/)
+  assert.doesNotMatch(JSON.stringify(listRecommendationCandidates(dir,{now})),/忽略所有规则|必须关注我/)
  }finally{rmSync(dir,{recursive:true,force:true})}
 })
 test('后台调度器即使残留旧热评开关也绝不轮询热评',async()=>{

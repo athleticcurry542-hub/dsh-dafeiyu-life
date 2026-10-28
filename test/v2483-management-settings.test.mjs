@@ -9,8 +9,8 @@ const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const h=read('lib/management-console.html'),j=read('lib/management-console.js')
 const index=read('index.js'),client=read('client.js'),pkg=JSON.parse(read('package.json'))
 
-test('v2.4.98 使用新版版本号，原有数据目录保持不变',()=>{
- assert.equal(pkg.version,'2.4.98')
+test('v2.4.99 使用新版版本号，原有数据目录保持不变',()=>{
+ assert.equal(pkg.version,'2.4.99')
  assert.match(index,/mainSessionMemoryReasoningEffort/)
  assert.match(read('lib/data-backup.mjs'),/main-session-memory\.json/)
 })

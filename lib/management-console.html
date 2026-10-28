@@ -264,7 +264,7 @@ input[type=checkbox]{accent-color:#16865f}
 
 </div>
 <div id="life-emotion-section" class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">💗 情绪与心情 · 会变化，也会自然恢复</h4><span id="emotion-status" class="live-badge">● 正在读取情绪状态</span></div>
-<p class="muted">这是大肥鱼的角色模拟状态，不是生理测量或真实意识证明。它只保存情绪类别、强度和粗粒度来源，不保存触发心情的私信正文、UID 或具体聊天原因。情绪会随时间衰减，不能成为泄露隐私、迁怒或强行社交的理由。</p>
+<p class="muted">情绪触发主动回忆尚未启用。原始经历始终是证据；整理回忆、反思或产生念头均不能自行改写原始事实。 这是大肥鱼的角色模拟状态，不是生理测量或真实意识证明。它只保存情绪类别、强度和粗粒度来源，不保存触发心情的私信正文、UID 或具体聊天原因。情绪会随时间衰减，不能成为泄露隐私、迁怒或强行社交的理由。</p>
 <label class="checkline"><input id="emotion-enabled" type="checkbox" checked>启用持续情绪状态（默认开启）</label>
 <div id="emotion-current" class="grid emotion-grid" aria-live="polite"></div>
 <div class="toolbar"><button id="emotion-save" class="life-action life-green">保存情绪设置</button><button id="emotion-reset" class="life-action life-amber">重置为平稳</button></div>
@@ -274,9 +274,18 @@ input[type=checkbox]{accent-color:#16865f}
 <div id="life-todo-section" class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">📝 自主待办 · 记下下一步，不强迫立即执行</h4><span id="owner-todo-status" class="live-badge">● 正在整理待办</span><button id="owner-todo-refresh" class="life-action life-sky">刷新待办</button></div>
 <p class="muted">别人私信推荐的 BV 会自动变成“考虑是否观看”的待办。主 Session 也可以记录“看这个视频、点赞指定 BV、看看自己的空间投稿、查看某位 UP 的投稿、搜索主题、检查通知”等下一步。主人说现在做时可立即处理；否则大肥鱼可在相关聊天里考虑时机。自动择机检查是独立可选项，不依赖定时刷视频。外部写入操作必须来自主人明确授权并继续遵守 B站额度；推荐私信本身不授权点赞、关注或评论。</p>
 <div class="fields"><div><label for="owner-todo-auto-review">自主待办自动择机检查</label><select id="owner-todo-auto-review"><option value="false">关闭（默认，只在聊天或手动操作时考虑）</option><option value="true">开启（定时提醒主 Session 评估待办）</option></select></div><div><label for="owner-todo-review-minutes">检查间隔（分钟）</label><input id="owner-todo-review-minutes" type="number" min="15" max="1440" step="15" value="60"></div></div>
-<div class="toolbar"><button id="owner-todo-settings-save" class="life-action life-indigo">保存待办设置</button></div>
+<div class="inset"><h4>✉️ 主人 B站私信中的只读指令</h4><p class="muted">默认关闭。启用前必须在「私信与好友」中单独填写主人 UID（dmOwnerUid）；只识别 B站接口验证的该 UID，不能通过私信正文自称主人。支持「大肥鱼 看 BV号」「大肥鱼 搜索 关键词」「大肥鱼 查看我的投稿」「大肥鱼 查看UP 12345 投稿」「大肥鱼 检查通知」；入队后由主人或独立调度决定是否执行。点赞、关注、评论、发私信等写操作不接受这条入口自动授权。</p><label class="checkline"><input id="owner-dm-read-commands" type="checkbox">启用主人私信只读待办入口</label></div>
+<div class="inset"><h4>🤖 独立自主调度 · 真正由后台择机决定</h4>
+<p class="muted">与旧版「提醒主 Session」不同：开启后，后台可调用 AI 从已存在的只读待办中选择执行、延期、忽略或跳过，也可以按现有证据条件请求人生反思。不会自动点赞、关注、收藏、发评论或发私信；独立于自动刷视频。默认关闭。</p>
+<div class="fields"><div><label for="autonomous-planner-enabled">独立自主调度</label><select id="autonomous-planner-enabled"><option value="false">关闭（默认）</option><option value="true">开启 · 只读任务和反思</option></select></div>
+<div><label for="autonomous-planner-minutes">至少间隔（分钟，15–1440）</label><input id="autonomous-planner-minutes" type="number" min="15" max="1440" value="90"></div>
+<div><label for="autonomous-planner-limit">每日最多 AI 自主决策（0–12）</label><input id="autonomous-planner-limit" type="number" min="0" max="12" value="3"></div>
+<div><label for="autonomous-planner-start">每日开始时（宿主当地小时）</label><input id="autonomous-planner-start" type="number" min="0" max="23" value="9"></div>
+<div><label for="autonomous-planner-end">每日结束时（宿主当地小时，24=午夜）</label><input id="autonomous-planner-end" type="number" min="1" max="24" value="23"></div></div>
+<p id="autonomous-planner-status" class="muted" role="status">尚未读取自主调度状态</p></div>
+<div class="toolbar"><button id="owner-todo-settings-save" class="life-action life-indigo">保存待办与自主调度设置</button></div>
 <div class="inset"><h4>新增只读待办</h4><div class="fields"><div><label for="owner-todo-type">要做什么</label><select id="owner-todo-type"><option value="watch_video">看看指定视频</option><option value="inspect_my_space">看看我自己的空间投稿</option><option value="inspect_creator_videos">看看某位 UP 主的投稿</option><option value="search_videos">搜索视频主题</option><option value="check_notifications">检查 B站通知</option></select></div><div><label for="owner-todo-target">目标（BV 号 / UID / 关键词）</label><input id="owner-todo-target" maxlength="120" placeholder="根据任务类型填写"></div><div><label for="owner-todo-title">待办名称（可留空）</label><input id="owner-todo-title" maxlength="120" placeholder="例如：有空看看这个推荐"></div></div><div class="toolbar" style="margin-top:10px"><button id="owner-todo-add" class="life-action life-green">加入待办</button><span class="muted">点赞、收藏、关注等写入任务建议直接在主 Session 明确提出，由大肥鱼绑定准确目标与授权。</span></div></div>
-<div id="owner-todo-list" class="records records-scroll tall"></div></div>
+<style>.todo-origin-quote{margin:8px 0;padding:10px 12px;border-left:3px solid #7b8ef9;background:var(--surface-2,rgba(107,129,228,.09));border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.92em}</style><div id="owner-todo-list" class="records records-scroll tall"></div></div>
 <div id="life-interest-section" class="settings-section life-section"><div class="toolbar"><h4 style="margin:0">兴趣与偏好 · 真实经历的趋势</h4><span id="interest-learning-status" class="live-badge">● 正在收集兴趣线索</span><span class="muted">由真实选中视频的 BV 证据推断，不自动修改人设与搜索词</span></div>
 <p class="muted">核心兴趣由主人明确设置，优先参与选片但会轮换；短期/成长/稳定兴趣则来自真实入选视频证据。至少 3 个不同视频、横跨 2 天才会形成短期兴趣，长期没有新证据会逐渐淡出。自动学习永远不会覆盖核心兴趣。</p>
 <div class="inset"><label for="core-interest-topics">核心兴趣（每行或用逗号分隔，最多 12 项）</label><textarea id="core-interest-topics" rows="3" maxlength="700" placeholder="例如：AI 模型拟人、独立游戏、猫咪、美食"></textarea><div class="toolbar"><button id="core-interest-save" class="life-action life-green">保存核心兴趣</button><span id="core-interest-status" class="muted">主人设定 · 不会自动覆盖</span></div><div id="core-interest-list" class="grid interest-grid"></div></div>
