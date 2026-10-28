@@ -12,6 +12,28 @@ import re
 import subprocess
 import uuid
 from pathlib import Path
+from datetime import datetime
+
+def _record_model_launch(home, task):
+    """One append-only task-launch event; no prompts, credentials or cost data."""
+    try:
+        directory=Path(home) / 'model-usage'
+        if directory.is_symlink(): return
+        directory.mkdir(parents=True, exist_ok=True)
+        if directory.is_symlink(): return
+        now=datetime.now().astimezone()
+        day=now.strftime('%Y-%m-%d')
+        file=directory / (now.strftime('%Y-%m')+'.jsonl')
+        if file.is_symlink(): return
+        flags=os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os,'O_NOFOLLOW'): flags |= os.O_NOFOLLOW
+        fd=os.open(str(file),flags,0o600)
+        try:
+            os.write(fd,(json.dumps({'task':task,'day':day,'at':now.isoformat()},ensure_ascii=True)+'\n').encode('utf8'))
+        finally:
+            os.close(fd)
+    except (OSError,ValueError,TypeError):
+        pass  # Telemetry must never interrupt a Bilibili session.
 
 _BV = re.compile(r'BV[0-9A-Za-z]{10}\Z')
 _DESC = re.compile(r'(?m)^VISION_DESC:\s*(.+?)\s*$')
@@ -164,6 +186,7 @@ def describe_with_dsh(bvid, home, env=None, runner=None):
                 '如果模型/路由不支持图片、工具调用失败、没拿到真实图片，最终只输出 VISION_FAILED。'
                 '完成后最终回复仅输出单行 VISION_DESC: 后面紧接中文描述，不输出其他文字。')
         child_env.pop('BILI_VISION_DSH_ARGV',None)
+        _record_model_launch(home, 'vision')
         execute=runner or subprocess.run
         try:
             result=execute([*child_args,prompt],cwd=str(home),env=child_env,stdin=subprocess.DEVNULL,

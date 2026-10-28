@@ -39,6 +39,27 @@ from bilibili_api.video_uploader import (
 from bilibili_api.utils.picture import Picture
 from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
 
+def _record_model_launch(home, task):
+    """One append-only task-launch event; no prompts, credentials or cost data."""
+    try:
+        directory=Path(home) / 'model-usage'
+        if directory.is_symlink(): return
+        directory.mkdir(parents=True, exist_ok=True)
+        if directory.is_symlink(): return
+        now=datetime.now().astimezone()
+        day=now.strftime('%Y-%m-%d')
+        file=directory / (now.strftime('%Y-%m')+'.jsonl')
+        if file.is_symlink(): return
+        flags=os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        if hasattr(os,'O_NOFOLLOW'): flags |= os.O_NOFOLLOW
+        fd=os.open(str(file),flags,0o600)
+        try:
+            os.write(fd,(json.dumps({'task':task,'day':day,'at':now.isoformat()},ensure_ascii=True)+'\n').encode('utf8'))
+        finally:
+            os.close(fd)
+    except (OSError,ValueError,TypeError):
+        pass  # Telemetry must never interrupt a Bilibili session.
+
 # ========== 初始化 ==========
 
 CRED_FILE = Path(__file__).parent / "bili_credential.json"
@@ -995,6 +1016,7 @@ def _identity_public_memory(query: str, limit: int = 6) -> dict:
                     '严格返回 JSON：{"memory_ids":["真实ID"]}。'
                     '\n<context>'+json.dumps(q,ensure_ascii=False)+'</context>\n<memory_index>'
                     +json.dumps(cards,ensure_ascii=False)+'</memory_index>')
+            _record_model_launch(home, 'memory')
             result=subprocess.run([*argv,prompt],capture_output=True,text=True,encoding='utf-8',
                                  timeout=35,shell=False,cwd=home,check=False)
             if result.returncode != 0: raise ValueError('检索模型退出异常')

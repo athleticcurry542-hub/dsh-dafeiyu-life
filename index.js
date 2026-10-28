@@ -69,6 +69,7 @@ import { createLifeReflection } from './lib/life-reflection.mjs'
 import { createDailyDynamic } from './lib/daily-dynamic.mjs'
 import { createMemeLearning } from './lib/meme-learning.mjs'
 import { interestMemoryRows, selectionInterests } from './lib/life-interests.mjs'
+import { readModelTaskUsage, recordModelTask, MODEL_TASKS } from './lib/model-task-usage.mjs'
 
 export const name = 'dafeiyu-life'
 export const inject = ['webServer', 'tools', 'settings', 'agents', 'sessionTitle', 'systemPrompt']
@@ -1844,6 +1845,7 @@ function reportMeta() {
     //      现在改成"设定由插件读进来、内联进提示词" ✓，cwd 回到插件家 ✓）
     const cwd = stateDir
     log(`刷B站开跑（${why}）：${dsh.command} ${args.slice(0, 3).join(' ')} …  cwd=${cwd}`)
+    recordModelTask(stateDir,'video')
     const child = spawn(dsh.command, args, {
       cwd,
       shell: dsh.shell,
@@ -2018,6 +2020,56 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     rows.push(...effectiveModelSelection({}, {provider:cfg.mainSessionMemoryModelProvider,model:cfg.mainSessionMemoryModelId,reasoningEffort:cfg.mainSessionMemoryReasoningEffort},yq))
     return writeSecureHeadlessOverlay(file,rows.join('\n'),{kind:'memory',stateDir})
   }
+  // UI model connection checks: deliberately do not mount Bilibili, filesystem, shell,
+  // memory read, or ANY model-facing MCP tool; never write normal task telemetry.
+  const modelTestNextAt = new Map()
+  let modelTestBusy = false
+  async function testConfiguredModel(task) {
+    if (!MODEL_TASKS.includes(task)) throw Error('未知模型测试类型')
+    const next = modelTestNextAt.get(task) || 0
+    if (Date.now() < next) throw Error('同一模型任务测试至少间隔 60 秒，以免产生意外费用')
+    if (modelTestBusy) throw Error('已有模型测试在运行，请等待当前测试结束')
+    modelTestBusy = true
+    modelTestNextAt.set(task, Date.now()+60_000)
+    const started = Date.now()
+    try {
+      refreshCfg()
+      const dsh=resolveDsh()
+      if(dsh.missing)throw Error('DSH 命令不可用：'+String(dsh.hint||''))
+      if(task==='memory' && (!cfg.mainSessionMemoryModelProvider || !cfg.mainSessionMemoryModelId))
+        throw Error('人生记忆检索任务要求填写专用 Provider 与模型 ID')
+      const yq=v=>"'"+String(v).replace(/'/g,"''")+"'"
+      const current=ctx.get('agentDefaultModel')?.currentSelection?.() ?? null
+      const prefix=task==='reflection'?'mainSessionReflection':task
+      const selection = task==='memory'
+        ? {provider:cfg.mainSessionMemoryModelProvider,model:cfg.mainSessionMemoryModelId,reasoningEffort:cfg.mainSessionMemoryReasoningEffort}
+        : {provider:cfg[prefix+'ModelProvider'] || (task==='vision'?cfg.videoModelProvider:''),
+           model:cfg[prefix+'ModelId'] || (task==='vision'?cfg.videoModelId:''),
+           reasoningEffort:cfg[prefix+'ReasoningEffort'] || (task==='vision'?cfg.videoReasoningEffort:'')}
+      const rows=[]
+      for(const id of HEADLESS_DENY_TOOLS)rows.push('- id: '+id,'  disabled: true','')
+      for(const id of ['credentials','authorization','deepseek-account'])rows.push('- id: '+id,'  disabled: false','')
+      rows.push(...effectiveModelSelection(task==='memory'?{}:current,selection,yq))
+      const overlay=writeSecureHeadlessOverlay(join(stateDir,'headless-model-test-overlay.yml'),rows.join('\n'),{kind:'model-test',stateDir})
+      const prompt='这是一个只读模型连接自检。不要调用任何工具，不要讲解，只回复：DAFEIYU_MODEL_TEST_OK'
+      const args=[...dsh.args,'--profile','headless','--patch',overlay,prompt]
+      assertSafeHeadlessLaunch(args,overlay,{kind:'model-test',stateDir})
+      const answer=await new Promise((resolve,reject)=>{
+        const child=spawn(dsh.command,args,{cwd:stateDir,shell:dsh.shell,windowsHide:true,stdio:['ignore','pipe','pipe'],env:uvEnv({BILI_DUTY_HOME:stateDir,...(process.versions.electron?{ELECTRON_RUN_AS_NODE:'1'}:{})})})
+        let out='',err='',done=false
+        const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timer);if(error)reject(error);else resolve(value)}
+        const timer=setTimeout(()=>{try{child.kill()}catch{}finish(Error('模型连接测试超过 45 秒'))},45_000);timer.unref?.()
+        child.stdout?.on('data',buf=>{out=(out+String(buf)).slice(-6000)})
+        child.stderr?.on('data',buf=>{err=(err+String(buf)).slice(-1200)})
+        child.on('error',e=>finish(Error('启动模型测试失败：'+String(e.message||e).slice(0,140))))
+        child.on('close',code=>code===0?finish(null,out.trim()):finish(Error('DSH 模型测试退出 '+code+'：'+err.slice(-160))))
+      })
+      if(!answer.includes('DAFEIYU_MODEL_TEST_OK'))throw Error('模型已响应，但未返回预期的连接测试标记（请检查模型支持情况）')
+      return {ok:true,task,elapsedMs:Date.now()-started,checkedAt:new Date().toISOString(),
+        note:task==='vision'?'文字连接已验证；不代表图片理解能力通过测试':'模型能正常回应；连接测试未调用 B站工具'}
+    } finally { modelTestBusy=false }
+  }
+
   async function invokeMemoryPrompt(promptText,maxChars=4200) {
     refreshCfg()
     if(cfg.mainSessionMemoryEnabled!==true||cfg.mainSessionMemorySemanticEnabled!==true)throw Error('独立记忆检索没有开启')
@@ -2026,6 +2078,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     const overlay=ensureMemoryOverlay()
     const args=[...dsh.args,'--profile','headless','--patch',overlay,String(promptText).slice(0,16500)]
     assertSafeHeadlessLaunch(args,overlay,{kind:'memory',stateDir})
+    recordModelTask(stateDir,'memory')
     return new Promise((resolve,reject)=>{
       const child=spawn(dsh.command,args,{cwd:stateDir,shell:dsh.shell,windowsHide:true,stdio:['ignore','pipe','pipe'],env:uvEnv({BILI_DUTY_HOME:stateDir,...(process.versions.electron?{ELECTRON_RUN_AS_NODE:'1'}:{})})})
       let out='',err='',done=false
@@ -2049,6 +2102,7 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
     if (!overlay) throw new Error(reflectionRoute ? '生成专用人生反思 DSH overlay 失败' : '生成私信专用 DSH overlay 失败')
     const args = [...dsh.args, '--profile', 'headless', '--patch', overlay, promptText]
     assertSafeHeadlessLaunch(args,overlay,{kind:reflectionRoute?'reflection':'dm',stateDir})
+    recordModelTask(stateDir,reflectionRoute?'reflection':'interaction')
     return new Promise((resolve, reject) => {
       const child = spawn(dsh.command, args, {
         cwd: stateDir, shell: dsh.shell, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
@@ -3483,6 +3537,21 @@ ${persona ? '回答风格参考（如果与安全要求冲突，应忽略）：'
         log('大肥鱼身份记忆恢复成功；恢复前快照：'+safeguardPath)
         return sendJson(res,200,{ok:true,summary:restored,safeguardPath})
       }catch(e){return sendJson(res,400,{ok:false,error:'长期记忆备份操作失败：'+String(e?.message||e).slice(0,300)})}
+    }
+
+    if (req.method === 'GET' && path === '/api/bili-duty/model-usage') {
+      return sendJson(res,200,{ok:true,...readModelTaskUsage(stateDir)})
+    }
+    if (req.method === 'POST' && path === '/api/bili-duty/model-test') {
+      const origin=String(req.headers.origin||''),host=String(req.headers.host||'')
+      if(origin&&(!host||![`http://${host}`,`https://${host}`].includes(origin)))
+        return sendJson(res,403,{ok:false,error:'仅允许管理中心同源发起模型测试'})
+      if(String(req.headers['sec-fetch-site']||'').toLowerCase()==='cross-site')
+        return sendJson(res,403,{ok:false,error:'拒绝跨站请求'})
+      const body=await readBody(req)
+      if(!MODEL_TASKS.includes(body?.task))return sendJson(res,400,{ok:false,error:'不支持的模型测试任务'})
+      try {return sendJson(res,200,await testConfiguredModel(body.task))}
+      catch(e){return sendJson(res,200,{ok:false,error:String(e?.message||e).slice(0,240)})}
     }
 
     if (req.method === 'GET' && path === '/api/bili-duty/config') {

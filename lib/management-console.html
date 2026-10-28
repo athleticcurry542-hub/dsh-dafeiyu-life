@@ -101,6 +101,7 @@ input[type=checkbox]{accent-color:#16865f}
 .tab-cluster{display:flex;gap:5px;align-items:center;flex-wrap:wrap;border-right:1px solid var(--stroke);padding-right:10px}
 .tab-cluster:last-child{border-right:0}.tab-cluster-label{font-size:11px;font-weight:750;color:var(--muted);padding:4px 7px;white-space:nowrap}
 @media(max-width:720px){.tab-cluster{width:100%;border-right:0;border-bottom:1px solid var(--stroke);padding:5px 0 9px}.tab-cluster-label{width:100%}}
+.model-activity{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 14px}.model-activity .muted{font-size:12px}.model-test-button{padding:5px 10px;font-size:12px}
 </style>
 <script defer src="/api/bili-duty/manage.js"></script>
 </head>
@@ -129,17 +130,17 @@ input[type=checkbox]{accent-color:#16865f}
 </nav>
 <p id="message" role="status" aria-live="polite"></p>
 <section id="panel-models" hidden>
-<div class="feature-intro"><div><h2>🧠 AI 模型配置</h2><p>所有 AI 模型只在这里设置。Provider 和模型 ID 留空时继承 DSH 当前模型；不需要在插件重复填写 API Key。</p></div></div>
+<div class="feature-intro"><div><h2>🧠 AI 模型配置</h2><p>所有 AI 模型只在这里设置。Provider 和模型 ID 留空时继承 DSH 当前模型；不需要在插件重复填写 API Key。每日次数统计的是插件启动的模型任务，并非 Provider 实际 API 请求数；安装本版后开始记录，不补算历史。测试连接不计入统计，但会产生实际模型请求，可能消耗额度。请先保存模型配置再测试。独立视觉的测试只验证文字连接，不验证识图能力。</p></div></div>
 <div class="settings-stack">
-<div class="settings-section"><h4>刷视频与内容理解</h4><p class="muted">负责搜索、阅读视频、选片、评论决策与点赞收藏决策。</p><div class="fields" id="models-video"></div></div>
-<div class="settings-section"><h4>后台评论与私信</h4><p class="muted">负责后台评论、私信和生活动态草稿；人生反思在下方单独配置。</p><div class="fields" id="models-interaction"></div></div>
-<div class="settings-section"><h4>人生反思与经历提炼</h4><p class="muted">专门分析积累的真实经历，决定哪些内容值得凝练成人生记忆。这里的模型不会获得 B站、文件或 Shell 工具。Provider 和模型 ID 留空时继承 DSH 当前默认模型。</p><div class="fields" id="models-reflection"></div></div>
-<div class="settings-section"><h4>独立视觉识图</h4><p class="muted">只有开启独立视觉模式时才使用；普通模式复用视频模型。</p><div class="fields" id="models-vision"></div>
+<div class="settings-section"><h4>刷视频与内容理解</h4><div class="model-activity"><span id="models-video-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-video-test" class="model-test-button">测试连接</button><span id="models-video-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">负责搜索、阅读视频、选片、评论决策与点赞收藏决策。</p><div class="fields" id="models-video"></div></div>
+<div class="settings-section"><h4>后台评论与私信</h4><div class="model-activity"><span id="models-interaction-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-interaction-test" class="model-test-button">测试连接</button><span id="models-interaction-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">负责后台评论、私信和生活动态草稿；人生反思在下方单独配置。</p><div class="fields" id="models-interaction"></div></div>
+<div class="settings-section"><h4>人生反思与经历提炼</h4><div class="model-activity"><span id="models-reflection-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-reflection-test" class="model-test-button">测试连接</button><span id="models-reflection-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">专门分析积累的真实经历，决定哪些内容值得凝练成人生记忆。这里的模型不会获得 B站、文件或 Shell 工具。Provider 和模型 ID 留空时继承 DSH 当前默认模型。</p><div class="fields" id="models-reflection"></div></div>
+<div class="settings-section"><h4>独立视觉识图</h4><div class="model-activity"><span id="models-vision-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-vision-test" class="model-test-button">测试连接</button><span id="models-vision-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">只有开启独立视觉模式时才使用；普通模式复用视频模型。</p><div class="fields" id="models-vision"></div>
 <div class="fields"><div><label for="models-vision-mode">识图方式</label><select id="models-vision-mode"><option value="reuse_video_model">复用视频模型（默认）</option><option value="independent_dsh">独立 DSH 视觉模型</option><option value="auto">自动（历史兼容：当前等同复用视频模型）</option></select></div>
 <div><label class="checkline"><input id="models-vision-enabled" type="checkbox">启用视频预览识图</label></div>
 <div><label class="checkline"><input id="models-vision-debug" type="checkbox">开启视觉识图调试日志（排障用）</label></div></div>
 </div>
-<div class="settings-section"><h4>低成本人生记忆检索</h4><p class="muted">仅挑选真实记忆 ID，不能发送 B站消息或修改记忆。是否启用及检索额度仍在「大肥鱼的家」设置。</p><div class="fields" id="models-memory"></div></div>
+<div class="settings-section"><h4>低成本人生记忆检索</h4><div class="model-activity"><span id="models-memory-usage" class="muted">今日调用次数：读取中… · 上次调用时间：读取中…</span><button type="button" id="models-memory-test" class="model-test-button">测试连接</button><span id="models-memory-test-result" class="muted" role="status" aria-live="polite"></span></div><p class="muted">仅挑选真实记忆 ID，不能发送 B站消息或修改记忆。是否启用及检索额度仍在「大肥鱼的家」设置。</p><div class="fields" id="models-memory"></div></div>
 <div class="toolbar"><button id="models-save" class="primary">保存全部模型配置</button><button id="models-refresh">重新读取</button></div>
 </div></section>
 <section id="panel-bili" hidden>

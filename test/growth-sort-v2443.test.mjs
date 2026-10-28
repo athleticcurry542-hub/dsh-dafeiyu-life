@@ -12,7 +12,7 @@ const html=readFileSync(new URL('../lib/management-console.html',import.meta.url
 // 从真实前端代码中抽取纯排序函数执行，避免测试中的排序副本偏离上线实现。
 function getSorter(){
   const start=web.indexOf('  const growthPriority=')
-  const end=web.indexOf('  let growthPreviewQuery=',start)
+  const end=web.indexOf('  const growthList=async()=>',start)
   assert.ok(start>=0&&end>start,'成长排序函数必须存在')
   return vm.runInNewContext(`${web.slice(start,end)}\ngrowthDisplayOrder`,{Date})
 }
