@@ -1224,6 +1224,123 @@ async def _ensure_ai_folder(cred,uid,topic):
     return fid,title,True
 
 
+# v2.4.89: user approved opt-in: only relations with UP creators of actually
+# selected videos.  Never expose followings list, blacklist or batch management.
+# Read ONE target's relation for status, not a followings list.
+def _single_creator_relation(cred, target):
+    sess=str(getattr(cred,'sessdata','') or '')
+    if not sess: raise ValueError('B站账号登录态不存在')
+    request=urllib.request.Request(
+        'https://api.bilibili.com/x/relation?fid='+str(target),
+        headers={'Cookie':'SESSDATA='+sess,'Referer':'https://www.bilibili.com/',
+                 'User-Agent':'Mozilla/5.0'})
+    with urllib.request.urlopen(request,timeout=8) as res:
+        data=json.loads(res.read(10000).decode('utf8'))
+    if data.get('code')!=0 or not isinstance(data.get('data'),dict):
+        raise ValueError('不能确认当前关注关系，不执行关系写操作')
+    return int(data['data'].get('attribute',-1))
+
+
+def _relation_claim(account,target,kind,limit):
+    con=_action_conn()
+    try:
+        today=datetime.now().strftime('%Y-%m-%d')
+        with con:
+            con.execute('''CREATE TABLE IF NOT EXISTS creator_relations (
+                account TEXT NOT NULL,target INTEGER NOT NULL,bvid TEXT NOT NULL,
+                followed_at TEXT NOT NULL,unfollowed_at TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL,PRIMARY KEY(account,target))''')
+            con.execute('''CREATE TABLE IF NOT EXISTS creator_relation_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,account TEXT NOT NULL,target INTEGER NOT NULL,
+                action TEXT NOT NULL,day TEXT NOT NULL,status TEXT NOT NULL)''')
+            con.execute('BEGIN IMMEDIATE')
+            row=con.execute('SELECT * FROM creator_relations WHERE account=? AND target=?',(account,target)).fetchone()
+            if kind=='follow' and row:raise ValueError('已为此 UP 作过关系决定，不重复关注')
+            if kind=='unfollow':
+                if not row or row['status']!='following':raise ValueError('只能取关大肥鱼通过本插件自主关注的 UP 主')
+                age=(datetime.now()-datetime.fromisoformat(row['followed_at'])).total_seconds()
+                if age<7*86400:raise ValueError('自主关注未满 7 天，不允许取关')
+            used=con.execute('SELECT COUNT(*) FROM creator_relation_attempts WHERE account=? AND day=? AND action=?', (account,today,kind)).fetchone()[0]
+            if used>=limit:raise ValueError('当日关注／取关额度已用完')
+            cur=con.execute('INSERT INTO creator_relation_attempts(account,target,action,day,status) VALUES(?,?,?,?,?)', (account,target,kind,today,'pending'))
+            if kind=='follow':
+                con.execute('INSERT INTO creator_relations(account,target,bvid,followed_at,status) VALUES(?,?,?,?,?)', (account,target,'',datetime.now().isoformat(),'pending-follow'))
+            else:con.execute('UPDATE creator_relations SET status=? WHERE account=? AND target=?',('pending-unfollow',account,target))
+            return cur.lastrowid
+    finally:con.close()
+
+
+def _relation_finish(account,target,kind,attempt,success,bvid=''):
+    con=_action_conn()
+    try:
+        with con:
+            con.execute('UPDATE creator_relation_attempts SET status=? WHERE id=?',('ok' if success else 'uncertain',attempt))
+            if kind=='follow':
+                con.execute('UPDATE creator_relations SET bvid=?,status=? WHERE account=? AND target=?',(bvid,'following' if success else 'uncertain',account,target))
+            else:con.execute('UPDATE creator_relations SET status=?,unfollowed_at=? WHERE account=? AND target=?',('unfollowed' if success else 'uncertain',datetime.now().isoformat() if success else '',account,target))
+    finally:con.close()
+
+
+@tool()
+async def bili_follow_creator(bvid: str, reason: str) -> str:
+    # Follow only owner of real selected video
+    if (error:=_guard('bili_follow_creator')):return error
+    try:
+        if os.environ.get('BILI_AGENT_FOLLOW_ENABLED')!='1':raise ValueError('主人未开启 B站自主关注权限')
+        bv=_valid_bv(bvid)
+        if not _selected_for_reaction(bv):raise ValueError('只能关注今日确实入选的视频 UP 主')
+        why=str(reason or '').strip()
+        if len(why)<8 or len(why)>160:raise ValueError('需要 8 至 160 字的具体关注理由')
+        cred=get_cred();account=str(getattr(cred,'dedeuserid','') or '')
+        if not account.isdigit() or int(account)<=0:raise ValueError('无法确认登录 UID')
+        details=await video.Video(bvid=bv,credential=cred).get_info()
+        target=int((details.get('owner') or {}).get('mid') or 0)
+        if target<=0 or str(target)==account:raise ValueError('UP 主 UID 无效或是自己')
+        relation=_single_creator_relation(cred,target)
+        if relation!=0:return json.dumps({'ok':False,'skipped':'already-followed-or-blocked','target':target},ensure_ascii=False)
+        claim=_relation_claim(account,target,'follow',3)
+        try:
+            await user.User(uid=target,credential=cred).modify_relation(user.RelationType.SUBSCRIBE)
+        except Exception as exc:
+            _relation_finish(account,target,'follow',claim,False,bv)
+            return json.dumps({'ok':False,'status':'uncertain-no-retry','error':str(exc)[:140]},ensure_ascii=False)
+        _relation_finish(account,target,'follow',claim,True,bv)
+        return json.dumps({'ok':True,'action':'follow','uid':target,'bvid':bv},ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:170]},ensure_ascii=False)
+
+
+@tool()
+async def bili_unfollow_creator(uid: int, reason: str) -> str:
+    # Unfollow only self-followed creator after 7 days
+    if (error:=_guard('bili_unfollow_creator')):return error
+    try:
+        if os.environ.get('BILI_AGENT_FOLLOW_ENABLED')!='1':raise ValueError('主人未开启 B站自主关注权限')
+        target=int(uid)
+        if target<=0 or target>=10**19:raise ValueError('UID 非法')
+        why=str(reason or '').strip()
+        if len(why)<8 or len(why)>160:raise ValueError('需要 8 至 160 字的具体取关理由')
+        cred=get_cred();account=str(getattr(cred,'dedeuserid','') or '')
+        if not account.isdigit() or int(account)<=0 or str(target)==account:raise ValueError('账号或目标 UID 无效')
+        # Prove provenance locally before making even the single-target relation lookup.
+        con=_action_conn()
+        try:
+            row=con.execute("SELECT status,followed_at FROM creator_relations WHERE account=? AND target=?",(account,target)).fetchone()
+        except sqlite3.OperationalError: row=None
+        finally:con.close()
+        if not row or row['status']!='following':raise ValueError('非本插件主动关注的用户不可取关')
+        if (datetime.now()-datetime.fromisoformat(row['followed_at'])).total_seconds()<7*86400:raise ValueError('自主关注尚未满 7 天')
+        if _single_creator_relation(cred,target) not in (2,6):return json.dumps({'ok':False,'skipped':'not-currently-following'},ensure_ascii=False)
+        claim=_relation_claim(account,target,'unfollow',1)
+        try:
+            await user.User(uid=target,credential=cred).modify_relation(user.RelationType.UNSUBSCRIBE)
+        except Exception as exc:
+            _relation_finish(account,target,'unfollow',claim,False)
+            return json.dumps({'ok':False,'status':'uncertain-no-retry','error':str(exc)[:140]},ensure_ascii=False)
+        _relation_finish(account,target,'unfollow',claim,True)
+        return json.dumps({'ok':True,'action':'unfollow','uid':target},ensure_ascii=False)
+    except Exception as exc:return json.dumps({'ok':False,'error':str(exc)[:170]},ensure_ascii=False)
+
+
 @tool()
 async def bili_video_like(bvid: str, reason: str = '') -> str:
     # 每日额度由宿主设置传入；模型工具参数不能提高上限。

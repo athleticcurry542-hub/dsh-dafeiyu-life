@@ -788,12 +788,7 @@ function WatchTab() {
             on: Boolean(cfg?.commentWatchReplies),
             onChange: v => patch({commentWatchReplies:v}, '后台回复评论通知'),
           }),
-          h(ToggleRow, {
-            label: '主动参与近期视频的热门评论',
-            note: '详细限额在管理中心「次数与额度」，状态和记录在「最近评论」。',
-            on: Boolean(cfg?.commentWatchTop),
-            onChange: v => patch({commentWatchTop:v}, '主动参与热门评论'),
-          }),
+          h('div', { 'data-bd-note': '' }, '热评不再后台轮询：只有 AI 决定回复当前视频的评论后，才按需读取该视频其他热评。'),
           h('div', { 'data-bd-row': '' }, h('button', { 'data-bd-btn': '', onClick: async () => {
             try { const r = await jpost('/open', { what: 'manage' }); if (!r?.ok) throw new Error(r?.error || '打开失败') }
             catch (e) { window.alert('打开管理中心失败：' + String(e?.message || e)) }

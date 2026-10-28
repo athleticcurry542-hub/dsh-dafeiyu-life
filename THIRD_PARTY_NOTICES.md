@@ -52,6 +52,12 @@ Its “long-lived AI companion + going out to Bilibili + bringing experiences ba
 
 No source from this repository is intentionally vendored as third-party code in `dsh-dafeiyu-life`; this notice exists to give clear credit for the architectural inspiration.
 
+## Bilibili relation API documentation and existing SDK (v2.4.89)
+
+- SDK already used by this project: [`bilibili-api-python`](https://github.com/Nemo2011/bilibili-api) (version range specified in `vendor/bilibili-mcp/requirements.txt`). Its public `User.modify_relation` and `RelationType` API is reused via the existing dependency, not copied into the plugin.
+- Relationship API protocol reference: [pskdje/bilibili-API-collect](https://github.com/pskdje/bilibili-API-collect/blob/main/docs/user/relation.md) for the **single-target** `GET /x/relation?fid=…` status check. No documentation source code has been copied. The new account-safety gates, local SQLite quotas and opt-in Bilibili MCP tools are independently implemented here.
+- Existing upstream `c1overzz/dsh-bili-scroll` and `adoresever/bilibili-mcp` notices and their MIT license files remain retained without modification.
+
 ## Community contributors
 
 See `CONTRIBUTORS.md` for fixes and implementation ideas adopted from community reports and pull requests.

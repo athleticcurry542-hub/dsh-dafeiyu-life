@@ -8,7 +8,7 @@ import {createInteractionScheduler} from '../lib/interaction-scheduler.mjs';
 import {apply} from '../index.js';
 
 const delay=()=>new Promise(r=>setTimeout(r,10));
-test('四种轮询间隔分别独立，启用的评论源合并一次获取并保留去重机会',async()=>{
+test('后台只轮询私信、评论通知和@；旧热评开关不再触发轮询',async()=>{
   let clock=1_800_000_000_000,dmCalls=0,commentCalls=[];
   const cfg={masterEnabled:true,dmWatch:true,dmWatchMinutes:1,commentWatchReplies:true,commentReplyWatchMinutes:3,
     commentAtEnabled:true,commentAtWatchMinutes:7,commentWatchTop:true,commentTopWatchMinutes:5};
@@ -16,7 +16,7 @@ test('四种轮询间隔分别独立，启用的评论源合并一次获取并�
   try{
     s.start();await delay();
     assert.equal(dmCalls,1);assert.equal(commentCalls.length,1);
-    assert.deepEqual(commentCalls[0],{notifications:true,mentions:true,top:true});
+    assert.deepEqual(commentCalls[0],{notifications:true,mentions:true,top:false});
     let state=s.status();assert.equal(state.checks.mentions.intervalMinutes,7);
     assert.equal(state.checks.replies.lastStartedAt,clock);
     assert.equal(state.checks.replies.lastFinishedAt,clock);
@@ -24,7 +24,7 @@ test('四种轮询间隔分别独立，启用的评论源合并一次获取并�
     clock+=60_000;await s.tick();assert.equal(dmCalls,2);assert.equal(commentCalls.length,1);
     clock+=2*60_000;await s.tick();assert.equal(dmCalls,3);assert.equal(commentCalls.length,2);
     assert.deepEqual(commentCalls.at(-1),{notifications:true,mentions:false,top:false});
-    clock+=2*60_000;await s.tick();assert.deepEqual(commentCalls.at(-1),{notifications:false,mentions:false,top:true});
+    clock+=2*60_000;await s.tick();assert.equal(commentCalls.length,2); // no top polling at 5-minute mark
     clock+=2*60_000;await s.tick();assert.deepEqual(commentCalls.at(-1),{notifications:true,mentions:true,top:false});
   }finally{s.stop()}
 });

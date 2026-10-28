@@ -10,9 +10,9 @@ test('homepage recommendations are independent opt-in source and enabled by defa
  assert.match(server,/if \(cfg\.homeRecommendationsEnabled\) list\.push\('bili_home_recommendations'\)/)
  assert.match(server,/name: 'bili_home_recommendations'/)
 })
-test('Agent combines home recommendations and keyword search under the same quota',()=>{
+test('Agent freely chooses recommendation/search sources within shared quotas',()=>{
  const code=src('index.js')
- for (const txt of ['必须**同时使用兴趣主导的关键词搜索**','两类来源一起比较','只看一次','共用每天','不强制按来源配比','放弃首页推荐并继续关键词搜索']) {
+ for (const txt of ['不强制同时使用全部来源','不强制按来源配比','共用每天','达到本轮上限','自行选择搜索词','自主决定是否查视频详情']) {
   assert.ok(code.includes(txt),txt)
  }
 })

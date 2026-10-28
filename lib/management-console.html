@@ -153,6 +153,8 @@ input[type=checkbox]{accent-color:#16865f}
 <label class="checkline"><input id="bili-auto-comment" type="checkbox">允许自主发表原创评论</label>
 <label class="checkline"><input id="bili-auto-like" type="checkbox">允许自主点赞（看完视频后自己判断）</label>
 <label class="checkline"><input id="bili-auto-collect" type="checkbox">允许自主创建主题收藏夹并选择性收藏</label>
+<label class="checkline"><input id="bili-agent-follow" type="checkbox">允许 B站 Agent 自主关注／取关 UP 主（默认关闭，严格限额）</label>
+<p class="muted">仅可关注当天真正入选的视频 UP；仅可取关由大肥鱼自己关注、至少 7 天前关注的人。每日最多关注 3 人、取关 1 人。未开放关注列表、批量关注、拉黑或其他账号管理权限。</p>
 <label class="checkline"><input id="bili-sync-comment" type="checkbox">仅将大肥鱼真正想分享的评论同步为动态</label>
 <p class="muted">不会把所有评论自动同步。同步动态与独立生活动态有各自的每日额度。</p></div>
 <div class="settings-section"><h4>刷视频报告与私信投递</h4>
@@ -385,11 +387,11 @@ input[type=checkbox]{accent-color:#16865f}
 <div hidden><label for="comment-at-whitelist">被 @ 白名单（由可信好友名册同步）</label><textarea id="comment-at-whitelist" rows="4"></textarea></div></div>
 <p class="muted">可在「人设与好友 → 可信好友名册」统一管理允许邀请的 UID。<strong>通知是否被识别、为什么没有回复</strong>，请到「每日诊断 → @ 邀请处理诊断」查看。</p>
 </div>
-<div class="settings-section"><h4>主动参与视频热评</h4><div class="fields">
-<div class="checkline"><input id="comment-watch-top" type="checkbox"><label for="comment-watch-top">主动参与近期视频热门评论</label></div>
-<div class="checkline"><input id="comment-allow-general-top" type="checkbox"><label for="comment-allow-general-top">允许回复一般有趣的热评</label></div>
-<div><label for="comment-top-count">每视频查看热评数（1–20）</label><input id="comment-top-count" type="number" min="1" max="20" value="5"></div>
-<div><label for="comment-top-videos">每轮检查视频数（1–6）</label><input id="comment-top-videos" type="number" min="1" max="6" value="3"></div>
+<div class="settings-section"><h4>当前视频评论上下文（不再独立轮询热评）</h4><p class="muted">旧版持续扫描最近看过的视频热评已停用。只有收到相关评论/@ 通知、AI 先决定值得接话后，才读取该视频其他热门评论；原创视频评论按刷视频 Agent 当轮判断。</p><div class="fields">
+<div hidden><input id="comment-watch-top" type="checkbox" disabled></div>
+<div hidden><input id="comment-allow-general-top" type="checkbox" disabled></div>
+<div hidden><input id="comment-top-count" type="number" min="1" max="20" value="5"></div>
+<div hidden><input id="comment-top-videos" type="number" min="1" max="6" value="3"></div>
 <div><label for="comment-reply-hot-count">回复别人／被 @ 时提供给 AI 的其他热评数（1–30）</label><input id="comment-reply-hot-count" type="number" min="1" max="30" value="12"><small class="muted">获取多少条就提供多少条（排除同一楼层重复项），不额外使用 AI 挑选；主评论与楼中楼单独读取。</small></div>
 <div><label for="comment-per-poll">每轮最多回复（1–5）</label><input id="comment-per-poll" type="number" min="1" max="5" value="1"></div>
 <div><label for="comment-per-day">后台公开评论回复近24小时总上限（1–1000）</label><input id="comment-per-day" type="number" min="1" max="1000" value="5"></div>
